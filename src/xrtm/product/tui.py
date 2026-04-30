@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -52,13 +53,18 @@ def _runs_panel(runs_dir: Path) -> Panel:
     table.add_column("Run", style="cyan")
     table.add_column("Status", style="green")
     table.add_column("Provider")
+    table.add_column("Forecasts", justify="right")
+    table.add_column("Warnings", justify="right")
     table.add_column("Command")
     table.add_column("Updated", style="dim")
     for run in _list_runs(runs_dir):
+        summary = run.get("summary", {})
         table.add_row(
             str(run.get("run_id")),
             str(run.get("status")),
             str(run.get("provider")),
+            str(summary.get("forecast_count", "")),
+            str(summary.get("warning_count", "")),
             _run_command_summary(run),
             str(run.get("updated_at")),
         )
@@ -123,6 +129,9 @@ def _list_runs(runs_dir: Path) -> list[dict[str, Any]]:
             run = ArtifactStore.read_run(run_dir)
         except FileNotFoundError:
             continue
+        summary_path = run_dir / "run_summary.json"
+        if summary_path.exists():
+            run["summary"] = json.loads(summary_path.read_text(encoding="utf-8"))
         runs.append(run)
     return runs
 
