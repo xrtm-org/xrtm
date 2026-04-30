@@ -8,10 +8,14 @@
 ## Installation
 
 ```bash
-pip install xrtm
+python3.11 -m venv .venv
+. .venv/bin/activate
+pip install xrtm==0.2.1
 ```
 
 This installs the complete framework, including all components below.
+
+Supported Python versions are `>=3.11,<3.13`. Python 3.13 is intentionally excluded until the dependency stack is validated there.
 
 ---
 
@@ -47,6 +51,8 @@ runs/<run-id>/
 ```
 
 Use `--provider local-llm` with a local OpenAI-compatible endpoint such as llama.cpp when you want a real local model path.
+
+For installation, local LLM setup, artifact inspection, monitor lifecycle, and troubleshooting, see [`docs/operator-runbook.md`](docs/operator-runbook.md).
 
 ---
 
