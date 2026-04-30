@@ -105,6 +105,8 @@ def run_detail(runs_dir: Path, run_id: str) -> dict[str, Any]:
     run = ArtifactStore.read_run(run_dir)
     detail: dict[str, Any] = {
         "run": run,
+        "summary": _read_json(run_dir / "run_summary.json"),
+        "events": ArtifactStore.read_jsonl(run_dir / "events.jsonl"),
         "forecasts": _read_jsonl(run_dir / "forecasts.jsonl"),
         "eval": _read_json(run_dir / "eval.json"),
         "train": _read_json(run_dir / "train.json"),
@@ -174,6 +176,7 @@ def render_run_html(runs_dir: Path, run_id: str) -> str:
         <h2>{_escape(run.get('run_id'))}</h2>
         <p>Status: <strong>{_escape(run.get('status'))}</strong> | Provider: {_escape(run.get('provider'))}</p>
         {report_link}
+        <h2>Summary</h2><pre>{_escape(json.dumps(detail['summary'], indent=2, sort_keys=True))}</pre>
         <h2>Forecasts</h2>
         <table>
           <thead><tr><th>Question</th><th>Probability</th><th>Reasoning</th></tr></thead>

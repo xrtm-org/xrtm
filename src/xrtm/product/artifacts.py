@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+from xrtm.product.observability import EventRecord, retention_candidates
 
 
 @dataclass
@@ -23,6 +26,7 @@ class RunArtifact:
     updated_at: str
     package_versions: dict[str, str]
     artifacts: dict[str, str] = field(default_factory=dict)
+    summary: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -76,11 +80,15 @@ class ArtifactStore:
 
     def append_event(self, run: RunArtifact, event: str, **payload: Any) -> None:
         path = run.run_dir / "events.jsonl"
-        record = {"timestamp": utc_now(), "event": event, **payload}
+        record = EventRecord(event_type=event, timestamp=utc_now(), payload=payload).to_json_dict()
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(to_json_safe(record), sort_keys=True) + "\n")
         run.artifacts["events.jsonl"] = str(path)
         run.updated_at = utc_now()
+
+    def write_summary(self, run: RunArtifact, payload: dict[str, Any]) -> Path:
+        run.summary = payload
+        return self.write_json(run, "run_summary.json", payload)
 
     def finish(self, run: RunArtifact, *, status: str, errors: list[str] | None = None) -> None:
         run.status = status
@@ -94,6 +102,20 @@ class ArtifactStore:
         if not run_path.exists():
             raise FileNotFoundError(f"{run_path} does not exist")
         return json.loads(run_path.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def read_jsonl(path: Path) -> list[dict[str, Any]]:
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    @staticmethod
+    def cleanup_runs(*, runs_dir: Path, keep: int, dry_run: bool = True) -> list[Path]:
+        candidates = retention_candidates(runs_dir=runs_dir, keep=keep)
+        if not dry_run:
+            for path in candidates:
+                shutil.rmtree(path)
+        return candidates
 
 
 def utc_now() -> str:

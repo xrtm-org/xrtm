@@ -59,10 +59,17 @@ def _runs_panel(runs_dir: Path) -> Panel:
             str(run.get("run_id")),
             str(run.get("status")),
             str(run.get("provider")),
-            str(run.get("command")),
+            _run_command_summary(run),
             str(run.get("updated_at")),
         )
     return Panel(table, title=str(runs_dir))
+
+
+def _run_command_summary(run: dict[str, Any]) -> str:
+    summary = run.get("summary", {})
+    if isinstance(summary, dict) and summary:
+        return f"{run.get('command')} ({summary.get('forecast_count', 0)} forecasts)"
+    return str(run.get("command"))
 
 
 def _side_panel(runs_dir: Path) -> Panel:

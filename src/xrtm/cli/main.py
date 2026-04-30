@@ -10,7 +10,15 @@ from rich.panel import Panel
 from rich.table import Table
 
 from xrtm.product.artifacts import ArtifactStore
-from xrtm.product.monitoring import list_monitors, load_monitor, run_monitor_once, set_monitor_status, start_monitor
+from xrtm.product.monitoring import (
+    list_monitors,
+    load_monitor,
+    run_monitor_daemon,
+    run_monitor_once,
+    set_monitor_status,
+    start_monitor,
+)
+from xrtm.product.observability import MonitorThresholds
 from xrtm.product.pipeline import PipelineOptions, package_versions, run_pipeline
 from xrtm.product.providers import local_llm_status
 from xrtm.product.reports import render_html_report
@@ -138,7 +146,29 @@ def artifacts_inspect(run_dir: Path) -> None:
         table.add_row(field, str(run_payload.get(field, "")))
     artifacts_payload = run_payload.get("artifacts", {})
     table.add_row("artifacts", str(len(artifacts_payload)))
+    summary = run_payload.get("summary", {})
+    if summary:
+        table.add_row("forecasts", str(summary.get("forecast_count", "")))
+        table.add_row("warnings", str(summary.get("warning_count", "")))
+        table.add_row("errors", str(summary.get("error_count", "")))
     console.print(table)
+
+
+@artifacts.command("cleanup")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+@click.option("--keep", type=int, default=50, show_default=True, help="Number of newest run directories to keep.")
+@click.option("--dry-run/--delete", default=True, show_default=True, help="Show candidates without deleting by default.")
+def artifacts_cleanup(runs_dir: Path, keep: int, dry_run: bool) -> None:
+    """Apply the local run artifact retention policy."""
+
+    try:
+        candidates = ArtifactStore.cleanup_runs(runs_dir=runs_dir, keep=keep, dry_run=dry_run)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    action = "would remove" if dry_run else "removed"
+    console.print(f"[green]Retention {action} {len(candidates)} run directorie(s).[/green]")
+    for path in candidates:
+        console.print(str(path))
 
 
 @cli.group("providers")
@@ -167,6 +197,8 @@ def monitor_group() -> None:
 @click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for --provider local-llm.")
 @click.option("--model", default=None, help="Local model id served by the endpoint.")
 @click.option("--api-key", default=None, help="API key for the local endpoint; defaults to test/env.")
+@click.option("--probability-delta", type=float, default=0.10, show_default=True, help="Warn when a watch moves by this much.")
+@click.option("--confidence-shift", type=float, default=0.20, show_default=True, help="Warn when forecast confidence shifts by this much.")
 def monitor_start(
     provider: str,
     limit: int,
@@ -174,6 +206,8 @@ def monitor_start(
     base_url: str | None,
     model: str | None,
     api_key: str | None,
+    probability_delta: float,
+    confidence_shift: float,
 ) -> None:
     """Create a local monitor run and watch list."""
 
@@ -185,6 +219,7 @@ def monitor_start(
             base_url=base_url,
             model=model,
             api_key=api_key,
+            thresholds=MonitorThresholds(probability_delta=probability_delta, confidence_shift=confidence_shift),
         )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
@@ -264,6 +299,45 @@ def monitor_run_once(
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
     console.print(f"[green]Monitor cycle complete:[/green] {len(monitor.get('watches', []))} watch(es)")
+
+
+@monitor_group.command("daemon")
+@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--cycles", type=int, default=1, show_default=True, help="Bounded number of monitor cycles to run.")
+@click.option("--interval-seconds", type=float, default=60.0, show_default=True, help="Seconds between cycles.")
+@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default=None)
+@click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for --provider local-llm.")
+@click.option("--model", default=None, help="Local model id served by the endpoint.")
+@click.option("--api-key", default=None, help="API key for the local endpoint; defaults to test/env.")
+@click.option("--max-tokens", type=int, default=768, show_default=True)
+def monitor_daemon(
+    run_dir: Path,
+    cycles: int,
+    interval_seconds: float,
+    provider: str | None,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    max_tokens: int,
+) -> None:
+    """Run a bounded local monitor loop."""
+
+    try:
+        monitor = run_monitor_daemon(
+            run_dir=run_dir,
+            cycles=cycles,
+            interval_seconds=interval_seconds,
+            provider=provider,
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            max_tokens=max_tokens,
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print(
+        f"[green]Monitor daemon complete:[/green] {monitor.get('cycles', 0)} cycle(s), status={monitor.get('status')}"
+    )
 
 
 @monitor_group.command("pause")
