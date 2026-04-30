@@ -13,7 +13,7 @@ Python 3.13 is not currently supported because the full dependency stack has not
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.2.1
+pip install xrtm==0.3.0
 ```
 
 Verify the installed stack:

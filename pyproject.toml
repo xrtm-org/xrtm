@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xrtm"
-version = "0.2.1"
+version = "0.3.0"
 description = "The xRtm Framework (Generative Forecasting)."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -15,10 +15,10 @@ authors = [
 dependencies = [
     "click>=8.0.0",
     "rich>=13.0.0",
-    "xrtm-data>=0.2.4",
-    "xrtm-eval>=0.2.4",
-    "xrtm-forecast>=0.6.5",
-    "xrtm-train>=0.2.5"
+    "xrtm-data>=0.2.5",
+    "xrtm-eval>=0.2.5",
+    "xrtm-forecast>=0.6.6",
+    "xrtm-train>=0.2.6"
 ]
 
 [project.scripts]
