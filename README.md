@@ -15,6 +15,41 @@ This installs the complete framework, including all components below.
 
 ---
 
+## Product shell
+
+The top-level `xrtm` command is the local-first product cockpit for the stack:
+
+```bash
+xrtm doctor
+xrtm demo --provider mock --limit 2
+xrtm artifacts inspect runs/<run-id>
+xrtm report html runs/<run-id>
+xrtm monitor start --provider mock --limit 2
+xrtm monitor run-once runs/<run-id>
+xrtm tui --runs-dir runs
+xrtm web --runs-dir runs
+```
+
+The product shell writes canonical run directories under `runs/`:
+
+```text
+runs/<run-id>/
+  run.json
+  questions.jsonl
+  forecasts.jsonl
+  eval.json
+  train.json
+  provider.json
+  events.jsonl
+  monitor.json
+  report.html
+  logs/
+```
+
+Use `--provider local-llm` with a local OpenAI-compatible endpoint such as llama.cpp when you want a real local model path.
+
+---
+
 ## Ecosystem
 
 | Component | Badge | Description |
