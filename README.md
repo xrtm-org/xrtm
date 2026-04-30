@@ -10,7 +10,7 @@
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.2.1
+pip install xrtm==0.3.0
 ```
 
 This installs the complete framework, including all components below.
