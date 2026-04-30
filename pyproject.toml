@@ -13,13 +13,40 @@ authors = [
     {name = "XRTM Team", email = "moy@xrtm.org"}
 ]
 dependencies = [
+    "click>=8.0.0",
+    "rich>=13.0.0",
     "xrtm-data>=0.2.2",
     "xrtm-eval>=0.2.3",
     "xrtm-forecast>=0.6.3",
     "xrtm-train>=0.2.3"
 ]
 
+[project.scripts]
+xrtm = "xrtm.cli.main:cli"
+
 [project.urls]
 Repository = "https://github.com/xrtm-org/xrtm"
 Documentation = "https://xrtm.org"
 Issues = "https://github.com/xrtm-org/xrtm/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = {find = {where = ["src"], include = ["xrtm*"], namespaces = true}}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = [".git", ".venv", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = false
+explicit_package_bases = true
