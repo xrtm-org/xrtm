@@ -23,11 +23,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - name: Install package and test tools
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install ruff mypy pytest build
+          uv pip install --system -e .
+          uv pip install --system ruff mypy pytest build
 
       - name: Ruff
         run: ruff check .
@@ -45,8 +49,49 @@ jobs:
         shell: bash
         run: |
           python -m venv /tmp/xrtm-wheel-smoke
-          /tmp/xrtm-wheel-smoke/bin/python -m pip install --upgrade pip
-          /tmp/xrtm-wheel-smoke/bin/python -m pip install dist/xrtm-*.whl
+          uv pip install --python /tmp/xrtm-wheel-smoke/bin/python dist/xrtm-*.whl
           /tmp/xrtm-wheel-smoke/bin/xrtm --help
           /tmp/xrtm-wheel-smoke/bin/xrtm doctor
           /tmp/xrtm-wheel-smoke/bin/xrtm web --smoke
+
+  released-stack-smoke:
+    name: Released stack smoke ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install released stack
+        run: uv pip install --system "xrtm==0.2.1"
+
+      - name: Smoke released stack
+        shell: bash
+        run: |
+          xrtm --version
+          xrtm-data --version
+          forecast --version
+          xrtm-forecast --version
+          xrtm-train --version
+          python - <<'PY'
+          import xrtm
+          import xrtm.data
+          import xrtm.eval
+          import xrtm.forecast
+          import xrtm.train
+          print("released stack imports ok")
+          PY
+          xrtm doctor
+          xrtm demo --provider mock --limit 2 --runs-dir /tmp/xrtm-release-smoke
+          xrtm web --runs-dir /tmp/xrtm-release-smoke --smoke
