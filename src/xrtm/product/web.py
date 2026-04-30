@@ -9,7 +9,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from xrtm.product.artifacts import ArtifactStore
 from xrtm.product.monitoring import list_monitors, load_monitor
@@ -37,9 +37,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
         path = unquote(parsed.path).rstrip("/") or "/"
         try:
             if path == "/":
-                self._send_html(render_index_html(self.runs_dir))
+                self._send_html(render_index_html(self.runs_dir, query_string=parsed.query))
             elif path == "/api/runs":
-                self._send_json(web_snapshot(self.runs_dir))
+                self._send_json(web_snapshot(self.runs_dir, **_filters_from_query(parsed.query)))
             elif path.startswith("/api/runs/"):
                 self._send_json(run_detail(self.runs_dir, path.removeprefix("/api/runs/")))
             elif path.startswith("/runs/") and path.endswith("/report"):
@@ -87,12 +87,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
         self._send_html(report.read_text(encoding="utf-8"))
 
 
-def web_snapshot(runs_dir: Path) -> dict[str, Any]:
+def web_snapshot(
+    runs_dir: Path,
+    *,
+    status: str | None = None,
+    provider: str | None = None,
+    query: str | None = None,
+) -> dict[str, Any]:
     """Return dashboard state shared by WebUI route tests and handlers."""
 
     return {
         "runs_dir": str(runs_dir),
-        "runs": _list_runs(runs_dir),
+        "filters": {"status": status, "provider": provider, "query": query},
+        "runs": _list_runs(runs_dir, status=status, provider=provider, query=query),
         "monitors": list_monitors(runs_dir),
         "local_llm": local_llm_status(),
     }
@@ -118,18 +125,22 @@ def run_detail(runs_dir: Path, run_id: str) -> dict[str, Any]:
     return detail
 
 
-def render_index_html(runs_dir: Path) -> str:
+def render_index_html(runs_dir: Path, *, query_string: str = "") -> str:
     """Render the dashboard index page."""
 
-    snapshot = web_snapshot(runs_dir)
+    filters = _filters_from_query(query_string)
+    snapshot = web_snapshot(runs_dir, **filters)
     rows = []
     for run in snapshot["runs"]:
         run_id = str(run.get("run_id"))
+        summary = run.get("summary", {})
         rows.append(
             "<tr>"
             f"<td><a href='/runs/{_escape(run_id)}'>{_escape(run_id)}</a></td>"
             f"<td>{_escape(run.get('status'))}</td>"
             f"<td>{_escape(run.get('provider'))}</td>"
+            f"<td>{_escape(summary.get('forecast_count'))}</td>"
+            f"<td>{_escape(summary.get('warning_count'))}</td>"
             f"<td>{_escape(run.get('command'))}</td>"
             f"<td>{_escape(run.get('updated_at'))}</td>"
             "</tr>"
@@ -144,8 +155,14 @@ def render_index_html(runs_dir: Path) -> str:
         </section>
         <section>
           <h2>Runs</h2>
+          <form method='get' action='/'>
+            <label>Search <input name='q' value='{_escape(filters.get('query'))}'></label>
+            <label>Status <input name='status' value='{_escape(filters.get('status'))}'></label>
+            <label>Provider <input name='provider' value='{_escape(filters.get('provider'))}'></label>
+            <button type='submit'>Filter</button>
+          </form>
           <table>
-            <thead><tr><th>Run</th><th>Status</th><th>Provider</th><th>Command</th><th>Updated</th></tr></thead>
+            <thead><tr><th>Run</th><th>Status</th><th>Provider</th><th>Forecasts</th><th>Warnings</th><th>Command</th><th>Updated</th></tr></thead>
             <tbody>{''.join(rows)}</tbody>
           </table>
         </section>
@@ -188,15 +205,31 @@ def render_run_html(runs_dir: Path, run_id: str) -> str:
     )
 
 
-def _list_runs(runs_dir: Path) -> list[dict[str, Any]]:
+def _list_runs(
+    runs_dir: Path,
+    *,
+    status: str | None = None,
+    provider: str | None = None,
+    query: str | None = None,
+) -> list[dict[str, Any]]:
     if not runs_dir.exists():
         return []
     runs: list[dict[str, Any]] = []
-    for run_dir in sorted(path for path in runs_dir.iterdir() if path.is_dir()):
+    for run_dir in sorted((path for path in runs_dir.iterdir() if path.is_dir()), key=lambda path: path.name, reverse=True):
         try:
-            runs.append(ArtifactStore.read_run(run_dir))
+            run = ArtifactStore.read_run(run_dir)
         except FileNotFoundError:
             continue
+        summary = _read_json(run_dir / "run_summary.json")
+        run["summary"] = summary or run.get("summary", {})
+        run["run_dir"] = str(run_dir)
+        if status and run.get("status") != status:
+            continue
+        if provider and run.get("provider") != provider:
+            continue
+        if query and query.lower() not in _search_text(run).lower():
+            continue
+        runs.append(run)
     return runs
 
 
@@ -219,6 +252,31 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _filters_from_query(query_string: str) -> dict[str, str | None]:
+    parsed = parse_qs(query_string)
+    return {
+        "status": _first_query_value(parsed, "status"),
+        "provider": _first_query_value(parsed, "provider"),
+        "query": _first_query_value(parsed, "q") or _first_query_value(parsed, "query"),
+    }
+
+
+def _first_query_value(parsed: dict[str, list[str]], key: str) -> str | None:
+    values = parsed.get(key, [])
+    if not values:
+        return None
+    value = values[0].strip()
+    return value or None
+
+
+def _search_text(run: dict[str, Any]) -> str:
+    return " ".join(
+        str(value)
+        for value in (run.get("run_id"), run.get("status"), run.get("provider"), run.get("command"), run.get("run_dir"))
+        if value is not None
+    )
 
 
 def _page(title: str, body: str) -> str:

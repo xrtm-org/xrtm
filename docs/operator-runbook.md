@@ -27,6 +27,19 @@ xrtm-train --version
 xrtm doctor
 ```
 
+## Workflow profiles
+
+Profiles save repeatable local workflow settings so you do not have to retype provider, corpus limit, token budget, model, and run directory options.
+
+```bash
+xrtm profile create local-mock --provider mock --limit 2 --runs-dir runs
+xrtm profile list
+xrtm profile show local-mock
+xrtm run profile local-mock
+```
+
+Profiles are stored under `.xrtm/profiles` by default. Use `--profiles-dir` when you want project-specific or test-specific profile storage.
+
 ## Provider-free smoke
 
 Use provider-free mode for deterministic validation and CI-safe smoke tests:
@@ -90,6 +103,18 @@ xrtm artifacts inspect runs/<run-id>
 xrtm report html runs/<run-id>
 ```
 
+Browse run history without reading JSON files directly:
+
+```bash
+xrtm runs list --runs-dir runs
+xrtm runs search mock --runs-dir runs
+xrtm runs show <run-id> --runs-dir runs
+xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs
+xrtm runs export <run-id> --runs-dir runs --output export.json
+```
+
+`runs compare` focuses on operationally important summary fields such as status, provider, forecast count, duration, token totals, Brier scores, warnings, and errors. `runs export` writes one portable JSON bundle with run metadata, summary, events, forecasts, eval/train payloads, provider metadata, and monitor state when available.
+
 Apply the local retention policy:
 
 ```bash
@@ -143,6 +168,13 @@ Local WebUI:
 
 ```bash
 xrtm web --runs-dir runs
+```
+
+The WebUI and `/api/runs` endpoint support simple filtering with `status`, `provider`, and `q` query parameters, for example:
+
+```text
+http://127.0.0.1:8765/?provider=mock&q=202604
+http://127.0.0.1:8765/api/runs?status=completed
 ```
 
 Smoke mode for automation:

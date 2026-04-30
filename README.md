@@ -26,6 +26,12 @@ The top-level `xrtm` command is the local-first product cockpit for the stack:
 ```bash
 xrtm doctor
 xrtm demo --provider mock --limit 2
+xrtm profile create local-mock --provider mock --limit 2
+xrtm run profile local-mock
+xrtm runs list
+xrtm runs show <run-id>
+xrtm runs compare <run-id-a> <run-id-b>
+xrtm runs export <run-id> --output export.json
 xrtm artifacts inspect runs/<run-id>
 xrtm report html runs/<run-id>
 xrtm monitor start --provider mock --limit 2

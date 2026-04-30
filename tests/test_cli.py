@@ -7,7 +7,9 @@ from urllib.request import urlopen
 from click.testing import CliRunner
 
 from xrtm.cli.main import cli
+from xrtm.product.history import resolve_run_dir
 from xrtm.product.monitoring import run_monitor_once
+from xrtm.product.profiles import WorkflowProfile
 from xrtm.product.web import create_web_server, web_snapshot
 
 
@@ -20,6 +22,8 @@ def test_help_exposes_product_commands() -> None:
     assert "doctor" in result.output
     assert "demo" in result.output
     assert "artifacts" in result.output
+    assert "profile" in result.output
+    assert "runs" in result.output
     assert "local-llm" in result.output
     assert "monitor" in result.output
     assert "tui" in result.output
@@ -74,6 +78,97 @@ def test_artifacts_inspect_requires_run_json() -> None:
 
         assert result.exit_code != 0
         assert "run.json" in result.output
+
+
+def test_profiles_and_run_history_commands_support_repeatable_workflows() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        create = runner.invoke(
+            cli,
+            [
+                "profile",
+                "create",
+                "local-mock",
+                "--provider",
+                "mock",
+                "--limit",
+                "1",
+                "--runs-dir",
+                "runs",
+                "--profiles-dir",
+                "profiles",
+            ],
+        )
+        profile_list = runner.invoke(cli, ["profile", "list", "--profiles-dir", "profiles"])
+        profile_show = runner.invoke(cli, ["profile", "show", "local-mock", "--profiles-dir", "profiles"])
+        run = runner.invoke(cli, ["run", "profile", "local-mock", "--profiles-dir", "profiles"])
+        run_dir = next(Path("runs").iterdir())
+        run_id = run_dir.name
+        runs_list = runner.invoke(cli, ["runs", "list", "--runs-dir", "runs"])
+        runs_search = runner.invoke(cli, ["runs", "search", "mock", "--runs-dir", "runs"])
+        runs_show = runner.invoke(cli, ["runs", "show", run_id, "--runs-dir", "runs"])
+        runs_export = runner.invoke(cli, ["runs", "export", run_id, "--runs-dir", "runs", "--output", "export.json"])
+
+        assert create.exit_code == 0, create.output
+        assert profile_list.exit_code == 0, profile_list.output
+        assert "local-mock" in profile_list.output
+        assert profile_show.exit_code == 0, profile_show.output
+        assert run.exit_code == 0, run.output
+        assert runs_list.exit_code == 0, runs_list.output
+        assert run_id in runs_list.output
+        assert runs_search.exit_code == 0, runs_search.output
+        assert runs_show.exit_code == 0, runs_show.output
+        assert "forecasts" in runs_show.output
+        assert runs_export.exit_code == 0, runs_export.output
+        exported = json.loads(Path("export.json").read_text(encoding="utf-8"))
+        assert exported["run"]["run_id"] == run_id
+
+
+def test_runs_compare_and_web_filters() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        first = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs"])
+        second = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs"])
+        run_ids = sorted(path.name for path in Path("runs").iterdir())
+        compare = runner.invoke(cli, ["runs", "compare", run_ids[0], run_ids[1], "--runs-dir", "runs"])
+        snapshot = web_snapshot(Path("runs"), provider="mock", query=run_ids[0])
+
+        assert first.exit_code == 0, first.output
+        assert second.exit_code == 0, second.output
+        assert compare.exit_code == 0, compare.output
+        assert "forecast_count" in compare.output
+        assert len(snapshot["runs"]) == 1
+        assert snapshot["runs"][0]["run_id"] == run_ids[0]
+
+
+def test_run_history_rejects_paths_outside_runs_dir() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        outside = Path("outside")
+        outside.mkdir()
+        Path("runs").mkdir()
+        result = runner.invoke(cli, ["runs", "show", str(outside.resolve()), "--runs-dir", "runs"])
+
+        assert result.exit_code != 0
+        assert "invalid run reference" in result.output
+        try:
+            resolve_run_dir(Path("runs"), str(outside.resolve()))
+        except ValueError as exc:
+            assert "invalid run reference" in str(exc)
+        else:
+            raise AssertionError("absolute path should be rejected")
+
+
+def test_invalid_profile_names_are_rejected() -> None:
+    for name in [".", "..", "bad/name", "bad\\name", "bad name"]:
+        try:
+            WorkflowProfile(name=name)
+        except ValueError:
+            continue
+        raise AssertionError(f"profile name should be rejected: {name}")
 
 
 def test_monitor_start_and_run_once_use_artifact_state() -> None:

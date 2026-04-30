@@ -18,7 +18,16 @@ def render_html_report(run_dir: Path) -> Path:
     eval_payload = _read_optional_json(run_dir / "eval.json")
     train_payload = _read_optional_json(run_dir / "train.json")
     provider_payload = _read_optional_json(run_dir / "provider.json")
+    events = _read_jsonl(run_dir / "events.jsonl")
     forecasts = _read_jsonl(run_dir / "forecasts.jsonl")
+    artifact_links = []
+    for name in sorted(run.get("artifacts", {})):
+        path = Path(str(run["artifacts"][name]))
+        artifact_links.append(f"<li><code>{_escape(name)}</code> - {_escape(path.name)}</li>")
+    warning_rows = []
+    for event in events:
+        if event.get("event_type") in {"warning", "error"}:
+            warning_rows.append(f"<li>{_escape(event.get('timestamp'))}: {_escape(event.get('message') or event.get('error'))}</li>")
     rows = []
     for record in forecasts:
         output = record.get("output", record)
@@ -47,6 +56,10 @@ def render_html_report(run_dir: Path) -> Path:
   <p><strong>Status:</strong> {_escape(run.get("status"))} | <strong>Provider:</strong> {_escape(run.get("provider"))}</p>
   <h2>Summary</h2>
   <pre>{_escape(json.dumps(summary_payload, indent=2, sort_keys=True))}</pre>
+  <h2>Warnings and errors</h2>
+  <ul>{''.join(warning_rows) or '<li>None recorded</li>'}</ul>
+  <h2>Artifacts</h2>
+  <ul>{''.join(artifact_links)}</ul>
   <h2>Forecasts</h2>
   <table>
     <thead><tr><th>Question</th><th>Probability</th><th>Reasoning</th></tr></thead>
@@ -58,6 +71,8 @@ def render_html_report(run_dir: Path) -> Path:
   <pre>{_escape(json.dumps(train_payload, indent=2, sort_keys=True))}</pre>
   <h2>Provider</h2>
   <pre>{_escape(json.dumps(provider_payload, indent=2, sort_keys=True))}</pre>
+  <h2>Troubleshooting hints</h2>
+  <p>If provider-free mode passes but local LLM mode fails, check endpoint health, model context length, token budget, and GPU memory before debugging XRTM product code.</p>
 </body>
 </html>
 """

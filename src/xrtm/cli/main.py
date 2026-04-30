@@ -10,6 +10,17 @@ from rich.panel import Panel
 from rich.table import Table
 
 from xrtm.product.artifacts import ArtifactStore
+from xrtm.product.history import (
+    compare_runs,
+    export_run,
+    resolve_run_dir,
+)
+from xrtm.product.history import (
+    list_runs as list_run_history,
+)
+from xrtm.product.history import (
+    run_detail as history_run_detail,
+)
 from xrtm.product.monitoring import (
     list_monitors,
     load_monitor,
@@ -20,6 +31,7 @@ from xrtm.product.monitoring import (
 )
 from xrtm.product.observability import MonitorThresholds
 from xrtm.product.pipeline import PipelineOptions, package_versions, run_pipeline
+from xrtm.product.profiles import DEFAULT_PROFILES_DIR, ProfileStore, WorkflowProfile
 from xrtm.product.providers import local_llm_status
 from xrtm.product.reports import render_html_report
 from xrtm.product.tui import render_tui_once, run_tui
@@ -84,6 +96,87 @@ def demo(
     )
 
 
+@cli.group("profile")
+def profile_group() -> None:
+    """Create and reuse local workflow profiles."""
+
+
+@profile_group.command("create")
+@click.argument("name")
+@click.option("--profiles-dir", type=click.Path(file_okay=False, path_type=Path), default=DEFAULT_PROFILES_DIR, show_default=True)
+@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--limit", type=int, default=2, show_default=True, help="Number of real corpus questions to run.")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+@click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for --provider local-llm.")
+@click.option("--model", default=None, help="Local model id served by the endpoint.")
+@click.option("--max-tokens", type=int, default=768, show_default=True)
+@click.option("--no-report", is_flag=True, help="Skip static report.html generation.")
+@click.option("--overwrite", is_flag=True, help="Replace an existing profile with the same name.")
+def profile_create(
+    name: str,
+    profiles_dir: Path,
+    provider: str,
+    limit: int,
+    runs_dir: Path,
+    base_url: str | None,
+    model: str | None,
+    max_tokens: int,
+    no_report: bool,
+    overwrite: bool,
+) -> None:
+    """Save a repeatable product workflow profile."""
+
+    try:
+        profile = WorkflowProfile(
+            name=name,
+            provider=provider,
+            limit=limit,
+            runs_dir=str(runs_dir),
+            base_url=base_url,
+            model=model,
+            max_tokens=max_tokens,
+            write_report=not no_report,
+        )
+        path = ProfileStore(profiles_dir).create(profile, overwrite=overwrite)
+    except (FileExistsError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print(f"[green]Profile written:[/green] {path}")
+
+
+@profile_group.command("list")
+@click.option("--profiles-dir", type=click.Path(file_okay=False, path_type=Path), default=DEFAULT_PROFILES_DIR, show_default=True)
+def profile_list(profiles_dir: Path) -> None:
+    """List saved workflow profiles."""
+
+    table = Table(title="XRTM Profiles")
+    table.add_column("Name", style="cyan")
+    table.add_column("Provider", style="green")
+    table.add_column("Limit", justify="right")
+    table.add_column("Runs dir")
+    table.add_column("Model")
+    for profile in ProfileStore(profiles_dir).list_profiles():
+        table.add_row(profile.name, profile.provider, str(profile.limit), profile.runs_dir, profile.model or "")
+    console.print(table)
+
+
+@profile_group.command("show")
+@click.argument("name")
+@click.option("--profiles-dir", type=click.Path(file_okay=False, path_type=Path), default=DEFAULT_PROFILES_DIR, show_default=True)
+def profile_show(name: str, profiles_dir: Path) -> None:
+    """Show one workflow profile."""
+
+    try:
+        profile = ProfileStore(profiles_dir).load(name)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    table = Table(title=f"Profile {name}")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value", style="green")
+    for field, value in profile.to_json_dict().items():
+        table.add_row(field, str(value))
+    console.print(table)
+
+
 @cli.group()
 def run() -> None:
     """Run product workflows."""
@@ -123,6 +216,20 @@ def run_pipeline_command(
             command="xrtm run pipeline",
         )
     )
+
+
+@run.command("profile")
+@click.argument("name")
+@click.option("--profiles-dir", type=click.Path(file_okay=False, path_type=Path), default=DEFAULT_PROFILES_DIR, show_default=True)
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=None, help="Override the profile runs directory.")
+def run_profile_command(name: str, profiles_dir: Path, runs_dir: Path | None) -> None:
+    """Run a saved workflow profile."""
+
+    try:
+        profile = ProfileStore(profiles_dir).load(name)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    _run_pipeline_command(profile.to_pipeline_options(runs_dir=runs_dir))
 
 
 @cli.group()
@@ -169,6 +276,97 @@ def artifacts_cleanup(runs_dir: Path, keep: int, dry_run: bool) -> None:
     console.print(f"[green]Retention {action} {len(candidates)} run directorie(s).[/green]")
     for path in candidates:
         console.print(str(path))
+
+
+@cli.group("runs")
+def runs_group() -> None:
+    """Browse, compare, and export product run history."""
+
+
+@runs_group.command("list")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+@click.option("--status", default=None, help="Filter by run status.")
+@click.option("--provider", default=None, help="Filter by provider.")
+def runs_list(runs_dir: Path, status: str | None, provider: str | None) -> None:
+    """List run history."""
+
+    _print_runs_table(list_run_history(runs_dir, status=status, provider=provider), title="XRTM Runs")
+
+
+@runs_group.command("search")
+@click.argument("query")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+@click.option("--status", default=None, help="Filter by run status.")
+@click.option("--provider", default=None, help="Filter by provider.")
+def runs_search(query: str, runs_dir: Path, status: str | None, provider: str | None) -> None:
+    """Search run history by id, command, provider, or status."""
+
+    _print_runs_table(list_run_history(runs_dir, status=status, provider=provider, query=query), title="XRTM Run Search")
+
+
+@runs_group.command("show")
+@click.argument("run_ref")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+def runs_show(run_ref: str, runs_dir: Path) -> None:
+    """Show run details by run id."""
+
+    try:
+        run_dir = resolve_run_dir(runs_dir, run_ref)
+        detail = history_run_detail(run_dir)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    run = detail["run"]
+    summary = detail.get("summary", {})
+    table = Table(title=f"Run {run.get('run_id', run_dir.name)}")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value", style="green")
+    rows = {
+        "status": run.get("status"),
+        "provider": run.get("provider"),
+        "command": run.get("command"),
+        "forecasts": summary.get("forecast_count"),
+        "warnings": summary.get("warning_count"),
+        "errors": summary.get("error_count"),
+        "events": len(detail.get("events", [])),
+        "run_dir": str(run_dir),
+    }
+    for field, value in rows.items():
+        table.add_row(field, str(value))
+    console.print(table)
+
+
+@runs_group.command("compare")
+@click.argument("left")
+@click.argument("right")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+def runs_compare(left: str, right: str, runs_dir: Path) -> None:
+    """Compare two runs by id."""
+
+    try:
+        rows = compare_runs(resolve_run_dir(runs_dir, left), resolve_run_dir(runs_dir, right))
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    table = Table(title="XRTM Run Compare")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Left", style="green")
+    table.add_column("Right", style="yellow")
+    for row in rows:
+        table.add_row(str(row["metric"]), str(row["left"]), str(row["right"]))
+    console.print(table)
+
+
+@runs_group.command("export")
+@click.argument("run_ref")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path), required=True, help="Destination JSON file.")
+def runs_export(run_ref: str, runs_dir: Path, output: Path) -> None:
+    """Export one run as a portable JSON bundle."""
+
+    try:
+        path = export_run(resolve_run_dir(runs_dir, run_ref), output)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print(f"[green]Run exported:[/green] {path}")
 
 
 @cli.group("providers")
@@ -451,6 +649,27 @@ def _run_pipeline_command(options: PipelineOptions) -> None:
     table.add_row("Total seconds", f"{result.total_seconds:.3f}")
     console.print(table)
     console.print(f"[green]Artifacts:[/green] {result.run.run_dir}")
+
+
+def _print_runs_table(runs: list[dict], *, title: str) -> None:
+    table = Table(title=title)
+    table.add_column("Run", style="cyan", width=26, no_wrap=True)
+    table.add_column("Status", style="green")
+    table.add_column("Provider")
+    table.add_column("Forecasts", justify="right")
+    table.add_column("Warnings", justify="right")
+    table.add_column("Updated", style="dim", width=19)
+    for run in runs:
+        summary = run.get("summary", {})
+        table.add_row(
+            str(run.get("run_id")),
+            str(run.get("status")),
+            str(run.get("provider")),
+            str(summary.get("forecast_count", "")),
+            str(summary.get("warning_count", "")),
+            str(run.get("updated_at")),
+        )
+    console.print(table)
 
 
 def _print_local_llm_status(status: dict) -> None:
