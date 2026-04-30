@@ -14,6 +14,7 @@ def render_html_report(run_dir: Path) -> Path:
     """Render a static HTML report from a canonical run directory."""
 
     run = ArtifactStore.read_run(run_dir)
+    summary_payload = _read_optional_json(run_dir / "run_summary.json")
     eval_payload = _read_optional_json(run_dir / "eval.json")
     train_payload = _read_optional_json(run_dir / "train.json")
     provider_payload = _read_optional_json(run_dir / "provider.json")
@@ -44,6 +45,8 @@ def render_html_report(run_dir: Path) -> Path:
 <body>
   <h1>XRTM Run {html.escape(str(run.get("run_id", "")))}</h1>
   <p><strong>Status:</strong> {_escape(run.get("status"))} | <strong>Provider:</strong> {_escape(run.get("provider"))}</p>
+  <h2>Summary</h2>
+  <pre>{_escape(json.dumps(summary_payload, indent=2, sort_keys=True))}</pre>
   <h2>Forecasts</h2>
   <table>
     <thead><tr><th>Question</th><th>Probability</th><th>Reasoning</th></tr></thead>

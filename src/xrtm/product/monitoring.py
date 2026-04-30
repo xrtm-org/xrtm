@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -9,6 +10,13 @@ from uuid import uuid4
 from xrtm.data.corpora import load_real_binary_questions
 from xrtm.forecast.e2e import run_real_question_e2e
 from xrtm.product.artifacts import ArtifactStore, RunArtifact, utc_now
+from xrtm.product.observability import (
+    MONITOR_SCHEMA_VERSION,
+    MonitorThresholds,
+    evaluate_probability_threshold,
+    monitor_summary,
+    validate_monitor_state,
+)
 from xrtm.product.pipeline import package_versions
 from xrtm.product.providers import build_provider, provider_snapshot
 
@@ -21,6 +29,7 @@ def start_monitor(
     base_url: str | None = None,
     model: str | None = None,
     api_key: str | None = None,
+    thresholds: MonitorThresholds | None = None,
 ) -> RunArtifact:
     """Create a local-first monitor run with deterministic corpus watches."""
 
@@ -28,16 +37,18 @@ def start_monitor(
         raise ValueError("limit must be at least 1")
     store = ArtifactStore(runs_dir)
     run = store.create_run(command="xrtm monitor start", provider=provider, package_versions=package_versions())
+    monitor_thresholds = thresholds or MonitorThresholds()
     questions = load_real_binary_questions(limit=limit)
     watches = [
         {
             "watch_id": uuid4().hex[:12],
             "question_id": question.id,
             "title": question.title,
-            "status": "active",
+            "status": "created",
             "created_at": utc_now(),
             "updated_at": utc_now(),
             "trajectory": [],
+            "warnings": [],
             "errors": [],
         }
         for question in questions
@@ -47,10 +58,13 @@ def start_monitor(
         run,
         "monitor.json",
         {
-            "status": "running",
+            "schema_version": MONITOR_SCHEMA_VERSION,
+            "status": "created",
             "provider": provider,
             "base_url": base_url,
             "model": model,
+            "thresholds": monitor_thresholds.to_json_dict(),
+            "cycles": 0,
             "watches": watches,
             "updated_at": utc_now(),
         },
@@ -78,33 +92,54 @@ def run_monitor_once(
         raise ValueError("monitor is halted")
     if monitor.get("status") == "paused":
         raise ValueError("monitor is paused")
+    if monitor.get("status") == "failed":
+        raise ValueError("monitor is failed")
 
     active_provider_name = provider or monitor.get("provider") or run_payload.get("provider") or "mock"
     active_base_url = base_url or monitor.get("base_url")
     active_model = model or monitor.get("model")
-    active_provider = build_provider(
-        active_provider_name,
-        base_url=active_base_url,
-        model=active_model,
-        api_key=api_key,
-    )
     run = _run_from_payload(run_dir, run_payload)
-    store.write_json(run, "provider.json", provider_snapshot(active_provider, active_provider_name, base_url=active_base_url))
-    records = run_real_question_e2e(
-        limit=len(monitor.get("watches", [])),
-        provider=active_provider,
-        base_url=active_base_url,
-        model=active_model,
-        api_key=api_key,
-        max_tokens=max_tokens,
-        artifact_dir=run_dir / "logs",
-        write_artifacts=False,
-    )
+    thresholds = MonitorThresholds.from_payload(monitor.get("thresholds"))
+    store.append_event(run, "monitor_cycle_started", provider=active_provider_name, watches=len(monitor.get("watches", [])))
+    try:
+        active_provider = build_provider(
+            active_provider_name,
+            base_url=active_base_url,
+            model=active_model,
+            api_key=api_key,
+        )
+        store.write_json(run, "provider.json", provider_snapshot(active_provider, active_provider_name, base_url=active_base_url))
+        records = run_real_question_e2e(
+            limit=len(monitor.get("watches", [])),
+            provider=active_provider,
+            base_url=active_base_url,
+            model=active_model,
+            api_key=api_key,
+            max_tokens=max_tokens,
+            artifact_dir=run_dir / "logs",
+            write_artifacts=False,
+        )
+    except Exception as exc:
+        monitor["status"] = "failed"
+        monitor["updated_at"] = utc_now()
+        monitor.setdefault("errors", []).append(str(exc))
+        store.write_json(run, "monitor.json", monitor)
+        store.write_summary(run, monitor_summary(monitor))
+        store.append_event(run, "error", message=str(exc))
+        store.finish(run, status="failed", errors=[str(exc)])
+        raise
     output_by_id = {record.question_id: record.output for record in records}
+    warnings: list[str] = []
     for watch in monitor.get("watches", []):
         output = output_by_id.get(watch["question_id"])
         if output is None:
+            message = f"no forecast output returned for watch {watch['question_id']}"
+            watch.setdefault("warnings", []).append(message)
+            warnings.append(f"{watch['question_id']}: {message}")
+            watch["status"] = "degraded"
+            watch["updated_at"] = utc_now()
             continue
+        watch_warnings = evaluate_probability_threshold(watch=watch, probability=output.probability, thresholds=thresholds)
         watch.setdefault("trajectory", []).append(
             {
                 "timestamp": utc_now(),
@@ -112,24 +147,67 @@ def run_monitor_once(
                 "reasoning": output.reasoning,
             }
         )
+        if watch_warnings:
+            watch.setdefault("warnings", []).extend(watch_warnings)
+            warnings.extend(f"{watch['question_id']}: {message}" for message in watch_warnings)
+            watch["status"] = "degraded"
+        else:
+            watch["status"] = "running"
         watch["updated_at"] = utc_now()
     monitor["provider"] = active_provider_name
     monitor["base_url"] = active_base_url
     monitor["model"] = active_model
-    monitor["status"] = "running"
+    monitor["status"] = "degraded" if warnings else "running"
+    monitor["cycles"] = int(monitor.get("cycles", 0) or 0) + 1
     monitor["updated_at"] = utc_now()
     store.write_json(run, "monitor.json", monitor)
     store.write_jsonl(run, "forecasts.jsonl", [record.model_dump(mode="json") for record in records])
+    store.write_summary(run, monitor_summary(monitor))
+    for message in warnings:
+        store.append_event(run, "warning", message=message)
     store.append_event(run, "monitor_cycle_completed", records=len(records))
     store.finish(run, status="monitoring")
     return monitor
 
 
-def set_monitor_status(run_dir: Path, status: str) -> dict[str, Any]:
-    """Set monitor status to running, paused, or halted."""
+def run_monitor_daemon(
+    *,
+    run_dir: Path,
+    interval_seconds: float,
+    cycles: int,
+    provider: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    max_tokens: int = 768,
+) -> dict[str, Any]:
+    """Run a bounded local monitor loop with deterministic cycle count."""
 
-    if status not in {"running", "paused", "halted"}:
-        raise ValueError(f"unsupported monitor status: {status}")
+    if interval_seconds < 0:
+        raise ValueError("interval_seconds must be non-negative")
+    if cycles < 1:
+        raise ValueError("cycles must be at least 1")
+    monitor: dict[str, Any] = {}
+    for cycle in range(cycles):
+        monitor = run_monitor_once(
+            run_dir=run_dir,
+            provider=provider,
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            max_tokens=max_tokens,
+        )
+        if monitor.get("status") in {"halted", "failed"}:
+            break
+        if cycle < cycles - 1 and interval_seconds:
+            time.sleep(interval_seconds)
+    return monitor
+
+
+def set_monitor_status(run_dir: Path, status: str) -> dict[str, Any]:
+    """Set monitor status to a supported lifecycle state."""
+
+    validate_monitor_state(status)
     store = ArtifactStore(run_dir.parent)
     run_payload = store.read_run(run_dir)
     run = _run_from_payload(run_dir, run_payload)
@@ -137,7 +215,8 @@ def set_monitor_status(run_dir: Path, status: str) -> dict[str, Any]:
     monitor["status"] = status
     monitor["updated_at"] = utc_now()
     store.write_json(run, "monitor.json", monitor)
-    store.append_event(run, f"monitor_{status}")
+    store.write_summary(run, monitor_summary(monitor))
+    store.append_event(run, "monitor_status_changed", status=status)
     store.finish(run, status="monitoring" if status != "halted" else "halted")
     return monitor
 
@@ -188,6 +267,7 @@ def _run_from_payload(run_dir: Path, payload: dict[str, Any]) -> RunArtifact:
         updated_at=str(payload.get("updated_at", utc_now())),
         package_versions=dict(payload.get("package_versions", {})),
         artifacts=dict(payload.get("artifacts", {})),
+        summary=dict(payload.get("summary", {})),
         warnings=list(payload.get("warnings", [])),
         errors=list(payload.get("errors", [])),
     )
@@ -196,6 +276,7 @@ def _run_from_payload(run_dir: Path, payload: dict[str, Any]) -> RunArtifact:
 __all__ = [
     "list_monitors",
     "load_monitor",
+    "run_monitor_daemon",
     "run_monitor_once",
     "set_monitor_status",
     "start_monitor",

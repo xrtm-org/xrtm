@@ -45,10 +45,13 @@ runs/<run-id>/
   train.json
   provider.json
   events.jsonl
+  run_summary.json
   monitor.json
   report.html
   logs/
 ```
+
+`events.jsonl` is a versioned event stream (`xrtm.events.v1`) and `run_summary.json` is a compact metrics contract for CLI/TUI/WebUI consumers.
 
 Use `--provider local-llm` with a local OpenAI-compatible endpoint such as llama.cpp when you want a real local model path.
 
