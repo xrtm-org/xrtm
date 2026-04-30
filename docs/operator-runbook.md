@@ -177,6 +177,37 @@ http://127.0.0.1:8765/?provider=mock&q=202604
 http://127.0.0.1:8765/api/runs?status=completed
 ```
 
+## Performance and scale checks
+
+Use the deterministic provider-free performance harness for CI-safe local regression checks:
+
+```bash
+xrtm perf run \
+  --scenario provider-free-smoke \
+  --iterations 3 \
+  --limit 1 \
+  --runs-dir runs-perf \
+  --output performance.json \
+  --max-mean-seconds 10 \
+  --max-p95-seconds 15
+```
+
+The report uses the `xrtm.performance.v1` schema and includes per-iteration run ids, durations, forecast counts, Brier scores, total/mean/max/p95 duration, forecasts per second, and budget status.
+
+Scenarios:
+
+- `provider-free-smoke`: deterministic provider-free benchmark for regular local/CI use.
+- `provider-free-scale`: deterministic provider-free benchmark for larger limits or iteration counts.
+- `local-llm-smoke`: local OpenAI-compatible endpoint benchmark; use only when the local model server is healthy.
+
+Budget gates warn by default. Add `--fail-on-budget` when using the command as a hard release gate:
+
+```bash
+xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 --max-mean-seconds 10 --fail-on-budget
+```
+
+Performance runs intentionally use local relative paths for `--runs-dir` and `--output`; absolute paths and `..` traversal are rejected. The harness also caps `--iterations` at 100 and `--limit` at 1000 to prevent accidental resource exhaustion.
+
 Smoke mode for automation:
 
 ```bash

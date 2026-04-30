@@ -30,6 +30,7 @@ from xrtm.product.monitoring import (
     start_monitor,
 )
 from xrtm.product.observability import MonitorThresholds
+from xrtm.product.performance import PerformanceBudgetError, PerformanceOptions, run_performance_benchmark
 from xrtm.product.pipeline import PipelineOptions, package_versions, run_pipeline
 from xrtm.product.profiles import DEFAULT_PROFILES_DIR, ProfileStore, WorkflowProfile
 from xrtm.product.providers import local_llm_status
@@ -381,6 +382,79 @@ def providers_doctor(base_url: str | None) -> None:
 
     status = local_llm_status(base_url=base_url)
     _print_local_llm_status(status)
+
+
+@cli.group("perf")
+def perf_group() -> None:
+    """Run deterministic performance and scale checks."""
+
+
+@perf_group.command("run")
+@click.option(
+    "--scenario",
+    type=click.Choice(["provider-free-smoke", "provider-free-scale", "local-llm-smoke"]),
+    default="provider-free-smoke",
+    show_default=True,
+)
+@click.option("--iterations", type=int, default=3, show_default=True)
+@click.option("--limit", type=int, default=1, show_default=True)
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs-perf"), show_default=True)
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path), default=Path("performance.json"), show_default=True)
+@click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for local-llm scenarios.")
+@click.option("--model", default=None, help="Local model id served by the endpoint.")
+@click.option("--api-key", default=None, help="API key for the local endpoint; defaults to test/env.")
+@click.option("--max-tokens", type=int, default=768, show_default=True)
+@click.option("--max-mean-seconds", type=float, default=None, help="Warn or fail when mean iteration duration exceeds this.")
+@click.option("--max-p95-seconds", type=float, default=None, help="Warn or fail when p95 iteration duration exceeds this.")
+@click.option("--fail-on-budget", is_flag=True, help="Exit non-zero when a configured budget is exceeded.")
+def perf_run(
+    scenario: str,
+    iterations: int,
+    limit: int,
+    runs_dir: Path,
+    output: Path,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    max_tokens: int,
+    max_mean_seconds: float | None,
+    max_p95_seconds: float | None,
+    fail_on_budget: bool,
+) -> None:
+    """Run a bounded product performance benchmark."""
+
+    try:
+        report = run_performance_benchmark(
+            PerformanceOptions(
+                scenario=scenario,
+                iterations=iterations,
+                limit=limit,
+                runs_dir=runs_dir,
+                output=output,
+                base_url=base_url,
+                model=model,
+                api_key=api_key,
+                max_tokens=max_tokens,
+                max_mean_seconds=max_mean_seconds,
+                max_p95_seconds=max_p95_seconds,
+                fail_on_budget=fail_on_budget,
+            )
+        )
+    except (PerformanceBudgetError, ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    summary = report["summary"]
+    table = Table(title="XRTM Performance")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("Scenario", report["scenario"])
+    table.add_row("Iterations", str(report["iterations"]))
+    table.add_row("Forecasts", str(summary["forecast_records"]))
+    table.add_row("Mean seconds", f"{summary['mean_seconds']:.3f}")
+    table.add_row("P95 seconds", f"{summary['p95_seconds']:.3f}")
+    table.add_row("Forecasts/sec", f"{summary['forecasts_per_second']:.3f}")
+    table.add_row("Budget", str(report["budget"]["status"]))
+    table.add_row("Report", str(output))
+    console.print(table)
 
 
 @cli.group("monitor")

@@ -24,6 +24,7 @@ def test_help_exposes_product_commands() -> None:
     assert "artifacts" in result.output
     assert "profile" in result.output
     assert "runs" in result.output
+    assert "perf" in result.output
     assert "local-llm" in result.output
     assert "monitor" in result.output
     assert "tui" in result.output
@@ -78,6 +79,172 @@ def test_artifacts_inspect_requires_run_json() -> None:
 
         assert result.exit_code != 0
         assert "run.json" in result.output
+
+
+def test_performance_harness_writes_structured_report_and_budget_failures() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            cli,
+            [
+                "perf",
+                "run",
+                "--scenario",
+                "provider-free-smoke",
+                "--iterations",
+                "2",
+                "--limit",
+                "1",
+                "--runs-dir",
+                "runs-perf",
+                "--output",
+                "perf.json",
+                "--max-mean-seconds",
+                "60",
+            ],
+        )
+        report = json.loads(Path("perf.json").read_text(encoding="utf-8"))
+        failure = runner.invoke(
+            cli,
+            [
+                "perf",
+                "run",
+                "--iterations",
+                "1",
+                "--limit",
+                "1",
+                "--runs-dir",
+                "runs-perf-fail",
+                "--output",
+                "perf-fail.json",
+                "--max-mean-seconds",
+                "0.000001",
+                "--fail-on-budget",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert report["schema_version"] == "xrtm.performance.v1"
+        assert report["scenario"] == "provider-free-smoke"
+        assert report["provider"] == "mock"
+        assert report["iterations"] == 2
+        assert report["limit"] == 1
+        assert report["runs_dir"] == "runs-perf"
+        assert len(report["samples"]) == 2
+        assert {
+            "iteration",
+            "run_id",
+            "run_dir",
+            "duration_seconds",
+            "forecast_records",
+            "training_samples",
+            "eval_brier_score",
+            "train_brier_score",
+        } <= set(report["samples"][0])
+        assert report["samples"][0]["iteration"] == 1
+        assert report["samples"][0]["forecast_records"] == 1
+        assert report["summary"]["total_seconds"] > 0
+        assert report["summary"]["mean_seconds"] > 0
+        assert report["summary"]["max_seconds"] > 0
+        assert report["summary"]["p95_seconds"] > 0
+        assert report["summary"]["forecast_records"] == 2
+        assert report["summary"]["forecasts_per_second"] > 0
+        assert report["budget"]["status"] == "passed"
+        assert report["budget"]["max_mean_seconds"] == 60
+        assert report["budget"]["max_p95_seconds"] is None
+        assert report["budget"]["violations"] == []
+        assert failure.exit_code != 0
+        assert "exceeded budget" in failure.output
+
+
+def test_performance_harness_p95_scale_and_safety_gates() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        scale = runner.invoke(
+            cli,
+            [
+                "perf",
+                "run",
+                "--scenario",
+                "provider-free-scale",
+                "--iterations",
+                "1",
+                "--limit",
+                "1",
+                "--runs-dir",
+                "runs-scale",
+                "--output",
+                "scale.json",
+            ],
+        )
+        p95_failure = runner.invoke(
+            cli,
+            [
+                "perf",
+                "run",
+                "--iterations",
+                "1",
+                "--limit",
+                "1",
+                "--runs-dir",
+                "runs-p95",
+                "--output",
+                "p95.json",
+                "--max-p95-seconds",
+                "0.000001",
+                "--fail-on-budget",
+            ],
+        )
+        absolute_output = runner.invoke(
+            cli,
+            [
+                "perf",
+                "run",
+                "--iterations",
+                "1",
+                "--limit",
+                "1",
+                "--runs-dir",
+                "runs",
+                "--output",
+                str(Path.cwd() / "absolute.json"),
+            ],
+        )
+        traversal_runs = runner.invoke(
+            cli,
+            [
+                "perf",
+                "run",
+                "--iterations",
+                "1",
+                "--limit",
+                "1",
+                "--runs-dir",
+                "../runs",
+                "--output",
+                "perf.json",
+            ],
+        )
+        too_many_iterations = runner.invoke(
+            cli,
+            ["perf", "run", "--iterations", "101", "--limit", "1", "--runs-dir", "runs", "--output", "perf.json"],
+        )
+
+        assert scale.exit_code == 0, scale.output
+        scale_report = json.loads(Path("scale.json").read_text(encoding="utf-8"))
+        assert scale_report["scenario"] == "provider-free-scale"
+        assert scale_report["provider"] == "mock"
+        assert p95_failure.exit_code != 0
+        assert "p95_seconds" in p95_failure.output
+        assert "exceeded budget" in p95_failure.output
+        assert absolute_output.exit_code != 0
+        assert "output must be a relative path" in absolute_output.output
+        assert traversal_runs.exit_code != 0
+        assert "runs_dir may not contain '..'" in traversal_runs.output
+        assert too_many_iterations.exit_code != 0
+        assert "iterations must be at most 100" in too_many_iterations.output
 
 
 def test_profiles_and_run_history_commands_support_repeatable_workflows() -> None:
