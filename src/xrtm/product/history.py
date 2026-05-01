@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 from typing import Any
@@ -40,8 +41,25 @@ def list_runs(
     return rows
 
 
+def latest_run_dir(runs_dir: Path) -> Path:
+    """Return the newest canonical run directory under ``runs_dir``."""
+
+    if not runs_dir.exists():
+        raise FileNotFoundError(f"no canonical runs found under {runs_dir}")
+    for candidate in sorted((path for path in runs_dir.iterdir() if path.is_dir()), key=lambda path: path.name, reverse=True):
+        try:
+            ArtifactStore.read_run(candidate)
+        except FileNotFoundError:
+            continue
+        return candidate
+    raise FileNotFoundError(f"no canonical runs found under {runs_dir}")
+
+
 def resolve_run_dir(runs_dir: Path, run_ref: str) -> Path:
     """Resolve a run id under ``runs_dir``."""
+
+    if run_ref == "latest":
+        return latest_run_dir(runs_dir)
 
     if "/" in run_ref or "\\" in run_ref or run_ref in {"", ".", ".."}:
         raise ValueError("invalid run reference")
@@ -81,6 +99,7 @@ def compare_runs(left_dir: Path, right_dir: Path) -> list[dict[str, Any]]:
     for label, path in {
         "status": ("run", "status"),
         "provider": ("run", "provider"),
+        "user": ("run", "user"),
         "forecast_count": ("summary", "forecast_count"),
         "duration_seconds": ("summary", "duration_seconds"),
         "total_tokens": ("summary", "token_counts", "total_tokens"),
@@ -93,12 +112,102 @@ def compare_runs(left_dir: Path, right_dir: Path) -> list[dict[str, Any]]:
     return comparisons
 
 
-def export_run(run_dir: Path, output_path: Path) -> Path:
-    """Write a single portable JSON export for one run."""
-
+def export_run(run_dir: Path, output_path: Path, *, format: str = "json") -> Path:
+    """Write a single portable export for one run.
+    
+    Args:
+        run_dir: Directory containing the run artifacts
+        output_path: Destination file path
+        format: Export format, either "json" or "csv"
+        
+    Returns:
+        Path to the written export file
+    """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(run_detail(run_dir), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    
+    if format == "csv":
+        _export_run_csv(run_dir, output_path)
+    elif format == "json":
+        output_path.write_text(json.dumps(run_detail(run_dir), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    else:
+        raise ValueError(f"Unsupported export format: {format}")
+    
     return output_path
+
+
+def _export_run_csv(run_dir: Path, output_path: Path) -> None:
+    """Write forecasts as flattened CSV rows for spreadsheet/dataframe workflows."""
+    
+    detail = run_detail(run_dir)
+    run_metadata = detail["run"]
+    summary = detail.get("summary", {})
+    forecasts = detail.get("forecasts", [])
+    started_at = run_metadata.get("started_at") or run_metadata.get("created_at")
+    completed_at = run_metadata.get("completed_at") or run_metadata.get("updated_at")
+    
+    # Build flattened rows combining run metadata with each forecast
+    rows = []
+    for forecast in forecasts:
+        output = forecast.get("output", {}) if isinstance(forecast.get("output"), dict) else {}
+        question = forecast.get("question", {}) if isinstance(forecast.get("question"), dict) else {}
+        if not question and isinstance(output.get("question"), dict):
+            question = output["question"]
+        usage = (
+            forecast.get("provider_metadata", {}).get("usage")
+            or output.get("metadata", {}).get("raw_data", {}).get("usage")
+            or {}
+        )
+        row = {
+            # Run-level metadata
+            "run_id": run_metadata.get("run_id"),
+            "status": run_metadata.get("status"),
+            "provider": run_metadata.get("provider"),
+            "user": run_metadata.get("user"),
+            "started_at": started_at,
+            "completed_at": completed_at,
+            # Summary metrics
+            "duration_seconds": summary.get("duration_seconds"),
+            "total_tokens": summary.get("token_counts", {}).get("total_tokens"),
+            "eval_brier_score": summary.get("eval", {}).get("brier_score"),
+            "train_brier_score": summary.get("train", {}).get("brier_score"),
+            # Forecast-level fields
+            "question_id": forecast.get("question_id") or output.get("question_id"),
+            "question_text": question.get("question_text"),
+            "resolution_date": question.get("resolution_date"),
+            "forecast_probability": forecast.get("probability", output.get("probability")),
+            "forecast_confidence": forecast.get("confidence", output.get("confidence")),
+            "forecast_reasoning": forecast.get("reasoning", output.get("reasoning")),
+            "resolved": forecast.get("resolved", output.get("resolved")),
+            "outcome": forecast.get("outcome", output.get("outcome")),
+            "brier_score": forecast.get("brier_score", output.get("brier_score")),
+            "tokens_used": forecast.get("tokens") or usage.get("total_tokens"),
+        }
+        rows.append(row)
+    
+    # Write CSV with consistent column ordering
+    if rows:
+        fieldnames = [
+            "run_id", "status", "provider", "user", "started_at", "completed_at",
+            "duration_seconds", "total_tokens", "eval_brier_score", "train_brier_score",
+            "question_id", "question_text", "resolution_date",
+            "forecast_probability", "forecast_confidence", "forecast_reasoning",
+            "resolved", "outcome", "brier_score", "tokens_used",
+        ]
+        with output_path.open("w", encoding="utf-8", newline="") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+    else:
+        # Write empty CSV with headers
+        with output_path.open("w", encoding="utf-8", newline="") as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow([
+                "run_id", "status", "provider", "user", "started_at", "completed_at",
+                "duration_seconds", "total_tokens", "eval_brier_score", "train_brier_score",
+                "question_id", "question_text", "resolution_date",
+                "forecast_probability", "forecast_confidence", "forecast_reasoning",
+                "resolved", "outcome", "brier_score", "tokens_used",
+            ])
 
 
 def _search_text(run: dict[str, Any]) -> str:
@@ -108,6 +217,7 @@ def _search_text(run: dict[str, Any]) -> str:
         run.get("provider"),
         run.get("command"),
         run.get("run_dir"),
+        run.get("user"),
     ]
     return " ".join(str(value) for value in values if value is not None)
 
@@ -127,4 +237,4 @@ def _nested_get(payload: dict[str, Any], path: tuple[str, ...]) -> Any:
     return value
 
 
-__all__ = ["compare_runs", "export_run", "list_runs", "resolve_run_dir", "run_detail"]
+__all__ = ["compare_runs", "export_run", "latest_run_dir", "list_runs", "resolve_run_dir", "run_detail"]

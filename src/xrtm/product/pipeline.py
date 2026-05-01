@@ -27,6 +27,8 @@ class PipelineOptions:
 
     provider: str = "mock"
     limit: int = 2
+    questions: tuple[Any, ...] | None = None
+    corpus_id: str = "xrtm-real-binary-v1"
     runs_dir: Path = Path("runs")
     base_url: str | None = None
     model: str | None = None
@@ -34,6 +36,7 @@ class PipelineOptions:
     max_tokens: int = 768
     write_report: bool = True
     command: str = "xrtm run pipeline"
+    user: str | None = None
 
 
 @dataclass(frozen=True)
@@ -53,11 +56,21 @@ def run_pipeline(options: PipelineOptions) -> PipelineResult:
 
     if options.limit < 1:
         raise ValueError("limit must be at least 1")
+    questions = list(options.questions)[: options.limit] if options.questions is not None else load_real_binary_questions(limit=options.limit)
+    if not questions:
+        raise ValueError("selected corpus did not yield any questions")
     store = ArtifactStore(options.runs_dir)
-    run = store.create_run(command=options.command, provider=options.provider, package_versions=package_versions())
+    run = store.create_run(command=options.command, provider=options.provider, package_versions=package_versions(), user=options.user)
     start = time.perf_counter()
     try:
-        store.append_event(run, "run_started", provider=options.provider, limit=options.limit)
+        store.append_event(
+            run,
+            "run_started",
+            provider=options.provider,
+            limit=len(questions),
+            requested_limit=options.limit,
+            corpus_id=options.corpus_id,
+        )
         provider = build_provider(
             options.provider,
             base_url=options.base_url,
@@ -67,11 +80,18 @@ def run_pipeline(options: PipelineOptions) -> PipelineResult:
         provider_info = provider_snapshot(provider, options.provider, base_url=options.base_url)
         store.write_json(run, "provider.json", provider_info)
 
-        questions = load_real_binary_questions(limit=options.limit)
         store.write_jsonl(run, "questions.jsonl", [question.model_dump(mode="json") for question in questions])
-        store.append_event(run, "provider_request_started", questions=len(questions), provider=options.provider)
+        store.append_event(
+            run,
+            "provider_request_started",
+            questions=len(questions),
+            provider=options.provider,
+            corpus_id=options.corpus_id,
+        )
         records = run_real_question_e2e(
-            limit=options.limit,
+            limit=len(questions),
+            questions=questions,
+            corpus_id=options.corpus_id,
             provider=provider,
             base_url=options.base_url,
             model=options.model,
@@ -81,8 +101,20 @@ def run_pipeline(options: PipelineOptions) -> PipelineResult:
             write_artifacts=False,
         )
         store.write_jsonl(run, "forecasts.jsonl", [record.model_dump(mode="json") for record in records])
-        store.append_event(run, "provider_request_completed", records=len(records), provider=options.provider)
-        store.append_event(run, "forecast_written", records=len(records), artifact="forecasts.jsonl")
+        store.append_event(
+            run,
+            "provider_request_completed",
+            records=len(records),
+            provider=options.provider,
+            corpus_id=options.corpus_id,
+        )
+        store.append_event(
+            run,
+            "forecast_written",
+            records=len(records),
+            artifact="forecasts.jsonl",
+            corpus_id=options.corpus_id,
+        )
 
         eval_report = evaluate_resolved_forecasts(records)
         eval_payload = _eval_payload(eval_report)
@@ -139,7 +171,15 @@ def run_pipeline(options: PipelineOptions) -> PipelineResult:
         raise
 
 
+_PACKAGE_VERSION_CACHE: dict[str, str] | None = None
+
+
 def package_versions() -> dict[str, str]:
+    """Get package versions with caching for performance."""
+    global _PACKAGE_VERSION_CACHE
+    if _PACKAGE_VERSION_CACHE is not None:
+        return _PACKAGE_VERSION_CACHE
+    
     packages = ["xrtm", "xrtm-data", "xrtm-eval", "xrtm-forecast", "xrtm-train"]
     versions = {}
     for package in packages:
@@ -147,6 +187,8 @@ def package_versions() -> dict[str, str]:
             versions[package] = version(package)
         except PackageNotFoundError:
             versions[package] = "unknown"
+    
+    _PACKAGE_VERSION_CACHE = versions
     return versions
 
 

@@ -2,6 +2,10 @@
 
 This runbook covers the supported local-first operating path for the top-level `xrtm` product shell.
 
+For merge and release gate requirements, see `governance/policies/pr-acceptance-policy.md` and `governance/policies/release-readiness-policy.md`.
+
+**For multi-user and institutional team workflows**, see `team-workflows.md`.
+
 ## Supported environment
 
 Use Python `>=3.11,<3.13`.
@@ -32,6 +36,15 @@ xrtm doctor
 Profiles save repeatable local workflow settings so you do not have to retype provider, corpus limit, token budget, model, and run directory options.
 
 ```bash
+xrtm profile starter my-local --runs-dir runs
+xrtm run profile my-local
+```
+
+Use `profile starter` right after `xrtm start` when you want the lightest reusable local scaffold. It creates the default `.xrtm/profiles/<name>.json`, keeps `provider=mock`, sets `limit=5`, and ensures the target runs directory exists.
+
+For full control, use the regular profile command:
+
+```bash
 xrtm profile create local-mock --provider mock --limit 2 --runs-dir runs
 xrtm profile list
 xrtm profile show local-mock
@@ -39,6 +52,24 @@ xrtm run profile local-mock
 ```
 
 Profiles are stored under `.xrtm/profiles` by default. Use `--profiles-dir` when you want project-specific or test-specific profile storage.
+
+### User attribution
+
+Use `--user` to tag runs with analyst or team member attribution. This helps track which person or workflow initiated a run when reviewing history or comparing results across desks:
+
+```bash
+xrtm demo --provider mock --limit 2 --runs-dir runs --user alice
+xrtm run pipeline --provider mock --limit 5 --user bob
+xrtm profile create team-profile --provider mock --limit 10 --user team-alpha
+```
+
+User attribution appears in:
+- `run.json` metadata
+- CSV exports (`user` column)
+- JSON exports (`run.user` field)
+- Run search (searchable via `xrtm runs search <username>`)
+
+User attribution is optional and backward-compatible. Runs without `--user` will have `user: null` in artifacts.
 
 ## Provider-free smoke
 
@@ -53,15 +84,56 @@ Provider-free mode does not call hosted APIs.
 
 ## Local LLM smoke
 
-Run local LLM mode only when an OpenAI-compatible endpoint is available, such as llama.cpp:
+⚠️ **Prerequisites**: Run this workflow only after completing local-llm server setup and health verification.
+
+**When to use**: Testing real LLM behavior locally, privacy-sensitive deployments, or offline operation.
+
+**Setup time**: 30-60 minutes for first-time setup (model download, server configuration).
+
+### Step 1: Verify Prerequisites
+
+Before running local-llm mode, ensure:
+
+1. **Local inference server is running** (llama.cpp, Ollama, LocalAI, etc.)
+2. **Model weights are downloaded** (multi-GB GGUF files)
+3. **GPU has sufficient VRAM** (4GB+ for Q4 quantized 7B models)
+4. **Server is OpenAI-compatible** (supports `/v1/chat/completions` endpoint)
+
+### Step 2: Health Check
 
 ```bash
 export XRTM_LOCAL_LLM_BASE_URL=http://localhost:8080/v1
 xrtm local-llm status
+```
+
+**Expected output**:
+```
+✓ Endpoint: http://localhost:8080/v1
+✓ Health check: PASS
+✓ Models available: 1
+```
+
+If health check fails, see the [Troubleshooting](#local-llm-issues) section.
+
+### Step 3: Run Local-LLM Demo
+
+Run local LLM mode only when the health check passes:
+
+```bash
 xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local
 ```
 
-If `xrtm local-llm status` reports the endpoint as unavailable, start or fix the local model server before running the demo.
+**Expected runtime**: 10-90 seconds depending on hardware and token budget.
+
+**Token budget guidance**:
+- Testing: `--max-tokens 768`
+- Production: `--max-tokens 2048`
+- Maximum: Check your model's context length (usually 4096-8192)
+
+If the demo fails, the issue is typically:
+- GPU out of memory (reduce model size or token budget)
+- Context length exceeded (reduce `--max-tokens`)
+- Model output invalid (use larger or less-quantized model)
 
 ## Canonical artifacts
 
@@ -103,6 +175,8 @@ xrtm artifacts inspect runs/<run-id>
 xrtm report html runs/<run-id>
 ```
 
+`xrtm artifacts inspect` prints the canonical artifact inventory with present/missing status and on-disk locations, which is useful for first-run review and troubleshooting.
+
 Browse run history without reading JSON files directly:
 
 ```bash
@@ -111,9 +185,12 @@ xrtm runs search mock --runs-dir runs
 xrtm runs show <run-id> --runs-dir runs
 xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs
 xrtm runs export <run-id> --runs-dir runs --output export.json
+xrtm runs export <run-id> --runs-dir runs --output export.csv --format csv
 ```
 
-`runs compare` focuses on operationally important summary fields such as status, provider, forecast count, duration, token totals, Brier scores, warnings, and errors. `runs export` writes one portable JSON bundle with run metadata, summary, events, forecasts, eval/train payloads, provider metadata, and monitor state when available.
+`runs compare` focuses on operationally important summary fields such as status, provider, forecast count, duration, token totals, Brier scores, warnings, and errors. `runs export` writes portable exports in JSON or CSV format. JSON format provides one complete bundle with run metadata, summary, events, forecasts, eval/train payloads, provider metadata, and monitor state when available. CSV format flattens forecasts into spreadsheet-friendly rows, combining run-level metadata with each forecast for convenient analysis in Excel, Pandas, or R.
+
+If you need a reusable Python ETL layer, SQLite/Parquet outputs, or multi-run transforms beyond the built-in CLI export, see the [Data Export integration pattern](../examples/integration/data-export/).
 
 Apply the local retention policy:
 
@@ -156,6 +233,8 @@ xrtm monitor start --provider mock --limit 2 --probability-delta 0.10 --confiden
 
 If an update crosses a configured probability or confidence threshold, the monitor becomes `degraded`, watch-level warnings are persisted, and matching `warning` events are appended to `events.jsonl`.
 
+If you need custom cron/systemd scheduling, bespoke Markdown reports, or your own notification hooks, see the [Scheduled Monitor integration pattern](../examples/integration/scheduled-monitor/). That example is separate from the shipped `xrtm monitor ...` lifecycle above.
+
 ## TUI and WebUI
 
 Terminal cockpit:
@@ -187,14 +266,38 @@ xrtm perf run \
   --iterations 3 \
   --limit 1 \
   --runs-dir runs-perf \
-  --output performance.json \
-  --max-mean-seconds 10 \
-  --max-p95-seconds 15
+  --output performance.json
 ```
 
 The report uses the `xrtm.performance.v1` schema and includes per-iteration run ids, durations, forecast counts, Brier scores, total/mean/max/p95 duration, forecasts per second, and budget status.
 
-Scenarios:
+### Default Performance Budgets
+
+Each scenario has default budgets for regression detection:
+
+- **provider-free-smoke** (limit=10):
+  - Mean iteration: 50ms
+  - P95 iteration: 100ms
+- **provider-free-scale** (limit=100):
+  - Mean iteration: 500ms
+  - P95 iteration: 1000ms
+- **local-llm-smoke**: No default budget (hardware-dependent)
+
+Override budgets explicitly when needed:
+
+```bash
+xrtm perf run \
+  --scenario provider-free-smoke \
+  --iterations 5 \
+  --limit 10 \
+  --max-mean-seconds 0.040 \
+  --max-p95-seconds 0.080 \
+  --fail-on-budget
+```
+
+The `--fail-on-budget` flag causes the command to exit with a non-zero status if budgets are exceeded, suitable for CI gates.
+
+### Scenarios:
 
 - `provider-free-smoke`: deterministic provider-free benchmark for regular local/CI use.
 - `provider-free-scale`: deterministic provider-free benchmark for larger limits or iteration counts.
@@ -214,20 +317,258 @@ Smoke mode for automation:
 xrtm web --runs-dir runs --smoke
 ```
 
+### Benchmark corpus policy
+
+The current performance scenarios use the `xrtm-real-binary-v1` corpus, a minimal deterministic fixture embedded in `xrtm-data`. For comprehensive release-gate benchmarks, XRTM will adopt **ForecastBench** as the primary Tier 1 source.
+
+**Source classification:**
+- **Tier 1 (Release-gate approved)**: ForecastBench (preferred), xrtm-real-binary-v1 (seed corpus)
+- **Tier 2 (Evaluation-only)**: FOReCAst (research/non-commercial license, requires approval for release claims)
+- **Tier 3 (Optional supplemental)**: Metaculus snapshots (not required for release gates), Polymarket (pending review)
+
+See `data/docs/benchmark-corpus-policy.md` for detailed licensing, provenance, and implementation requirements.
+
+## Large-Scale Validation
+
+The validation harness provides corpus-aware benchmarking with tier/license enforcement and split support:
+
+```bash
+# List available corpora
+xrtm validate list-corpora
+xrtm validate list-corpora --release-gate-only
+
+# Prepare the external FOReCAst cache for large offline sweeps
+xrtm validate prepare-corpus --corpus-id forecast-v1
+
+# Deterministic preview only (useful for CI/docs, not large-scale counts)
+xrtm validate prepare-corpus --corpus-id forecast-v1 --fixture-preview --refresh
+
+# Run validation with default corpus (Tier 1, safe for CI)
+xrtm validate run --provider mock --limit 10 --iterations 2
+
+# Run with specific corpus and split
+xrtm validate run \
+  --corpus-id xrtm-real-binary-v1 \
+  --split train \
+  --provider mock \
+  --limit 50 \
+  --iterations 5 \
+  --output-dir .cache/validation
+
+# Release-gate mode (enforces Tier 1 corpus requirement)
+xrtm validate run \
+  --corpus-id xrtm-real-binary-v1 \
+  --release-gate-mode \
+  --provider mock \
+  --limit 100 \
+  --iterations 10
+```
+
+**Source modes:**
+
+- `bundled` = embedded corpus shipped with XRTM
+- `preview` = deterministic fixture preview for an external corpus
+- `external-cache` = full external dataset cached locally for offline reuse
+
+`forecast-v1` is registered as Tier 2 and evaluation-only. If you run it without preparing the cache first, XRTM falls back to the small deterministic preview and tells you so in the validation output.
+
+**Validation artifacts:**
+
+Each validation run produces a structured JSON artifact using the `xrtm.validation.v1` schema:
+
+```json
+{
+  "schema_version": "xrtm.validation.v1",
+  "corpus": {
+    "corpus_id": "xrtm-real-binary-v1",
+    "tier": "tier-1",
+    "license": "apache-2.0",
+    "release_gate_approved": true
+  },
+  "summary": {
+    "total_duration_seconds": 12.5,
+    "total_forecasts": 100,
+    "forecasts_per_second": 8.0,
+    "mean_iteration_seconds": 2.5,
+    "p95_iteration_seconds": 2.8
+  }
+}
+```
+
+**Performance expectations:**
+
+Provider-free validation runs achieve ~250-300 forecasts/second on typical hardware. Actual throughput depends on:
+- Limit size (larger batches amortize overhead)
+- Iteration count (package version caching helps multi-iteration runs)
+- Artifact writing (disable with `--no-write-artifacts` for pure benchmarking)
+- Question complexity (affects evaluation and backtest runtime)
+
+For performance regression monitoring, use the dedicated `xrtm perf` command with default budgets rather than the validation harness.
+
+**Local-LLM stress testing:**
+
+Local-LLM validation is bounded by default for safety. Use explicit opt-in for unbounded runs:
+
+```bash
+# Safe default (limit capped at 10)
+xrtm validate run --provider local-llm --limit 10
+
+# Unbounded mode (USE WITH CAUTION)
+xrtm validate run \
+  --provider local-llm \
+  --limit 500 \
+  --allow-unsafe-local-llm \
+  --base-url http://localhost:8080/v1
+```
+
+**Corpus registry integration:**
+
+The validation harness uses the corpus registry infrastructure for:
+- Tier and license classification
+- Release-gate approval filtering
+- Split-aware validation (train/eval/held-out)
+- Provenance tracking
+
+See `data/docs/corpus-infrastructure-guide.md` for corpus registry API and importer details.
+
 ## Troubleshooting
 
-### `xrtm` does not install on Python 3.13
+### Provider Setup Issues
+
+#### Choosing Between Mock and Local-LLM
+
+**Problem**: Not sure which provider to use?
+
+**Decision guide**:
+- **Use `--provider mock`** (provider-free mode) when:
+  - Learning XRTM
+  - Writing tests or CI/CD pipelines
+  - Benchmarking performance
+  - You need deterministic results
+  - You want to start immediately with zero setup
+
+- **Use `--provider local-llm`** when:
+  - Testing real LLM reasoning behavior
+  - Privacy-sensitive deployments
+  - Offline operation requirements
+  - You have already set up a local inference server
+
+**Recommendation**: Start with `--provider mock`. Only switch to `local-llm` when you need real LLM behavior and have completed the server setup.
+
+### Installation Issues
+
+#### `xrtm` does not install on Python 3.13
 
 This is expected. Use Python 3.11 or 3.12.
 
-### `xrtm local-llm status` is unavailable
+### Local-LLM Issues
 
-Check that the local model server is running and that `XRTM_LOCAL_LLM_BASE_URL` points to its OpenAI-compatible `/v1` endpoint.
+#### `xrtm local-llm status` reports unavailable
 
-### A run directory cannot be inspected
+**Symptom**:
+```
+✗ Endpoint health check failed
+```
+
+**Root cause checklist**:
+1. **Server not running**
+   - Check: `ps aux | grep llama-server` or equivalent
+   - Fix: Start your local model server first
+
+2. **Wrong base URL**
+   - Check: `echo $XRTM_LOCAL_LLM_BASE_URL`
+   - Fix: Ensure URL ends with `/v1` and matches server port
+   ```bash
+   export XRTM_LOCAL_LLM_BASE_URL=http://localhost:8080/v1
+   ```
+
+3. **Server still loading model**
+   - Check: Server logs for "HTTP server listening" message
+   - Fix: Wait 10-60 seconds for model loading to complete
+
+4. **Network/firewall issue**
+   - Check: `curl http://localhost:8080/health`
+   - Fix: Verify localhost is accessible, check firewall rules
+
+**Quick diagnostic**:
+```bash
+# Test basic connectivity
+curl http://localhost:8080/health
+
+# Test OpenAI-compatible endpoint
+curl http://localhost:8080/v1/models
+
+# Test with XRTM
+xrtm local-llm status --base-url http://localhost:8080/v1
+```
+
+All three should succeed for local-llm mode to work.
+
+#### Provider-free smoke passes but local LLM smoke fails
+
+**Symptom**: `xrtm demo --provider mock` works, but `xrtm demo --provider local-llm` fails.
+
+**Diagnosis**: This is a local model/server issue, not an XRTM product issue.
+
+**Verification steps**:
+1. Check endpoint health:
+   ```bash
+   xrtm local-llm status
+   ```
+   
+2. Verify GPU availability:
+   ```bash
+   nvidia-smi
+   ```
+   
+3. Check token budget vs model context:
+   - Most models: 4096-8192 token max context
+   - Your request: Check `--max-tokens` value
+   - Fix: Reduce token budget if exceeding context
+
+4. Check GPU memory:
+   - 7B Q4 model: ~4-6GB VRAM needed
+   - 13B Q4 model: ~8-10GB VRAM needed
+   - Fix: Use smaller/more quantized model or reduce batch size
+
+**Common fixes**:
+```bash
+# Reduce token budget
+xrtm demo --provider local-llm --limit 1 --max-tokens 512
+
+# Check server logs for OOM or context length errors
+# Restart server with fewer GPU layers if OOM
+```
+
+#### Local-LLM runs are extremely slow
+
+**Symptom**: Each forecast takes 5+ minutes (expected: 10-90 seconds).
+
+**Causes and solutions**:
+1. **GPU not being used**: Server started without `--n-gpu-layers`
+   ```bash
+   nvidia-smi  # Should show GPU utilization during forecast
+   ```
+   Fix: Restart server with GPU acceleration enabled
+
+2. **Model too large for VRAM**: Falls back to CPU
+   Fix: Use more aggressive quantization (Q4) or smaller model
+
+3. **Token budget unnecessarily high**
+   Fix: Start with `--max-tokens 768`, increase only if needed
+
+**Performance expectations** (RTX 3090, Qwen 7B Q4):
+- 768 tokens: 10-30 seconds per forecast
+- 2048 tokens: 30-90 seconds per forecast
+
+If significantly slower, GPU is likely not in use.
+
+### Run Artifact Issues
+
+#### A run directory cannot be inspected
 
 `xrtm artifacts inspect` requires `run.json`. If it is missing, the directory is not a canonical XRTM run artifact.
 
-### Provider-free smoke passes but local LLM smoke fails
+**Cause**: Run failed before `run.json` was written.
 
-Treat this as a local model/server issue unless the provider code changed. Verify endpoint health, context length, token budget, and GPU memory before debugging XRTM product code.
+**Fix**: Delete incomplete directory and run again. Check warnings/errors in terminal output.

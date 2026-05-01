@@ -1,0 +1,38 @@
+[
+  {
+    "id": "econ_1",
+    "question": "Will US unemployment rate exceed 5% by December 2027?",
+    "resolution_date": "2027-12-31",
+    "metadata": {
+      "category": "economics",
+      "source": "manual"
+    }
+  },
+  {
+    "id": "tech_1",
+    "question": "Will SpaceX successfully land humans on Mars before 2030?",
+    "resolution_date": "2030-01-01",
+    "metadata": {
+      "category": "space",
+      "source": "manual"
+    }
+  },
+  {
+    "id": "climate_1",
+    "question": "Will global average temperature increase by more than 1.5°C above pre-industrial levels by 2028?",
+    "resolution_date": "2028-12-31",
+    "metadata": {
+      "category": "climate",
+      "source": "manual"
+    }
+  },
+  {
+    "id": "ai_1",
+    "question": "Will an AI system pass a comprehensive Turing test by end of 2026?",
+    "resolution_date": "2026-12-31",
+    "metadata": {
+      "category": "ai",
+      "source": "manual"
+    }
+  }
+]

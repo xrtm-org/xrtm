@@ -1,0 +1,38 @@
+{
+  "questions": [
+    {
+      "id": "market_volatility",
+      "question": "Will the VIX volatility index exceed 30 in the next 30 days?",
+      "resolution_date": "2026-06-01",
+      "track_trend": true
+    },
+    {
+      "id": "inflation",
+      "question": "Will US inflation rate exceed 3% by end of year?",
+      "resolution_date": "2026-12-31",
+      "track_trend": true
+    },
+    {
+      "id": "tech_adoption",
+      "question": "Will AI coding assistants be used by more than 50% of developers by 2027?",
+      "resolution_date": "2027-12-31",
+      "track_trend": true
+    }
+  ],
+  "notifications": {
+    "email": {
+      "enabled": false,
+      "recipients": ["team@example.com"],
+      "smtp_host": "smtp.example.com",
+      "smtp_port": 587
+    },
+    "webhook": {
+      "enabled": false,
+      "url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    }
+  },
+  "alerts": {
+    "confidence_delta": 0.10,
+    "notification_channels": ["email", "webhook"]
+  }
+}

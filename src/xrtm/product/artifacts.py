@@ -29,6 +29,7 @@ class RunArtifact:
     summary: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    user: str | None = None
 
     def to_json_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -42,7 +43,7 @@ class ArtifactStore:
     def __init__(self, root: Path) -> None:
         self.root = root
 
-    def create_run(self, *, command: str, provider: str, package_versions: dict[str, str]) -> RunArtifact:
+    def create_run(self, *, command: str, provider: str, package_versions: dict[str, str], user: str | None = None) -> RunArtifact:
         now = utc_now()
         run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
         run_dir = self.root / run_id
@@ -57,6 +58,7 @@ class ArtifactStore:
             created_at=now,
             updated_at=now,
             package_versions=package_versions,
+            user=user,
         )
         self.write_json(run, "run.json", run.to_json_dict())
         self.write_json(run, "monitor.json", {"status": "idle", "watches": []})
@@ -123,20 +125,34 @@ def utc_now() -> str:
 
 
 def to_json_safe(value: Any) -> Any:
-    """Convert Pydantic/dataclass/datetime-rich objects into JSON-safe values."""
-
+    """Convert Pydantic/dataclass/datetime-rich objects into JSON-safe values.
+    
+    Optimized for common types with fast-path handling.
+    """
+    # Fast path for primitives (most common case)
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    
+    # Fast path for datetime and Path (second most common)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Path):
+        return str(value)
+    
+    # Handle Pydantic models and objects with custom serializers
     if hasattr(value, "model_dump"):
         return to_json_safe(value.model_dump(mode="json"))
     if hasattr(value, "to_json_dict"):
         return to_json_safe(value.to_json_dict())
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, datetime):
-        return value.isoformat()
+    
+    # Handle collections
     if isinstance(value, dict):
         return {str(key): to_json_safe(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, (list, tuple)):
         return [to_json_safe(item) for item in value]
+    if isinstance(value, set):
+        return [to_json_safe(item) for item in value]
+    
     return value
 
 
