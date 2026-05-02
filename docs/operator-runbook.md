@@ -2,10 +2,11 @@
 
 This runbook covers the supported local-first operating path for the top-level `xrtm` product shell.
 
-For merge, cross-repo coordination, and release gate requirements, see the governance repo's PR acceptance policy, cross-repo compatibility policy, and release readiness policy:
+For merge, cross-repo coordination, release-train operation, and release gate requirements, see the governance repo's PR acceptance policy, cross-repo compatibility policy, release train playbook, and release readiness policy:
 
 - `../../governance/policies/pr-acceptance-policy.md`
 - `../../governance/policies/cross-repo-compatibility-policy.md`
+- `../../governance/policies/release-train-playbook.md`
 - `../../governance/policies/release-readiness-policy.md`
 
 **For multi-user and institutional team workflows**, see `team-workflows.md`.
@@ -15,6 +16,8 @@ For merge, cross-repo coordination, and release gate requirements, see the gover
 Use Python `>=3.11,<3.13`.
 
 Python 3.13 is not currently supported because the full dependency stack has not been validated there. The published packages intentionally reject unsupported Python versions.
+
+For coordinated, unpublished upstream changes, rerun the `xrtm` CI workflow with `workflow_dispatch` and explicit `data_ref`, `eval_ref`, `forecast_ref`, and `train_ref` inputs. Record the exact refs and workflow run URL in the linked coordination issue or PR family rather than relying on same-name sibling branches.
 
 ## Install
 
