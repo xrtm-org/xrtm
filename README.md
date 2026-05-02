@@ -116,6 +116,8 @@ The top-level `xrtm` package is the product-facing workbench. It installs and co
 | **xrtm-eval** | [![PyPI](https://img.shields.io/pypi/v/xrtm-eval?style=flat-square)](https://pypi.org/project/xrtm-eval/) | Evaluation metrics, scoring, and calibration tooling |
 | **xrtm-train** | [![PyPI](https://img.shields.io/pypi/v/xrtm-train?style=flat-square)](https://pypi.org/project/xrtm-train/) | Training and optimization pipeline components |
 
+Maintainers should use the governance repo's [Cross-Repository Compatibility and Coordination Policy](https://github.com/xrtm-org/governance/blob/main/policies/cross-repo-compatibility-policy.md) for coordinated changes across `data`, `forecast`, `xrtm`, and `xrtm.org`. `xrtm` should validate against explicit released or candidate upstream refs, not same-name sibling branches or hidden branch aliases.
+
 ## Documentation
 
 - [Getting Started Guide](docs/getting-started.md)

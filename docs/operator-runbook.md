@@ -2,7 +2,11 @@
 
 This runbook covers the supported local-first operating path for the top-level `xrtm` product shell.
 
-For merge and release gate requirements, see `governance/policies/pr-acceptance-policy.md` and `governance/policies/release-readiness-policy.md`.
+For merge, cross-repo coordination, and release gate requirements, see the governance repo's PR acceptance policy, cross-repo compatibility policy, and release readiness policy:
+
+- `../../governance/policies/pr-acceptance-policy.md`
+- `../../governance/policies/cross-repo-compatibility-policy.md`
+- `../../governance/policies/release-readiness-policy.md`
 
 **For multi-user and institutional team workflows**, see `team-workflows.md`.
 
