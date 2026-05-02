@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 from pathlib import Path
-from shlex import quote as shell_quote
 
 import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from xrtm.cli.presenters import (
+    canonical_artifact_inventory,
+    pipeline_result_title,
+    pipeline_success_details,
+    print_local_llm_status,
+    print_pipeline_result,
+    print_post_run_summary,
+    print_prepared_corpus_report,
+    print_quickstart_summary,
+    print_runs_table,
+    print_validation_report,
+    profiles_dir_command_arg,
+    runs_dir_command_arg,
+)
 from xrtm.product.artifacts import ArtifactStore
 from xrtm.product.doctor import run_doctor
 from xrtm.product.history import (
@@ -36,7 +49,6 @@ from xrtm.product.performance import PerformanceBudgetError, PerformanceOptions,
 from xrtm.product.pipeline import PipelineOptions, PipelineResult, run_pipeline
 from xrtm.product.profiles import (
     DEFAULT_PROFILES_DIR,
-    STARTER_PROFILE_LIMIT,
     ProfileStore,
     WorkflowProfile,
     starter_profile,
@@ -104,8 +116,8 @@ def start(limit: int, runs_dir: Path, user: str | None) -> None:
             user=user,
         )
     )
-    _print_pipeline_result(result, title="XRTM Quickstart")
-    _print_quickstart_summary(result, runs_dir=runs_dir)
+    print_pipeline_result(console, result, title="XRTM Quickstart")
+    print_quickstart_summary(console, result, runs_dir=runs_dir)
 
 
 @cli.command()
@@ -212,8 +224,8 @@ def profile_starter(name: str, profiles_dir: Path, runs_dir: Path, user: str | N
     except (FileExistsError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 
-    profiles_dir_arg = _profiles_dir_command_arg(profiles_dir)
-    runs_dir_arg = _runs_dir_command_arg(runs_dir)
+    profiles_dir_arg = profiles_dir_command_arg(profiles_dir)
+    runs_dir_arg = runs_dir_command_arg(runs_dir)
     lines = [
         f"Starter profile: {path}",
         f"Runs directory ready: {runs_dir}",
@@ -357,7 +369,7 @@ def artifacts_inspect(run_dir: Path | None, runs_dir: Path, use_latest: bool) ->
     artifact_table.add_column("Artifact", style="cyan")
     artifact_table.add_column("Status")
     artifact_table.add_column("Location", style="green")
-    for name, status, location in _canonical_artifact_inventory(run_dir):
+    for name, status, location in canonical_artifact_inventory(run_dir):
         artifact_table.add_row(name, status, location)
     console.print(artifact_table)
 
@@ -391,7 +403,7 @@ def runs_group() -> None:
 def runs_list(runs_dir: Path, status: str | None, provider: str | None) -> None:
     """List run history."""
 
-    _print_runs_table(list_run_history(runs_dir, status=status, provider=provider), title="XRTM Runs")
+    print_runs_table(console, list_run_history(runs_dir, status=status, provider=provider), title="XRTM Runs")
 
 
 @runs_group.command("search")
@@ -402,7 +414,7 @@ def runs_list(runs_dir: Path, status: str | None, provider: str | None) -> None:
 def runs_search(query: str, runs_dir: Path, status: str | None, provider: str | None) -> None:
     """Search run history by id, user, command, provider, or status."""
 
-    _print_runs_table(list_run_history(runs_dir, status=status, provider=provider, query=query), title="XRTM Run Search")
+    print_runs_table(console, list_run_history(runs_dir, status=status, provider=provider, query=query), title="XRTM Run Search")
 
 
 @runs_group.command("show")
@@ -493,7 +505,7 @@ def providers_doctor(base_url: str | None) -> None:
     """Check configured provider availability."""
 
     status = local_llm_status(base_url=base_url)
-    _print_local_llm_status(status)
+    print_local_llm_status(console, status)
 
 
 @cli.group("perf")
@@ -629,37 +641,7 @@ def validate_run(
     except (ValidationTierError, ValidationSafetyError, ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
 
-    # Display summary
-    table = Table(title="XRTM Validation")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green")
-
-    corpus_info = report["corpus"]
-    summary = report["summary"]
-
-    table.add_row("Corpus", f"{corpus_info['name']} ({corpus_info['corpus_id']})")
-    table.add_row("Tier", corpus_info["tier"])
-    table.add_row("License", corpus_info["license"])
-    table.add_row("Release-Gate", "✓" if corpus_info["release_gate_approved"] else "✗")
-    table.add_row("Source Mode", corpus_info["source_mode"])
-    table.add_row("Provider", report["configuration"]["provider"])
-    table.add_row("Split", report["configuration"]["split"] or "full")
-    table.add_row("Iterations", str(report["configuration"]["iterations"]))
-    table.add_row("Total Forecasts", str(summary["total_forecasts"]))
-    table.add_row("Duration", f"{summary['total_duration_seconds']:.2f}s")
-    table.add_row("Throughput", f"{summary['forecasts_per_second']:.2f} forecasts/sec")
-
-    if "artifact_path" in report:
-        table.add_row("Artifact", str(report["artifact_path"]))
-
-    console.print(table)
-
-    # Display evaluation metrics if available
-    eval_metrics = report.get("evaluation", {})
-    if eval_metrics.get("mean_eval_brier") is not None:
-        console.print(f"\n[cyan]Eval Brier Score:[/cyan] {eval_metrics['mean_eval_brier']:.4f}")
-    if eval_metrics.get("mean_train_brier") is not None:
-        console.print(f"[cyan]Train Brier Score:[/cyan] {eval_metrics['mean_train_brier']:.4f}")
+    print_validation_report(console, report)
 
 
 @validate_group.command("list-corpora")
@@ -721,31 +703,7 @@ def validate_prepare_corpus(
     except (ImportError, ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
 
-    corpus_info = report["corpus"]
-    availability = report["availability"]
-
-    table = Table(title="Prepared Validation Corpus")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green")
-    table.add_row("Corpus", f"{corpus_info['name']} ({corpus_info['corpus_id']})")
-    table.add_row("Tier", corpus_info["tier"])
-    table.add_row("License", corpus_info["license"])
-    table.add_row("Release-Gate", "✓" if corpus_info["release_gate_approved"] else "✗")
-    table.add_row("Source Mode", availability["source_mode"])
-    table.add_row("Cached", "✓" if availability["already_cached"] else "✗")
-    if availability["record_count"] is not None:
-        table.add_row("Records", str(availability["record_count"]))
-    if availability["cache_root"] is not None:
-        table.add_row("Cache Root", availability["cache_root"])
-    if availability["manifest_path"] is not None:
-        table.add_row("Manifest", availability["manifest_path"])
-    console.print(table)
-
-    if availability["source_mode"] == "preview":
-        console.print(
-            "[yellow]Preview cache active:[/yellow] this corpus is using the deterministic 3-record fixture. "
-            "Re-run without --fixture-preview (and with --refresh if needed) to cache the full external dataset."
-        )
+    print_prepared_corpus_report(console, report)
 
 
 @cli.group("monitor")
@@ -938,7 +896,7 @@ def local_llm_status_command(base_url: str | None) -> None:
     """Show local llama.cpp/OpenAI-compatible endpoint status."""
 
     status = local_llm_status(base_url=base_url)
-    _print_local_llm_status(status)
+    print_local_llm_status(console, status)
     if not status["healthy"]:
         error_msg = (
             f"{status['error'] or 'Endpoint health check failed'}\n\n"
@@ -1017,13 +975,14 @@ def web(runs_dir: Path, host: str, port: int, smoke: bool) -> None:
 
 def _run_pipeline_command(options: PipelineOptions) -> None:
     result = _execute_pipeline(options)
-    _print_pipeline_result(result, title=_pipeline_result_title(options.command))
-    _print_post_run_summary(
+    print_pipeline_result(console, result, title=pipeline_result_title(options.command))
+    print_post_run_summary(
+        console,
         result,
         runs_dir=options.runs_dir,
         success_title="Run complete",
         success_label=f"{options.command} completed",
-        what_succeeded=_pipeline_success_details(write_report=options.write_report),
+        what_succeeded=pipeline_success_details(write_report=options.write_report),
         write_report=options.write_report,
     )
 
@@ -1033,215 +992,6 @@ def _execute_pipeline(options: PipelineOptions) -> PipelineResult:
         return run_pipeline(options)
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
-
-
-def _print_pipeline_result(result: PipelineResult, *, title: str = "XRTM Pipeline") -> None:
-    table = Table(title=title)
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green")
-    table.add_row("Run id", result.run.run_id)
-    table.add_row("Artifact dir", str(result.run.run_dir))
-    report_path = result.run.artifacts.get("report.html")
-    if report_path:
-        table.add_row("Report", report_path)
-    table.add_row("Forecast records", str(result.forecast_records))
-    table.add_row("Eval Brier", _format_optional_float(result.eval_brier_score))
-    table.add_row("Train/backtest Brier", _format_optional_float(result.train_brier_score))
-    table.add_row("Training samples", str(result.training_samples))
-    table.add_row("Total seconds", f"{result.total_seconds:.3f}")
-    console.print(table)
-    console.print(f"[green]Run artifacts ready:[/green] {result.run.run_dir}")
-
-
-def _print_quickstart_summary(result: PipelineResult, *, runs_dir: Path) -> None:
-    _print_post_run_summary(
-        result,
-        runs_dir=runs_dir,
-        success_title="Quickstart complete",
-        success_label="guided provider-free quickstart completed",
-        what_succeeded="readiness checks, deterministic forecasts, scoring, backtest, and HTML report write",
-        proof_line="Proof cue: the default provider-free XRTM path worked end-to-end on this machine.",
-    )
-
-    runs_dir_arg = _runs_dir_command_arg(runs_dir)
-    role_lines = [
-        f"Researcher / model-eval next command: xrtm demo --provider mock --limit 10 {runs_dir_arg}",
-        f"Operator next command: xrtm profile starter my-local {runs_dir_arg}",
-        f"Starter profile uses provider=mock, limit={STARTER_PROFILE_LIMIT}, and saves to {DEFAULT_PROFILES_DIR}.",
-        f"Team export next command: xrtm runs export latest {runs_dir_arg} --output latest-run.json",
-        "Developer / integrator next path: docs/python-api-reference.md and examples/integration/",
-        "Optional later for local models: xrtm local-llm status",
-    ]
-    console.print(Panel("\n".join(role_lines), title="Role-based next paths", border_style="magenta"))
-
-
-def _print_post_run_summary(
-    result: PipelineResult,
-    *,
-    runs_dir: Path,
-    success_title: str,
-    success_label: str,
-    what_succeeded: str,
-    write_report: bool = True,
-    proof_line: str | None = None,
-) -> None:
-    confirmed_artifacts = _confirm_post_run_artifacts(result.run.run_dir, require_report=write_report)
-    summary = result.run.summary
-    report_path = _artifact_path(confirmed_artifacts, "report.html")
-    success_lines = [
-        f"Succeeded: {success_label}.",
-        f"What just succeeded: {what_succeeded}.",
-    ]
-    if proof_line:
-        success_lines.append(proof_line)
-    success_lines.extend(
-        [
-            f"Run id: {result.run.run_id}",
-            f"Artifact location: {result.run.run_dir}",
-            f"Report location: {report_path or 'not generated for this run'}",
-            f"Forecasts: {summary.get('forecast_count', result.forecast_records)}",
-            f"Warnings: {summary.get('warning_count', 0)} | Errors: {summary.get('error_count', 0)}",
-            "Verified on disk: " + ", ".join(name for name, _ in confirmed_artifacts),
-        ]
-    )
-    console.print(Panel("\n".join(success_lines), title=success_title, border_style="green"))
-
-    runs_dir_arg = _runs_dir_command_arg(runs_dir)
-    report_command = (
-        f"Open/regenerate the report: xrtm report html --latest {runs_dir_arg}"
-        if write_report
-        else f"Generate the report now: xrtm report html --latest {runs_dir_arg}"
-    )
-    next_lines = [
-        f"Inspect the newest run: xrtm runs show latest {runs_dir_arg}",
-        f"Inspect artifacts: xrtm artifacts inspect --latest {runs_dir_arg}",
-        report_command,
-        f"Open the WebUI: xrtm web {runs_dir_arg}",
-        f"Open the TUI: xrtm tui {runs_dir_arg}",
-    ]
-    console.print(Panel("\n".join(next_lines), title="Exact next commands", border_style="blue"))
-
-
-def _pipeline_result_title(command: str) -> str:
-    if command == "xrtm demo":
-        return "XRTM Demo"
-    if command.startswith("xrtm run profile "):
-        return "XRTM Profile Run"
-    return "XRTM Pipeline"
-
-
-def _pipeline_success_details(*, write_report: bool) -> str:
-    if write_report:
-        return "forecast generation, scoring, backtest, and HTML report write completed for this run"
-    return "forecast generation, scoring, and backtest completed for this run"
-
-
-def _print_runs_table(runs: list[dict], *, title: str) -> None:
-    table = Table(title=title)
-    table.add_column("Run", style="cyan", width=26, no_wrap=True)
-    table.add_column("Status", style="green")
-    table.add_column("Provider")
-    table.add_column("User")
-    table.add_column("Forecasts", justify="right")
-    table.add_column("Warnings", justify="right")
-    table.add_column("Updated", style="dim", width=19)
-    for run in runs:
-        summary = run.get("summary", {})
-        table.add_row(
-            str(run.get("run_id")),
-            str(run.get("status")),
-            str(run.get("provider")),
-            str(run.get("user") or ""),
-            str(summary.get("forecast_count", "")),
-            str(summary.get("warning_count", "")),
-            str(run.get("updated_at")),
-        )
-    console.print(table)
-
-
-def _print_local_llm_status(status: dict) -> None:
-    color = "green" if status["healthy"] else "red"
-    lines = [
-        f"Base URL: {status['base_url']}",
-        f"Health URL: {status['health_url']}",
-        f"Healthy: {status['healthy']}",
-    ]
-    if status["models"]:
-        lines.append(f"Models: {', '.join(status['models'])}")
-    if status["error"]:
-        lines.append(f"Error: {status['error']}")
-    console.print(Panel("\n".join(lines), title="Local LLM", border_style=color))
-
-
-def _format_optional_float(value: float | None) -> str:
-    return "N/A" if value is None else f"{value:.6f}"
-
-
-def _profiles_dir_command_arg(profiles_dir: Path) -> str:
-    if profiles_dir == DEFAULT_PROFILES_DIR:
-        return ""
-    return f" --profiles-dir {shell_quote(str(profiles_dir))}"
-
-
-def _artifact_path(artifacts: list[tuple[str, Path]], name: str) -> Path | None:
-    for artifact_name, path in artifacts:
-        if artifact_name == name:
-            return path
-    return None
-
-
-def _canonical_artifact_inventory(run_dir: Path) -> list[tuple[str, str, str]]:
-    inventory: list[tuple[str, str, str]] = []
-    for name in [
-        "run.json",
-        "questions.jsonl",
-        "forecasts.jsonl",
-        "eval.json",
-        "train.json",
-        "provider.json",
-        "events.jsonl",
-        "run_summary.json",
-        "monitor.json",
-        "report.html",
-    ]:
-        path = run_dir / name
-        if path.exists():
-            inventory.append((name, "present", str(path)))
-        else:
-            inventory.append((name, "missing", "not written for this run"))
-    logs_dir = run_dir / "logs"
-    if logs_dir.is_dir():
-        inventory.append(("logs/", "present", str(logs_dir)))
-    else:
-        inventory.append(("logs/", "missing", "not created for this run"))
-    return inventory
-
-
-def _confirm_post_run_artifacts(run_dir: Path, *, require_report: bool) -> list[tuple[str, Path]]:
-    required = [
-        "run.json",
-        "forecasts.jsonl",
-        "eval.json",
-        "train.json",
-        "run_summary.json",
-    ]
-    if require_report:
-        required.append("report.html")
-    confirmed: list[tuple[str, Path]] = []
-    missing: list[str] = []
-    for name in required:
-        path = run_dir / name
-        if path.exists():
-            confirmed.append((name, path))
-        else:
-            missing.append(name)
-    if missing:
-        raise click.ClickException(f"expected canonical run artifacts are missing: {', '.join(missing)}")
-    return confirmed
-
-
-def _runs_dir_command_arg(runs_dir: Path) -> str:
-    return f"--runs-dir {shell_quote(runs_dir.as_posix())}"
 
 
 def _resolve_inspection_run_dir(*, run_dir: Path | None, runs_dir: Path, use_latest: bool) -> Path:

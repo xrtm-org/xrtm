@@ -96,28 +96,37 @@ class ValidationOptions:
                 )
 
 
+@dataclass(frozen=True)
+class _ValidationSelection:
+    metadata: Any
+    availability: Any
+    question_pool_size: int
+    selected_questions: tuple[Any, ...]
+    split_signature: str | None
+
+
 def run_validation(options: ValidationOptions) -> dict[str, Any]:
-    """Run a corpus-based validation sweep and return structured metrics.
+    """Run a corpus-based validation sweep and return structured metrics."""
 
-    This is the main entry point for large-scale validation runs. It:
-    1. Validates corpus tier and release-gate compatibility
-    2. Loads the corpus and applies splits if configured
-    3. Runs multiple iterations of forecast/eval/train pipeline
-    4. Aggregates metrics and produces structured artifacts
-
-    Args:
-        options: ValidationOptions configuration
-
-    Returns:
-        Structured validation report with metrics and artifacts
-
-    Raises:
-        ValidationTierError: If release-gate mode requires Tier 1 corpus
-        ValidationSafetyError: If unsafe operations lack explicit opt-in
-    """
     start_time = time.perf_counter()
+    selection = _load_validation_selection(options)
+    iteration_results = _run_validation_iterations(options, selection.selected_questions)
+    total_duration = time.perf_counter() - start_time
 
-    # Validate corpus selection and tier
+    report = _build_validation_report(
+        options=options,
+        metadata=selection.metadata,
+        availability=selection.availability,
+        iteration_results=iteration_results,
+        total_duration=total_duration,
+        split_signature=selection.split_signature,
+        question_pool_size=selection.question_pool_size,
+        selected_questions=len(selection.selected_questions),
+    )
+    return _attach_validation_artifact(report, options)
+
+
+def _load_validation_selection(options: ValidationOptions) -> _ValidationSelection:
     metadata = get_corpus_metadata(options.corpus_id)
     _validate_tier_compatibility(metadata, options)
 
@@ -147,59 +156,59 @@ def run_validation(options: ValidationOptions) -> dict[str, Any]:
             f"Configuration: split={options.split}, limit={options.limit}"
         )
 
-    # Run iterations
-    iteration_results = []
-
-    for iteration in range(options.iterations):
-        iter_start = time.perf_counter()
-
-        result = run_pipeline(
-            PipelineOptions(
-                provider=options.provider,
-                limit=len(selected_questions),
-                questions=tuple(selected_questions),
-                corpus_id=options.corpus_id,
-                runs_dir=options.runs_dir,
-                base_url=options.base_url,
-                model=options.model,
-                api_key=options.api_key,
-                max_tokens=options.max_tokens,
-                write_report=False,
-                command=f"xrtm validate {options.corpus_id}",
-            )
-        )
-
-        iter_duration = time.perf_counter() - iter_start
-
-        iteration_results.append({
-            "iteration": iteration + 1,
-            "run_id": result.run.run_id,
-            "duration_seconds": iter_duration,
-            "forecast_records": result.forecast_records,
-            "training_samples": result.training_samples,
-            "eval_brier_score": result.eval_brier_score,
-            "train_brier_score": result.train_brier_score,
-        })
-
-    total_duration = time.perf_counter() - start_time
-
-    # Aggregate metrics
-    report = _build_validation_report(
-        options=options,
+    return _ValidationSelection(
         metadata=metadata,
         availability=availability,
-        iteration_results=iteration_results,
-        total_duration=total_duration,
-        split_signature=split_signature,
         question_pool_size=len(question_pool),
-        selected_questions=len(selected_questions),
+        selected_questions=tuple(selected_questions),
+        split_signature=split_signature,
     )
 
-    # Write artifacts if requested
+
+def _run_validation_iterations(options: ValidationOptions, selected_questions: tuple[Any, ...]) -> list[dict[str, Any]]:
+    return [
+        _run_validation_iteration(options, selected_questions=selected_questions, iteration=iteration)
+        for iteration in range(options.iterations)
+    ]
+
+
+def _run_validation_iteration(
+    options: ValidationOptions,
+    *,
+    selected_questions: tuple[Any, ...],
+    iteration: int,
+) -> dict[str, Any]:
+    iter_start = time.perf_counter()
+    result = run_pipeline(
+        PipelineOptions(
+            provider=options.provider,
+            limit=len(selected_questions),
+            questions=selected_questions,
+            corpus_id=options.corpus_id,
+            runs_dir=options.runs_dir,
+            base_url=options.base_url,
+            model=options.model,
+            api_key=options.api_key,
+            max_tokens=options.max_tokens,
+            write_report=False,
+            command=f"xrtm validate {options.corpus_id}",
+        )
+    )
+    return {
+        "iteration": iteration + 1,
+        "run_id": result.run.run_id,
+        "duration_seconds": time.perf_counter() - iter_start,
+        "forecast_records": result.forecast_records,
+        "training_samples": result.training_samples,
+        "eval_brier_score": result.eval_brier_score,
+        "train_brier_score": result.train_brier_score,
+    }
+
+
+def _attach_validation_artifact(report: dict[str, Any], options: ValidationOptions) -> dict[str, Any]:
     if options.write_artifacts:
         artifact_path = _write_validation_artifact(report, options.output_dir)
         report["artifact_path"] = str(artifact_path)
-
     return report
 
 
@@ -217,9 +226,9 @@ def _validate_tier_compatibility(metadata: Any, options: ValidationOptions) -> N
                 f"Current corpus: {metadata.corpus_id} ({metadata.tier.value}, {metadata.license_type.value})"
             )
 
-    # Emit warning for non-Tier-1 usage
     if metadata.tier != CorpusTier.TIER_1:
         import warnings
+
         warnings.warn(
             f"Using {metadata.tier.value} corpus '{metadata.corpus_id}' with "
             f"{metadata.license_type.value} license. Not approved for release gates.",
@@ -278,8 +287,16 @@ def _build_validation_report(
             "forecasts_per_second": total_forecasts / total_duration if total_duration > 0 else 0.0,
         },
         "evaluation": {
-            "mean_eval_brier": statistics.fmean([r["eval_brier_score"] for r in iteration_results if r["eval_brier_score"] is not None]) if iteration_results else None,
-            "mean_train_brier": statistics.fmean([r["train_brier_score"] for r in iteration_results if r["train_brier_score"] is not None]) if iteration_results else None,
+            "mean_eval_brier": statistics.fmean(
+                [r["eval_brier_score"] for r in iteration_results if r["eval_brier_score"] is not None]
+            )
+            if iteration_results
+            else None,
+            "mean_train_brier": statistics.fmean(
+                [r["train_brier_score"] for r in iteration_results if r["train_brier_score"] is not None]
+            )
+            if iteration_results
+            else None,
         },
         "recorded_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -322,15 +339,8 @@ def list_validation_corpora(
     tier: Optional[CorpusTier] = None,
     release_gate_only: bool = False,
 ) -> list[dict[str, Any]]:
-    """List available corpora for validation with metadata.
+    """List available corpora for validation with metadata."""
 
-    Args:
-        tier: Filter by specific tier
-        release_gate_only: Only show release-gate approved corpora
-
-    Returns:
-        List of corpus metadata dictionaries
-    """
     corpora = list_available_corpora(tier=tier, release_gate_only=release_gate_only)
     return [m.to_dict() for m in corpora]
 

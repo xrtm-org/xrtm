@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from xrtm.product.artifacts import ArtifactStore
-from xrtm.product.monitoring import load_monitor
+from xrtm.product.read_models import list_run_records, read_run_detail
 
 
 def list_runs(
@@ -20,25 +20,7 @@ def list_runs(
 ) -> list[dict[str, Any]]:
     """List canonical run artifacts, newest first, with optional filters."""
 
-    if not runs_dir.exists():
-        return []
-    rows = []
-    for run_dir in sorted((path for path in runs_dir.iterdir() if path.is_dir()), key=lambda path: path.name, reverse=True):
-        try:
-            run = ArtifactStore.read_run(run_dir)
-        except FileNotFoundError:
-            continue
-        summary = _read_json(run_dir / "run_summary.json")
-        run["summary"] = summary or run.get("summary", {})
-        run["run_dir"] = str(run_dir)
-        if status and run.get("status") != status:
-            continue
-        if provider and run.get("provider") != provider:
-            continue
-        if query and query.lower() not in _search_text(run).lower():
-            continue
-        rows.append(run)
-    return rows
+    return list_run_records(runs_dir, status=status, provider=provider, query=query)
 
 
 def latest_run_dir(runs_dir: Path) -> Path:
@@ -76,18 +58,7 @@ def resolve_run_dir(runs_dir: Path, run_ref: str) -> Path:
 def run_detail(run_dir: Path) -> dict[str, Any]:
     """Return one export-ready run detail payload."""
 
-    detail = {
-        "run": ArtifactStore.read_run(run_dir),
-        "summary": _read_json(run_dir / "run_summary.json"),
-        "events": ArtifactStore.read_jsonl(run_dir / "events.jsonl"),
-        "forecasts": ArtifactStore.read_jsonl(run_dir / "forecasts.jsonl"),
-        "eval": _read_json(run_dir / "eval.json"),
-        "train": _read_json(run_dir / "train.json"),
-        "provider": _read_json(run_dir / "provider.json"),
-    }
-    if (run_dir / "monitor.json").exists():
-        detail["monitor"] = load_monitor(run_dir)
-    return detail
+    return read_run_detail(run_dir)
 
 
 def compare_runs(left_dir: Path, right_dir: Path) -> list[dict[str, Any]]:
@@ -145,7 +116,6 @@ def _export_run_csv(run_dir: Path, output_path: Path) -> None:
     started_at = run_metadata.get("started_at") or run_metadata.get("created_at")
     completed_at = run_metadata.get("completed_at") or run_metadata.get("updated_at")
 
-    # Build flattened rows combining run metadata with each forecast
     rows = []
     for forecast in forecasts:
         output = forecast.get("output", {}) if isinstance(forecast.get("output"), dict) else {}
@@ -158,19 +128,16 @@ def _export_run_csv(run_dir: Path, output_path: Path) -> None:
             or {}
         )
         row = {
-            # Run-level metadata
             "run_id": run_metadata.get("run_id"),
             "status": run_metadata.get("status"),
             "provider": run_metadata.get("provider"),
             "user": run_metadata.get("user"),
             "started_at": started_at,
             "completed_at": completed_at,
-            # Summary metrics
             "duration_seconds": summary.get("duration_seconds"),
             "total_tokens": summary.get("token_counts", {}).get("total_tokens"),
             "eval_brier_score": summary.get("eval", {}).get("brier_score"),
             "train_brier_score": summary.get("train", {}).get("brier_score"),
-            # Forecast-level fields
             "question_id": forecast.get("question_id") or output.get("question_id"),
             "question_text": question.get("question_text"),
             "resolution_date": question.get("resolution_date"),
@@ -184,37 +151,33 @@ def _export_run_csv(run_dir: Path, output_path: Path) -> None:
         }
         rows.append(row)
 
-    # Write CSV with consistent column ordering even when there are no forecast rows.
     fieldnames = [
-        "run_id", "status", "provider", "user", "started_at", "completed_at",
-        "duration_seconds", "total_tokens", "eval_brier_score", "train_brier_score",
-        "question_id", "question_text", "resolution_date",
-        "forecast_probability", "forecast_confidence", "forecast_reasoning",
-        "resolved", "outcome", "brier_score", "tokens_used",
+        "run_id",
+        "status",
+        "provider",
+        "user",
+        "started_at",
+        "completed_at",
+        "duration_seconds",
+        "total_tokens",
+        "eval_brier_score",
+        "train_brier_score",
+        "question_id",
+        "question_text",
+        "resolution_date",
+        "forecast_probability",
+        "forecast_confidence",
+        "forecast_reasoning",
+        "resolved",
+        "outcome",
+        "brier_score",
+        "tokens_used",
     ]
     with output_path.open("w", encoding="utf-8", newline="") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         if rows:
             writer.writerows(rows)
-
-
-def _search_text(run: dict[str, Any]) -> str:
-    values = [
-        run.get("run_id"),
-        run.get("status"),
-        run.get("provider"),
-        run.get("command"),
-        run.get("run_dir"),
-        run.get("user"),
-    ]
-    return " ".join(str(value) for value in values if value is not None)
-
-
-def _read_json(path: Path) -> Any:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _nested_get(payload: dict[str, Any], path: tuple[str, ...]) -> Any:
