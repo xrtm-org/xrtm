@@ -55,7 +55,7 @@ def run_performance_benchmark(options: PerformanceOptions) -> dict[str, Any]:
 
     _validate_options(options)
     provider = _provider_for_scenario(options.scenario)
-    
+
     # Apply default budgets if not explicitly set
     max_mean = options.max_mean_seconds
     max_p95 = options.max_p95_seconds
@@ -65,7 +65,7 @@ def run_performance_benchmark(options: PerformanceOptions) -> dict[str, Any]:
             max_mean = defaults.get("max_mean_seconds")
         if max_p95 is None:
             max_p95 = defaults.get("max_p95_seconds")
-    
+
     samples = []
     for index in range(options.iterations):
         result = run_pipeline(

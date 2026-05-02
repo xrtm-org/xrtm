@@ -12,17 +12,16 @@ See data/docs/benchmark-corpus-policy.md for source classification.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import statistics
 import time
-import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from xrtm.data.corpora import (
-    CorpusSplit,
     CorpusSplitter,
     CorpusTier,
     SplitConfig,
@@ -32,14 +31,7 @@ from xrtm.data.corpora import (
     list_available_corpora,
     prepare_corpus,
 )
-from xrtm.eval.real_e2e import evaluate_resolved_forecasts
-from xrtm.forecast.core.config.inference import OpenAIConfig
-from xrtm.forecast.providers.inference.factory import ModelFactory
 from xrtm.product.pipeline import PipelineOptions, run_pipeline
-from xrtm.train.real_e2e import (
-    build_training_samples_from_resolved_forecasts,
-    evaluate_forecast_records_with_backtest_runner,
-)
 
 VALIDATION_SCHEMA_VERSION = "xrtm.validation.v1"
 DEFAULT_VALIDATION_DIR = Path(".cache/validation")
@@ -106,29 +98,29 @@ class ValidationOptions:
 
 def run_validation(options: ValidationOptions) -> dict[str, Any]:
     """Run a corpus-based validation sweep and return structured metrics.
-    
+
     This is the main entry point for large-scale validation runs. It:
     1. Validates corpus tier and release-gate compatibility
     2. Loads the corpus and applies splits if configured
     3. Runs multiple iterations of forecast/eval/train pipeline
     4. Aggregates metrics and produces structured artifacts
-    
+
     Args:
         options: ValidationOptions configuration
-        
+
     Returns:
         Structured validation report with metrics and artifacts
-        
+
     Raises:
         ValidationTierError: If release-gate mode requires Tier 1 corpus
         ValidationSafetyError: If unsafe operations lack explicit opt-in
     """
     start_time = time.perf_counter()
-    
+
     # Validate corpus selection and tier
     metadata = get_corpus_metadata(options.corpus_id)
     _validate_tier_compatibility(metadata, options)
-    
+
     corpus_source = get_corpus(options.corpus_id)
     fetch_limit = options.limit
     if options.split or options.split_config:
@@ -154,13 +146,13 @@ def run_validation(options: ValidationOptions) -> dict[str, Any]:
             f"3. Verify corpus ID spelling: '{options.corpus_id}'\n\n"
             f"Configuration: split={options.split}, limit={options.limit}"
         )
-    
+
     # Run iterations
     iteration_results = []
-    
+
     for iteration in range(options.iterations):
         iter_start = time.perf_counter()
-        
+
         result = run_pipeline(
             PipelineOptions(
                 provider=options.provider,
@@ -176,9 +168,9 @@ def run_validation(options: ValidationOptions) -> dict[str, Any]:
                 command=f"xrtm validate {options.corpus_id}",
             )
         )
-        
+
         iter_duration = time.perf_counter() - iter_start
-        
+
         iteration_results.append({
             "iteration": iteration + 1,
             "run_id": result.run.run_id,
@@ -188,9 +180,9 @@ def run_validation(options: ValidationOptions) -> dict[str, Any]:
             "eval_brier_score": result.eval_brier_score,
             "train_brier_score": result.train_brier_score,
         })
-        
+
     total_duration = time.perf_counter() - start_time
-    
+
     # Aggregate metrics
     report = _build_validation_report(
         options=options,
@@ -202,12 +194,12 @@ def run_validation(options: ValidationOptions) -> dict[str, Any]:
         question_pool_size=len(question_pool),
         selected_questions=len(selected_questions),
     )
-    
+
     # Write artifacts if requested
     if options.write_artifacts:
         artifact_path = _write_validation_artifact(report, options.output_dir)
         report["artifact_path"] = str(artifact_path)
-    
+
     return report
 
 
@@ -224,7 +216,7 @@ def _validate_tier_compatibility(metadata: Any, options: ValidationOptions) -> N
                 f"2. Use a Tier 1 corpus (run 'xrtm validate list-corpora --release-gate-only' to see approved corpora)\n\n"
                 f"Current corpus: {metadata.corpus_id} ({metadata.tier.value}, {metadata.license_type.value})"
             )
-    
+
     # Emit warning for non-Tier-1 usage
     if metadata.tier != CorpusTier.TIER_1:
         import warnings
@@ -248,10 +240,10 @@ def _build_validation_report(
     selected_questions: int,
 ) -> dict[str, Any]:
     """Build a structured validation report."""
-    
+
     durations = [r["duration_seconds"] for r in iteration_results]
     total_forecasts = sum(r["forecast_records"] for r in iteration_results)
-    
+
     return {
         "schema_version": VALIDATION_SCHEMA_VERSION,
         "validation_type": "corpus-sweep",
@@ -320,11 +312,11 @@ def list_validation_corpora(
     release_gate_only: bool = False,
 ) -> list[dict[str, Any]]:
     """List available corpora for validation with metadata.
-    
+
     Args:
         tier: Filter by specific tier
         release_gate_only: Only show release-gate approved corpora
-        
+
     Returns:
         List of corpus metadata dictionaries
     """

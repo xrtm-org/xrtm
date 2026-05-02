@@ -126,25 +126,25 @@ def utc_now() -> str:
 
 def to_json_safe(value: Any) -> Any:
     """Convert Pydantic/dataclass/datetime-rich objects into JSON-safe values.
-    
+
     Optimized for common types with fast-path handling.
     """
     # Fast path for primitives (most common case)
     if isinstance(value, (str, int, float, bool, type(None))):
         return value
-    
+
     # Fast path for datetime and Path (second most common)
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, Path):
         return str(value)
-    
+
     # Handle Pydantic models and objects with custom serializers
     if hasattr(value, "model_dump"):
         return to_json_safe(value.model_dump(mode="json"))
     if hasattr(value, "to_json_dict"):
         return to_json_safe(value.to_json_dict())
-    
+
     # Handle collections
     if isinstance(value, dict):
         return {str(key): to_json_safe(item) for key, item in value.items()}
@@ -152,7 +152,7 @@ def to_json_safe(value: Any) -> Any:
         return [to_json_safe(item) for item in value]
     if isinstance(value, set):
         return [to_json_safe(item) for item in value]
-    
+
     return value
 
 

@@ -1,6 +1,6 @@
+import csv
 import json
 import re
-import csv
 from pathlib import Path
 from threading import Thread
 from unittest.mock import patch

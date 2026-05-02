@@ -21,12 +21,11 @@ import asyncio
 from pathlib import Path
 
 import pytest
-
 from xrtm.data.corpora import CorpusSplitter, CorpusTier, SplitConfig, get_corpus
+
 from xrtm.product.validation import (
     ValidationOptions,
     ValidationSafetyError,
-    ValidationTierError,
     list_validation_corpora,
     prepare_validation_corpus,
     run_validation,
@@ -39,14 +38,14 @@ def test_list_validation_corpora() -> None:
     all_corpora = list_validation_corpora()
     assert len(all_corpora) >= 1
     assert any(c["corpus_id"] == "xrtm-real-binary-v1" for c in all_corpora)
-    
+
     # List only release-gate approved
     approved = list_validation_corpora(release_gate_only=True)
     assert len(approved) >= 1
     for corpus in approved:
         assert corpus["release_gate_approved"] is True
         assert corpus["tier"] == "tier-1"
-    
+
     # List Tier 1 only
     tier1 = list_validation_corpora(tier=CorpusTier.TIER_1)
     assert len(tier1) >= 1
@@ -64,9 +63,9 @@ def test_validation_run_basic() -> None:
         output_dir=Path(".cache/validation-tests"),
         write_artifacts=False,
     )
-    
+
     report = run_validation(options)
-    
+
     assert report["schema_version"] == "xrtm.validation.v1"
     assert report["corpus"]["corpus_id"] == "xrtm-real-binary-v1"
     assert report["corpus"]["tier"] == "tier-1"
@@ -87,13 +86,13 @@ def test_validation_run_multiple_iterations() -> None:
         output_dir=Path(".cache/validation-tests"),
         write_artifacts=False,
     )
-    
+
     report = run_validation(options)
-    
+
     assert len(report["iterations"]) == 3
     assert report["summary"]["total_forecasts"] == 3
     assert report["summary"]["mean_iteration_seconds"] > 0
-    
+
     # Check all iterations have required fields
     for iteration in report["iterations"]:
         assert "iteration" in iteration
@@ -138,9 +137,9 @@ def test_validation_release_gate_mode_with_tier1() -> None:
         write_artifacts=False,
         release_gate_mode=True,
     )
-    
+
     report = run_validation(options)
-    
+
     assert report["corpus"]["release_gate_approved"] is True
     assert report["configuration"]["release_gate_mode"] is True
 
@@ -155,7 +154,7 @@ def test_validation_safety_limits_local_llm() -> None:
             iterations=1,
             allow_unsafe_local_llm=False,
         )
-    
+
     # Should work with override flag
     options = ValidationOptions(
         corpus_id="xrtm-real-binary-v1",
@@ -172,7 +171,7 @@ def test_validation_options_validation() -> None:
     # Invalid limit
     with pytest.raises(ValueError, match="Invalid limit"):
         ValidationOptions(limit=0)
-    
+
     # Invalid iterations
     with pytest.raises(ValueError, match="Invalid iterations"):
         ValidationOptions(iterations=0)
@@ -188,15 +187,15 @@ def test_validation_artifact_generation() -> None:
         output_dir=Path(".cache/validation-tests"),
         write_artifacts=True,
     )
-    
+
     report = run_validation(options)
-    
+
     assert "artifact_path" in report
     artifact_path = Path(report["artifact_path"])
     assert artifact_path.exists()
     assert artifact_path.suffix == ".json"
     assert "validation-xrtm-real-binary-v1" in artifact_path.name
-    
+
     # Verify artifact content
     import json
     artifact_data = json.loads(artifact_path.read_text())

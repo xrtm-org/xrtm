@@ -470,7 +470,7 @@ def runs_compare(left: str, right: str, runs_dir: Path) -> None:
 )
 def runs_export(run_ref: str, runs_dir: Path, output: Path, format: str) -> None:
     """Export one run by id or ``latest`` as a portable bundle.
-    
+
     JSON format includes complete run detail with nested structures.
     CSV format flattens forecasts into spreadsheet-friendly rows.
     """
@@ -606,7 +606,7 @@ def validate_run(
     no_artifacts: bool,
 ) -> None:
     """Run a corpus-based validation sweep with structured metrics."""
-    
+
     try:
         report = run_validation(
             ValidationOptions(
@@ -628,15 +628,15 @@ def validate_run(
         )
     except (ValidationTierError, ValidationSafetyError, ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
-    
+
     # Display summary
     table = Table(title="XRTM Validation")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green")
-    
+
     corpus_info = report["corpus"]
     summary = report["summary"]
-    
+
     table.add_row("Corpus", f"{corpus_info['name']} ({corpus_info['corpus_id']})")
     table.add_row("Tier", corpus_info["tier"])
     table.add_row("License", corpus_info["license"])
@@ -648,12 +648,12 @@ def validate_run(
     table.add_row("Total Forecasts", str(summary["total_forecasts"]))
     table.add_row("Duration", f"{summary['total_duration_seconds']:.2f}s")
     table.add_row("Throughput", f"{summary['forecasts_per_second']:.2f} forecasts/sec")
-    
+
     if "artifact_path" in report:
         table.add_row("Artifact", str(report["artifact_path"]))
-    
+
     console.print(table)
-    
+
     # Display evaluation metrics if available
     eval_metrics = report.get("evaluation", {})
     if eval_metrics.get("mean_eval_brier") is not None:
@@ -667,16 +667,16 @@ def validate_run(
 @click.option("--release-gate-only", is_flag=True, help="Show only release-gate approved corpora.")
 def validate_list_corpora(tier: str | None, release_gate_only: bool) -> None:
     """List available validation corpora from the registry."""
-    
+
     from xrtm.data.corpora import CorpusTier
-    
+
     tier_enum = CorpusTier(tier) if tier else None
     corpora = list_validation_corpora(tier=tier_enum, release_gate_only=release_gate_only)
-    
+
     if not corpora:
         console.print("[yellow]No corpora found matching the filter criteria.[/yellow]")
         return
-    
+
     table = Table(title="Available Validation Corpora")
     table.add_column("Corpus ID", style="cyan")
     table.add_column("Name", style="white")
@@ -684,7 +684,7 @@ def validate_list_corpora(tier: str | None, release_gate_only: bool) -> None:
     table.add_column("License", style="green")
     table.add_column("Release-Gate", style="magenta")
     table.add_column("Bundled", style="blue")
-    
+
     for corpus in corpora:
         table.add_row(
             corpus["corpus_id"],
@@ -694,7 +694,7 @@ def validate_list_corpora(tier: str | None, release_gate_only: bool) -> None:
             "✓" if corpus["release_gate_approved"] else "✗",
             "✓" if corpus["bundled"] else "✗",
         )
-    
+
     console.print(table)
 
 

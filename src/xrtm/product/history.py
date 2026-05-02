@@ -114,37 +114,37 @@ def compare_runs(left_dir: Path, right_dir: Path) -> list[dict[str, Any]]:
 
 def export_run(run_dir: Path, output_path: Path, *, format: str = "json") -> Path:
     """Write a single portable export for one run.
-    
+
     Args:
         run_dir: Directory containing the run artifacts
         output_path: Destination file path
         format: Export format, either "json" or "csv"
-        
+
     Returns:
         Path to the written export file
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     if format == "csv":
         _export_run_csv(run_dir, output_path)
     elif format == "json":
         output_path.write_text(json.dumps(run_detail(run_dir), indent=2, sort_keys=True) + "\n", encoding="utf-8")
     else:
         raise ValueError(f"Unsupported export format: {format}")
-    
+
     return output_path
 
 
 def _export_run_csv(run_dir: Path, output_path: Path) -> None:
     """Write forecasts as flattened CSV rows for spreadsheet/dataframe workflows."""
-    
+
     detail = run_detail(run_dir)
     run_metadata = detail["run"]
     summary = detail.get("summary", {})
     forecasts = detail.get("forecasts", [])
     started_at = run_metadata.get("started_at") or run_metadata.get("created_at")
     completed_at = run_metadata.get("completed_at") or run_metadata.get("updated_at")
-    
+
     # Build flattened rows combining run metadata with each forecast
     rows = []
     for forecast in forecasts:
@@ -183,31 +183,20 @@ def _export_run_csv(run_dir: Path, output_path: Path) -> None:
             "tokens_used": forecast.get("tokens") or usage.get("total_tokens"),
         }
         rows.append(row)
-    
-    # Write CSV with consistent column ordering
-    if rows:
-        fieldnames = [
-            "run_id", "status", "provider", "user", "started_at", "completed_at",
-            "duration_seconds", "total_tokens", "eval_brier_score", "train_brier_score",
-            "question_id", "question_text", "resolution_date",
-            "forecast_probability", "forecast_confidence", "forecast_reasoning",
-            "resolved", "outcome", "brier_score", "tokens_used",
-        ]
-        with output_path.open("w", encoding="utf-8", newline="") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
+
+    # Write CSV with consistent column ordering even when there are no forecast rows.
+    fieldnames = [
+        "run_id", "status", "provider", "user", "started_at", "completed_at",
+        "duration_seconds", "total_tokens", "eval_brier_score", "train_brier_score",
+        "question_id", "question_text", "resolution_date",
+        "forecast_probability", "forecast_confidence", "forecast_reasoning",
+        "resolved", "outcome", "brier_score", "tokens_used",
+    ]
+    with output_path.open("w", encoding="utf-8", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        if rows:
             writer.writerows(rows)
-    else:
-        # Write empty CSV with headers
-        with output_path.open("w", encoding="utf-8", newline="") as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow([
-                "run_id", "status", "provider", "user", "started_at", "completed_at",
-                "duration_seconds", "total_tokens", "eval_brier_score", "train_brier_score",
-                "question_id", "question_text", "resolution_date",
-                "forecast_probability", "forecast_confidence", "forecast_reasoning",
-                "resolved", "outcome", "brier_score", "tokens_used",
-            ])
 
 
 def _search_text(run: dict[str, Any]) -> str:

@@ -179,7 +179,7 @@ def package_versions() -> dict[str, str]:
     global _PACKAGE_VERSION_CACHE
     if _PACKAGE_VERSION_CACHE is not None:
         return _PACKAGE_VERSION_CACHE
-    
+
     packages = ["xrtm", "xrtm-data", "xrtm-eval", "xrtm-forecast", "xrtm-train"]
     versions = {}
     for package in packages:
@@ -187,7 +187,7 @@ def package_versions() -> dict[str, str]:
             versions[package] = version(package)
         except PackageNotFoundError:
             versions[package] = "unknown"
-    
+
     _PACKAGE_VERSION_CACHE = versions
     return versions
 
