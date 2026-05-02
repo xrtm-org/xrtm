@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from xrtm.product.artifacts import ArtifactStore
+from xrtm.product.observability import MONITOR_SCHEMA_VERSION
 
 
 def list_run_records(
@@ -37,13 +38,13 @@ def list_run_records(
 
 
 def list_monitor_records(runs_dir: Path) -> list[dict[str, Any]]:
-    """List monitor runs with lightweight monitor state, oldest first."""
+    """List real monitor runs with lightweight monitor state, newest first."""
 
     if not runs_dir.exists():
         return []
 
     monitors: list[dict[str, Any]] = []
-    for run_dir in _iter_run_dirs(runs_dir, reverse=False):
+    for run_dir in _iter_run_dirs(runs_dir, reverse=True):
         monitor_path = run_dir / "monitor.json"
         if not monitor_path.exists():
             continue
@@ -51,13 +52,20 @@ def list_monitor_records(runs_dir: Path) -> list[dict[str, Any]]:
         if run is None:
             continue
         monitor = _read_optional_json(monitor_path)
+        if not _is_monitor_record(run, monitor):
+            continue
+        summary = _read_optional_json(run_dir / "run_summary.json")
         monitors.append(
             {
                 "run_id": run.get("run_id", run_dir.name),
                 "run_dir": str(run_dir),
+                "provider": run.get("provider"),
+                "command": run.get("command"),
                 "status": monitor.get("status", run.get("status")),
                 "watches": len(monitor.get("watches", [])),
-                "updated_at": monitor.get("updated_at"),
+                "updates": summary.get("updates"),
+                "warning_count": summary.get("warning_count"),
+                "updated_at": monitor.get("updated_at") or run.get("updated_at"),
             }
         )
     return monitors
@@ -69,6 +77,7 @@ def read_run_detail(run_dir: Path) -> dict[str, Any]:
     detail: dict[str, Any] = {
         "run": ArtifactStore.read_run(run_dir),
         "summary": _read_optional_json(run_dir / "run_summary.json"),
+        "questions": _read_optional_jsonl(run_dir / "questions.jsonl"),
         "events": _read_optional_jsonl(run_dir / "events.jsonl"),
         "forecasts": _read_optional_jsonl(run_dir / "forecasts.jsonl"),
         "eval": _read_optional_json(run_dir / "eval.json"),
@@ -118,6 +127,12 @@ def _search_text(run: dict[str, Any]) -> str:
         run.get("user"),
     ]
     return " ".join(str(value) for value in values if value is not None)
+
+
+def _is_monitor_record(run: dict[str, Any], monitor: dict[str, Any]) -> bool:
+    if monitor.get("schema_version") == MONITOR_SCHEMA_VERSION:
+        return True
+    return run.get("command") == "xrtm monitor start"
 
 
 __all__ = ["list_monitor_records", "list_run_records", "read_run_detail"]

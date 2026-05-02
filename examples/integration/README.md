@@ -4,6 +4,8 @@ This directory contains **integration patterns** built on top of shipped XRTM AP
 
 These examples are **not additional built-in product features**. They show how to compose today's package into your own scripts, services, and automation.
 
+**Quick chooser:** start with `xrtm` for the released, provider-free product workflow; start with `xrtm-forecast` and these examples when you are embedding forecasting directly in your own code.
+
 ## Start with the product if your job is...
 
 - **Get your first successful local run**: use the [Getting Started Guide](../../docs/getting-started.md).

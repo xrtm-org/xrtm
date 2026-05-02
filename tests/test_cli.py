@@ -6,6 +6,7 @@ from threading import Thread
 from unittest.mock import patch
 from urllib.request import urlopen
 
+import pytest
 from click.testing import CliRunner
 
 from xrtm.cli.main import cli
@@ -46,6 +47,27 @@ def _write_canonical_run_fixture(runs_dir: Path, run_id: str, *, user: str | Non
     (run_dir / "events.jsonl").write_text("", encoding="utf-8")
     (run_dir / "forecasts.jsonl").write_text(
         json.dumps({"question_id": "q1", "probability": 0.6, "reasoning": "fixture"}) + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "questions.jsonl").write_text(
+        json.dumps(
+            {
+                "id": "q1",
+                "title": "Fixture question title",
+                "description": "Fixture question description",
+                "resolution_time": "2026-05-02T00:00:00Z",
+                "metadata": {
+                    "raw_data": {
+                        "resolved_outcome": True,
+                        "resolution_criteria": "Fixture criteria",
+                        "resolution_notes": "Fixture notes",
+                        "source_metadata": {"source_url": "https://example.com/fixture"},
+                        "tags": ["fixture", "demo"],
+                    }
+                },
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
     return run_dir
@@ -147,25 +169,26 @@ def test_start_guides_newcomers_through_provider_free_first_run() -> None:
         assert "Verified on disk:" in output
         for artifact_name in ["run.json", "forecasts.jsonl", "eval.json", "train.json", "run_summary.json", "report.html"]:
             assert artifact_name in output
-        assert "xrtm runs show latest --runs-dir runs" in output
-        assert "xrtm artifacts inspect --latest --runs-dir runs" in output
-        assert "Open/regenerate the report: xrtm report html --latest --runs-dir runs" in output
+        assert "xrtm runs list --runs-dir runs" in output
+        assert f"xrtm runs show {run_dir.name} --runs-dir runs" in output
+        assert f"xrtm artifacts inspect {run_dir}" in output
+        assert f"Open/regenerate the report: xrtm report html {run_dir}" in output
         assert "xrtm web --runs-dir runs" in output
         assert "xrtm tui --runs-dir runs" in output
         assert "Official proof-point workflows" in output
         assert "Provider-free first success" in output
-        assert "Benchmark and validation workflow" in output
+        assert "Benchmark and performance workflow" in output
         assert "Monitoring, history, and report workflow" in output
         assert "Local-LLM advanced workflow" in output
-        for phrase in ["provider-free-smoke", "performance.json", "runs-validation"]:
+        for phrase in ["provider-free-smoke", "performance.json", "xrtm runs show", "xrtm artifacts inspect"]:
             assert phrase in output
-        assert "xrtm validate run --provider mock --limit 10 --iterations 2" in output
-        for phrase in ["xrtm profile starter my-local", "my-local", "--runs-dir runs"]:
+        for phrase in ["xrtm profile create my-local", "--provider mock --limit 2 --runs-dir runs", "xrtm run profile my-local"]:
             assert phrase in output
-        for phrase in ["xrtm monitor start", "latest-run.json", "xrtm runs export latest"]:
+        for phrase in ["xrtm monitor start --provider mock --limit 2", "xrtm monitor list --runs-dir runs"]:
+            assert phrase in output
+        for phrase in ["xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs", "xrtm runs export <run-id> --runs-dir runs --output export.json"]:
             assert phrase in output
         assert "xrtm local-llm status" in output
-        assert f"limit={STARTER_PROFILE_LIMIT}" in output
         assert "docs/python-api-reference.md" in output
 
 
@@ -189,9 +212,10 @@ def test_demo_prints_run_success_proof_and_next_commands() -> None:
         assert "Verified on disk:" in output
         for artifact_name in ["run.json", "forecasts.jsonl", "eval.json", "train.json", "run_summary.json", "report.html"]:
             assert artifact_name in output
-        assert "xrtm runs show latest --runs-dir runs" in output
-        assert "xrtm artifacts inspect --latest --runs-dir runs" in output
-        assert "Open/regenerate the report: xrtm report html --latest --runs-dir runs" in output
+        assert "xrtm runs list --runs-dir runs" in output
+        assert f"xrtm runs show {run_dir.name} --runs-dir runs" in output
+        assert f"xrtm artifacts inspect {run_dir}" in output
+        assert f"Open/regenerate the report: xrtm report html {run_dir}" in output
         assert "xrtm web --runs-dir runs" in output
         assert "xrtm tui --runs-dir runs" in output
 
@@ -226,7 +250,7 @@ def test_profile_starter_scaffolds_repeatable_local_workspace() -> None:
         cleaned = _ANSI_RE.sub("", result.output)
         assert "xrtm run profile my-local" in cleaned
         assert "--profiles-dir profiles" in cleaned
-        assert "xrtm runs show latest --runs-dir starter-runs" in cleaned
+        assert "xrtm runs list --runs-dir starter-runs" in cleaned
         assert run.exit_code == 0, run.output
         assert next(Path("starter-runs").iterdir()).is_dir()
 
@@ -270,6 +294,7 @@ def test_csv_export_flattens_nested_forecast_fields_and_run_timestamps() -> None
         assert result.exit_code == 0, result.output
         run_dir = next(Path("runs").iterdir())
         run_metadata = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+        question_payload = json.loads((run_dir / "questions.jsonl").read_text(encoding="utf-8").splitlines()[0])
 
         export_result = runner.invoke(cli, ["runs", "export", "latest", "--runs-dir", "runs", "--output", "export.csv", "--format", "csv"])
         assert export_result.exit_code == 0, export_result.output
@@ -282,8 +307,21 @@ def test_csv_export_flattens_nested_forecast_fields_and_run_timestamps() -> None
         assert row["user"] == "alice"
         assert row["started_at"] == run_metadata["created_at"]
         assert row["completed_at"] == run_metadata["updated_at"]
+        assert row["question_id"] == question_payload["id"]
+        assert row["question_title"] == question_payload["title"]
+        assert row["question_text"] == question_payload["title"]
+        assert row["question_description"] == question_payload["description"]
+        assert row["resolution_date"] == question_payload["metadata"]["raw_data"]["resolution_time"]
+        assert row["resolution_criteria"] == question_payload["resolution_criteria"]
+        assert row["resolution_notes"] == question_payload["metadata"]["raw_data"]["resolution_notes"]
+        assert row["source_url"] == question_payload["metadata"]["raw_data"]["source_metadata"]["source_url"]
+        assert row["tags"] == ",".join(question_payload["metadata"]["raw_data"]["tags"])
+        assert row["recorded_at"]
         assert row["forecast_probability"]
         assert row["forecast_reasoning"]
+        assert row["resolved"] == "True"
+        assert row["outcome"] == str(question_payload["metadata"]["raw_data"]["resolved_outcome"])
+        assert float(row["brier_score"]) == pytest.approx((float(row["forecast_probability"]) - 1.0) ** 2)
         assert row["tokens_used"]
 
 
@@ -745,15 +783,23 @@ def test_monitor_start_and_run_once_use_artifact_state() -> None:
         assert start.exit_code == 0, start.output
         run_dir = next(Path("runs").iterdir())
         assert (run_dir / "monitor.json").exists()
+        cleaned_start = _ANSI_RE.sub("", start.output)
+        assert "xrtm monitor list --runs-dir runs" in cleaned_start
+        assert f"xrtm monitor show {run_dir}" in cleaned_start
+        assert f"xrtm monitor run-once {run_dir}" in cleaned_start
 
         run_once = runner.invoke(cli, ["monitor", "run-once", str(run_dir)])
         show = runner.invoke(cli, ["monitor", "show", str(run_dir)])
+        listed = runner.invoke(cli, ["monitor", "list", "--runs-dir", "runs"])
         pause = runner.invoke(cli, ["monitor", "pause", str(run_dir)])
         daemon = runner.invoke(cli, ["monitor", "daemon", str(run_dir), "--cycles", "2", "--interval-seconds", "0"])
 
         assert run_once.exit_code == 0, run_once.output
         assert show.exit_code == 0, show.output
+        assert listed.exit_code == 0, listed.output
+        assert run_dir.name in listed.output
         assert "1" in show.output
+        assert "Monitor commands" in show.output
         assert pause.exit_code == 0, pause.output
         assert daemon.exit_code != 0
 
@@ -819,11 +865,14 @@ def test_tui_and_web_smoke_over_run_artifacts() -> None:
         tui = runner.invoke(cli, ["tui", "--runs-dir", "runs"])
         web = runner.invoke(cli, ["web", "--runs-dir", "runs", "--smoke"])
         snapshot = web_snapshot(Path("runs"))
+        tui_output = _strip_ansi(tui.output)
 
         assert tui.exit_code == 0, tui.output
-        assert "XRTM local product cockpit" in tui.output
+        assert "XRTM local product cockpit" in tui_output
+        assert "No monitor runs" in tui_output
         assert web.exit_code == 0, web.output
         assert len(snapshot["runs"]) == 1
+        assert snapshot["monitors"] == []
 
 
 def test_webui_serves_api_routes() -> None:

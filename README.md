@@ -18,6 +18,12 @@ recorded in `docs/release-command-contract.json`. Branch-only CLI additions stay
 out of these pages until the matching coordinated release updates that contract
 and the released-stack smoke.
 
+## Choose the package boundary quickly
+
+- Start with **`xrtm`** when you want the product-first, provider-free, released workflow: CLI, canonical run artifacts, WebUI/TUI, and the quickest honest first success.
+- Start with **`xrtm-forecast`** when you are embedding forecasting directly in code, building a service, or composing custom orchestration around the runtime APIs.
+- If you need both, prove the run once with `xrtm`, then move into the [integration examples](examples/integration/) and [Python API Reference](docs/python-api-reference.md).
+
 ## What you can prove in a few minutes
 
 - Verify the published package health with `xrtm doctor`
@@ -161,7 +167,7 @@ This creates `.xrtm/profiles/my-local.json`, keeps the workflow on the honest mo
 - **Researcher / model-eval**: read the [Getting Started Guide](docs/getting-started.md) for the full released first-success flow and the benchmark/performance path.
 - **Operator**: use the [Operator Runbook](docs/operator-runbook.md) for profiles, monitoring, history review, JSON exports, and troubleshooting.
 - **Team**: read [Team Workflows](docs/team-workflows.md) for honest current-team patterns built from profiles, exports, and conventions.
-- **Developer / integrator**: use the [Python API Reference](docs/python-api-reference.md) and the clearly-labeled [integration examples](examples/integration/) for programmatic usage.
+- **Developer / integrator**: start with `xrtm` if you still need the released provider-free proof path; switch to the [Python API Reference](docs/python-api-reference.md) and [integration examples](examples/integration/) once you are embedding forecasting directly in code.
 
 ## Optional later: local LLMs
 
