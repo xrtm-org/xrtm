@@ -18,11 +18,13 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 from xrtm.data.corpora import CorpusSplitter, CorpusTier, SplitConfig, get_corpus
 
+import xrtm.product.validation as validation_module
 from xrtm.product.validation import (
     ValidationOptions,
     ValidationSafetyError,
@@ -201,6 +203,39 @@ def test_validation_artifact_generation() -> None:
     artifact_data = json.loads(artifact_path.read_text())
     assert artifact_data["schema_version"] == "xrtm.validation.v1"
     assert artifact_data["corpus"]["corpus_id"] == "xrtm-real-binary-v1"
+
+
+def test_validation_artifact_generation_avoids_same_second_collisions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Repeated same-second validation runs should keep distinct artifacts."""
+
+    class FrozenDateTime:
+        @classmethod
+        def now(cls, tz: timezone | None = None) -> datetime:
+            return datetime(2026, 5, 2, 1, 8, 20, tzinfo=timezone.utc if tz is not None else None)
+
+    monkeypatch.setattr(validation_module, "datetime", FrozenDateTime)
+    output_dir = tmp_path / "validation-artifacts"
+    options = ValidationOptions(
+        corpus_id="xrtm-real-binary-v1",
+        provider="mock",
+        limit=1,
+        iterations=1,
+        output_dir=output_dir,
+        write_artifacts=True,
+    )
+
+    first = run_validation(options)
+    second = run_validation(options)
+
+    first_path = Path(first["artifact_path"])
+    second_path = Path(second["artifact_path"])
+    assert first_path.exists()
+    assert second_path.exists()
+    assert first_path.name == "validation-xrtm-real-binary-v1-20260502T010820Z.json"
+    assert second_path.name == "validation-xrtm-real-binary-v1-20260502T010820Z-01.json"
+    assert len(list(output_dir.glob("validation-xrtm-real-binary-v1-*.json"))) == 2
 
 
 def test_prepare_validation_corpus_fixture_preview(tmp_path: Path) -> None:

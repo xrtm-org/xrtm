@@ -302,9 +302,20 @@ def _write_validation_artifact(report: dict[str, Any], output_dir: Path) -> Path
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     corpus_id = report["corpus"]["corpus_id"]
-    artifact_path = output_dir / f"validation-{corpus_id}-{timestamp}.json"
+    artifact_path = _next_validation_artifact_path(output_dir=output_dir, corpus_id=corpus_id, timestamp=timestamp)
     artifact_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return artifact_path
+
+
+def _next_validation_artifact_path(*, output_dir: Path, corpus_id: str, timestamp: str) -> Path:
+    """Return a validation artifact path that avoids same-second collisions."""
+    base_name = f"validation-{corpus_id}-{timestamp}"
+    for attempt in range(1000):
+        suffix = "" if attempt == 0 else f"-{attempt:02d}"
+        candidate = output_dir / f"{base_name}{suffix}.json"
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError(f"Failed to allocate validation artifact path under {output_dir}")
 
 
 def list_validation_corpora(
