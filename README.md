@@ -1,23 +1,26 @@
-# xRtm: local-first forecasting and model-eval workbench
+# XRTM: AI for event forecasting
 
 [![PyPI](https://img.shields.io/pypi/v/xrtm?style=flat-square)](https://pypi.org/project/xrtm/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 
-**xRtm** is a local-first forecasting and model-eval workbench.
+**XRTM** is AI for event forecasting.
 
-It helps researchers and evaluation teams run forecasting workflows on their own machine, inspect every run artifact, and compare results without depending on hosted APIs for the default path.
+AI can already generate plausible answers. The bigger opportunity is
+forecasting real-world events, keeping score, and getting measurably better
+over time. XRTM gives you a product path for that: run a forecasting workflow,
+inspect the artifacts, review the scores, compare runs, and iterate.
 
 **Start here:** run `xrtm start`, inspect the generated run, browse the results in the WebUI or TUI, then pick the guide that matches your job.
 
 ## What you can prove in a few minutes
 
-- Run a complete forecasting workflow locally with `--provider mock`
+- Run your first event-forecasting loop with `xrtm start`
 - Score the run and write reproducible artifacts under `runs/`
-- Inspect outputs with CLI commands and an HTML report
+- Inspect evidence with CLI commands and an HTML report
 - Browse the same run in the WebUI or TUI
-- Move to starter profiles, team workflows, or optional local-LLM setups later
+- Expand into benchmarking, monitoring, team workflows, or optional local-LLM setups later
 
-## Quick proof: local demo -> artifacts -> browser
+## Quick proof: first forecast -> scored evidence -> browser
 
 ### 1. Install
 
@@ -85,7 +88,8 @@ These files are the proof surface for the product: the CLI, TUI, WebUI, and expo
 
 ## Official proof-point workflows
 
-The official XRTM story is intentionally small. After `xrtm start`, keep returning to these four workflows:
+The story is simple: XRTM is AI for event forecasting. After `xrtm start`,
+these four workflows are how you prove it with shipped features:
 
 ### 1. Provider-free first success
 
@@ -143,18 +147,24 @@ This creates `.xrtm/profiles/my-local.json`, keeps the workflow on the honest mo
 
 ## Choose your next path
 
-- **Researcher / model-eval user first**: read the [Getting Started Guide](docs/getting-started.md) for the full first-success flow and the benchmark/validation workflow.
+- **Researcher / model-eval**: read the [Getting Started Guide](docs/getting-started.md) for the full first-success flow and the benchmark/validation workflow.
 - **Operator**: use the [Operator Runbook](docs/operator-runbook.md) for the monitoring/history/report workflow, repeatable profiles, and troubleshooting.
 - **Team**: read [Team Workflows](docs/team-workflows.md) for honest current-team patterns built from profiles, exports, and conventions.
 - **Developer / integrator**: use the [Python API Reference](docs/python-api-reference.md) and the clearly-labeled [integration examples](examples/integration/) for programmatic usage.
 
-## Optional: local LLMs come later
+## Optional later: local LLMs
 
-If you want real local-model inference, xRtm also supports `--provider local-llm` against a local OpenAI-compatible endpoint. Treat that as a secondary path after your first provider-free run; setup takes more time and hardware. Start from the advanced section in [docs/getting-started.md](docs/getting-started.md) and the [Operator Runbook](docs/operator-runbook.md).
+If you want real local-model inference, XRTM also supports `--provider
+local-llm` against a local OpenAI-compatible endpoint. Treat that as a
+secondary path after your first provider-free run; setup takes more time and
+hardware. Start from the advanced section in
+[docs/getting-started.md](docs/getting-started.md) and the [Operator
+Runbook](docs/operator-runbook.md).
 
 ## Packages in the ecosystem
 
-The top-level `xrtm` package is the product-facing workbench. It installs and coordinates these underlying packages:
+The top-level `xrtm` package is the product shell for the event-forecasting
+system. It installs and coordinates these underlying packages:
 
 | Package | Badge | Role |
 | :--- | :--- | :--- |

@@ -44,7 +44,7 @@ def start_monitor(
     api_key: str | None = None,
     thresholds: MonitorThresholds | None = None,
 ) -> RunArtifact:
-    """Create a local-first monitor run with deterministic corpus watches."""
+    """Create a monitor run for repeatable event-forecasting watches."""
 
     if limit < 1:
         raise ValueError("limit must be at least 1")

@@ -1,6 +1,8 @@
 # XRTM Operator Runbook
 
-This runbook covers the supported local-first operating path for the top-level `xrtm` product shell.
+This runbook covers the supported operating path for the top-level `xrtm`
+product shell once the first event-forecasting loop from `getting-started.md`
+is already working.
 
 For merge, cross-repo coordination, release-train operation, and release gate requirements, see the governance repo's PR acceptance policy, cross-repo compatibility policy, release train playbook, and release readiness policy:
 
@@ -40,7 +42,8 @@ xrtm doctor
 
 ## Official proof-point set
 
-After the provider-free first success from `getting-started.md`, the supported XRTM product story stays centered on four workflows:
+After the first proof from `getting-started.md`, XRTM expands through four
+workflows:
 
 1. **Provider-free first success** via `xrtm start`
 2. **Benchmark and validation workflow** via `xrtm perf run` and `xrtm validate run`

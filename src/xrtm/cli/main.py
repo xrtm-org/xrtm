@@ -73,7 +73,7 @@ console = Console()
 @click.group()
 @click.version_option(version=__version__)
 def cli() -> None:
-    """XRTM local-first product cockpit."""
+    """XRTM product cockpit for event forecasting."""
 
 
 @cli.command()
