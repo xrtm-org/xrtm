@@ -38,6 +38,17 @@ xrtm-train --version
 xrtm doctor
 ```
 
+## Official proof-point set
+
+After the provider-free first success from `getting-started.md`, the supported XRTM product story stays centered on four workflows:
+
+1. **Provider-free first success** via `xrtm start`
+2. **Benchmark and validation workflow** via `xrtm perf run` and `xrtm validate run`
+3. **Monitoring, history, and report workflow** via profiles, monitor commands, compare/export, and HTML reports
+4. **Local-LLM advanced workflow** via `xrtm local-llm status` and `xrtm demo --provider local-llm`
+
+This runbook primarily sharpens workflows 2-4.
+
 ## Workflow profiles
 
 Profiles save repeatable local workflow settings so you do not have to retype provider, corpus limit, token budget, model, and run directory options.
@@ -208,7 +219,7 @@ xrtm artifacts cleanup --runs-dir runs --keep 50 --delete
 
 The command is dry-run by default. Use `--delete` only after checking the listed candidates.
 
-## Monitor lifecycle
+## Monitoring, history, and report workflow
 
 Create and update a monitor:
 
@@ -241,6 +252,17 @@ xrtm monitor start --provider mock --limit 2 --probability-delta 0.10 --confiden
 If an update crosses a configured probability or confidence threshold, the monitor becomes `degraded`, watch-level warnings are persisted, and matching `warning` events are appended to `events.jsonl`.
 
 If you need custom cron/systemd scheduling, bespoke Markdown reports, or your own notification hooks, see the [Scheduled Monitor integration pattern](../examples/integration/scheduled-monitor/). That example is separate from the shipped `xrtm monitor ...` lifecycle above.
+
+History and report review stay on the same canonical run artifacts:
+
+```bash
+xrtm runs list --runs-dir runs
+xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs
+xrtm runs export latest --runs-dir runs --output latest-run.json
+xrtm report html --latest --runs-dir runs
+```
+
+Treat this monitor/history/report loop as one proof point: the same local run evidence powers review, export, and operational monitoring.
 
 ## TUI and WebUI
 
@@ -297,6 +319,8 @@ xrtm perf run \
   --scenario provider-free-smoke \
   --iterations 5 \
   --limit 10 \
+  --runs-dir runs-perf \
+  --output performance.json \
   --max-mean-seconds 0.040 \
   --max-p95-seconds 0.080 \
   --fail-on-budget
@@ -313,7 +337,7 @@ The `--fail-on-budget` flag causes the command to exit with a non-zero status if
 Budget gates warn by default. Add `--fail-on-budget` when using the command as a hard release gate:
 
 ```bash
-xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 --max-mean-seconds 10 --fail-on-budget
+xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 --runs-dir runs-perf --output performance.json --max-mean-seconds 10 --fail-on-budget
 ```
 
 Performance runs intentionally use local relative paths for `--runs-dir` and `--output`; absolute paths and `..` traversal are rejected. The harness also caps `--iterations` at 100 and `--limit` at 1000 to prevent accidental resource exhaustion.
@@ -351,7 +375,7 @@ xrtm validate prepare-corpus --corpus-id forecast-v1
 xrtm validate prepare-corpus --corpus-id forecast-v1 --fixture-preview --refresh
 
 # Run validation with default corpus (Tier 1, safe for CI)
-xrtm validate run --provider mock --limit 10 --iterations 2
+xrtm validate run --provider mock --limit 10 --iterations 2 --runs-dir runs-validation
 
 # Run with specific corpus and split
 xrtm validate run \

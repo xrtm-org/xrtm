@@ -45,15 +45,23 @@ def print_quickstart_summary(console: Console, result: PipelineResult, *, runs_d
     )
 
     runs_dir_arg = runs_dir_command_arg(runs_dir)
-    role_lines = [
-        f"Researcher / model-eval next command: xrtm demo --provider mock --limit 10 {runs_dir_arg}",
-        f"Operator next command: xrtm profile starter my-local {runs_dir_arg}",
+    proof_point_lines = [
+        "1. Provider-free first success: xrtm start (already proved above).",
+        (
+            "2. Benchmark and validation workflow: "
+            "xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 "
+            "--runs-dir runs-perf --output performance.json"
+        ),
+        "   Follow with: xrtm validate run --provider mock --limit 10 --iterations 2 --runs-dir runs-validation",
+        f"3. Monitoring, history, and report workflow: xrtm profile starter my-local {runs_dir_arg}",
+        f"   Then: xrtm monitor start --provider mock --limit 2 {runs_dir_arg}",
+        f"   Review/export: xrtm runs export latest {runs_dir_arg} --output latest-run.json",
+        "4. Local-LLM advanced workflow: xrtm local-llm status",
+        "   Then: xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local",
         f"Starter profile uses provider=mock, limit={STARTER_PROFILE_LIMIT}, and saves to {DEFAULT_PROFILES_DIR}.",
-        f"Team export next command: xrtm runs export latest {runs_dir_arg} --output latest-run.json",
-        "Developer / integrator next path: docs/python-api-reference.md and examples/integration/",
-        "Optional later for local models: xrtm local-llm status",
+        "Developer / integrator path: docs/python-api-reference.md and examples/integration/.",
     ]
-    console.print(Panel("\n".join(role_lines), title="Role-based next paths", border_style="magenta"))
+    console.print(Panel("\n".join(proof_point_lines), title="Official proof-point workflows", border_style="magenta"))
 
 
 def print_post_run_summary(

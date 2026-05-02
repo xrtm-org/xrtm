@@ -83,6 +83,53 @@ These files are the proof surface for the product: the CLI, TUI, WebUI, and expo
 - `events.jsonl` is the versioned event stream (`xrtm.events.v1`)
 - `run_summary.json` is the compact summary contract used by higher-level views
 
+## Official proof-point workflows
+
+The official XRTM story is intentionally small. After `xrtm start`, keep returning to these four workflows:
+
+### 1. Provider-free first success
+
+```bash
+xrtm start
+xrtm runs show latest --runs-dir runs
+xrtm artifacts inspect --latest --runs-dir runs
+xrtm report html --latest --runs-dir runs
+xrtm web --runs-dir runs
+```
+
+This is the canonical first proof: a full local forecasting run, scored artifacts on disk, and a browser/TUI view over the same evidence.
+
+### 2. Benchmark and validation workflow
+
+```bash
+xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 --runs-dir runs-perf --output performance.json
+xrtm validate run --provider mock --limit 10 --iterations 2 --runs-dir runs-validation
+```
+
+Use this workflow when you need deterministic benchmark evidence and a larger corpus-backed validation pass without introducing provider noise.
+
+### 3. Monitoring, history, and report workflow
+
+```bash
+xrtm profile starter my-local --runs-dir runs
+xrtm run profile my-local
+xrtm monitor start --provider mock --limit 2 --runs-dir runs
+xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs
+xrtm runs export latest --runs-dir runs --output latest-run.json
+```
+
+This is the official operator loop for repeatable local runs, monitor state, history review, and portable report/export evidence.
+
+### 4. Local-LLM advanced workflow
+
+```bash
+export XRTM_LOCAL_LLM_BASE_URL=http://localhost:8080/v1
+xrtm local-llm status
+xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local
+```
+
+Only use this path after the provider-free workflow is already healthy.
+
 ## Minimal starter scaffold after your first run
 
 When you want a reusable local workflow without inventing structure, create the starter profile:
@@ -96,8 +143,8 @@ This creates `.xrtm/profiles/my-local.json`, keeps the workflow on the honest mo
 
 ## Choose your next path
 
-- **Researcher / model-eval user first**: read the [Getting Started Guide](docs/getting-started.md) for the full first-success flow and starter local profiles.
-- **Operator**: use the [Operator Runbook](docs/operator-runbook.md) for repeatable workflows, monitor commands, performance checks, and troubleshooting.
+- **Researcher / model-eval user first**: read the [Getting Started Guide](docs/getting-started.md) for the full first-success flow and the benchmark/validation workflow.
+- **Operator**: use the [Operator Runbook](docs/operator-runbook.md) for the monitoring/history/report workflow, repeatable profiles, and troubleshooting.
 - **Team**: read [Team Workflows](docs/team-workflows.md) for honest current-team patterns built from profiles, exports, and conventions.
 - **Developer / integrator**: use the [Python API Reference](docs/python-api-reference.md) and the clearly-labeled [integration examples](examples/integration/) for programmatic usage.
 

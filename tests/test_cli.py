@@ -152,8 +152,19 @@ def test_start_guides_newcomers_through_provider_free_first_run() -> None:
         assert "Open/regenerate the report: xrtm report html --latest --runs-dir runs" in output
         assert "xrtm web --runs-dir runs" in output
         assert "xrtm tui --runs-dir runs" in output
-        assert "Researcher / model-eval next command" in output
-        assert "xrtm profile starter my-local --runs-dir runs" in output
+        assert "Official proof-point workflows" in output
+        assert "Provider-free first success" in output
+        assert "Benchmark and validation workflow" in output
+        assert "Monitoring, history, and report workflow" in output
+        assert "Local-LLM advanced workflow" in output
+        for phrase in ["provider-free-smoke", "performance.json", "runs-validation"]:
+            assert phrase in output
+        assert "xrtm validate run --provider mock --limit 10 --iterations 2" in output
+        for phrase in ["xrtm profile starter my-local", "my-local", "--runs-dir runs"]:
+            assert phrase in output
+        for phrase in ["xrtm monitor start", "latest-run.json", "xrtm runs export latest"]:
+            assert phrase in output
+        assert "xrtm local-llm status" in output
         assert f"limit={STARTER_PROFILE_LIMIT}" in output
         assert "docs/python-api-reference.md" in output
 
