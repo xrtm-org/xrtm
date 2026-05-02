@@ -21,6 +21,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout workspace siblings
+        run: |
+          BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          for repo in data eval forecast train; do
+            git clone --depth 1 -b "$BRANCH" "https://github.com/xrtm-org/${repo}.git" "$repo" 2>/dev/null \
+              || git clone --depth 1 -b main "https://github.com/xrtm-org/${repo}.git" "$repo"
+          done
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -33,7 +41,7 @@ jobs:
 
       - name: Install package and test tools
         run: |
-          uv pip install --system -e .
+          uv pip install --system -e ./data -e ./eval -e ./forecast -e ./train -e .
           uv pip install --system ruff mypy pytest build
 
       - name: Ruff
@@ -52,7 +60,7 @@ jobs:
         shell: bash
         run: |
           python -m venv /tmp/xrtm-wheel-smoke
-          uv pip install --python /tmp/xrtm-wheel-smoke/bin/python dist/xrtm-*.whl
+          uv pip install --python /tmp/xrtm-wheel-smoke/bin/python -e ./data -e ./eval -e ./forecast -e ./train dist/xrtm-*.whl
           /tmp/xrtm-wheel-smoke/bin/xrtm --help
           /tmp/xrtm-wheel-smoke/bin/xrtm doctor
           /tmp/xrtm-wheel-smoke/bin/xrtm web --smoke
