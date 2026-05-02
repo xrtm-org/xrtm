@@ -1,0 +1,83 @@
+{
+  "release_version": "0.3.0",
+  "summary": "Release-gated command claims for README/getting-started/operator/site docs.",
+  "allowed_claims": [
+    ". .venv/bin/activate",
+    "export XRTM_LOCAL_LLM_BASE_URL=http://localhost:8080/v1",
+    "forecast --version",
+    "pip install xrtm-forecast==0.6.6",
+    "pip install xrtm==0.3.0",
+    "python3.11 -m venv .venv",
+    "xrtm --version",
+    "xrtm artifacts cleanup --runs-dir runs --keep 50",
+    "xrtm artifacts inspect",
+    "xrtm artifacts inspect .",
+    "xrtm artifacts inspect runs/<run-id>",
+    "xrtm demo",
+    "xrtm demo --provider local-llm --limit 1 --max-tokens 768",
+    "xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local",
+    "xrtm demo --provider mock --limit 1 --runs-dir runs",
+    "xrtm demo --provider mock --limit 10 --runs-dir runs",
+    "xrtm demo --provider mock --limit 2 --runs-dir runs",
+    "xrtm doctor",
+    "xrtm local-llm status",
+    "xrtm monitor",
+    "xrtm monitor ...",
+    "xrtm monitor list",
+    "xrtm monitor list --runs-dir runs",
+    "xrtm monitor start",
+    "xrtm monitor start --provider mock --limit 2 --runs-dir runs",
+    "xrtm perf",
+    "xrtm perf run",
+    "xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 --runs-dir runs-perf --output performance.json",
+    "xrtm profile create",
+    "xrtm profile create local-mock --provider mock --limit 2 --runs-dir runs",
+    "xrtm profile create my-local --provider mock --limit 2 --runs-dir runs",
+    "xrtm profile list",
+    "xrtm profile show",
+    "xrtm profile show local-mock",
+    "xrtm profile show my-local",
+    "xrtm report html",
+    "xrtm report html runs/<run-id>",
+    "xrtm run profile",
+    "xrtm run profile local-mock",
+    "xrtm run profile my-local",
+    "xrtm runs compare",
+    "xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs",
+    "xrtm runs export",
+    "xrtm runs export <run-id> --runs-dir runs --output export.json",
+    "xrtm runs export <run-id> --runs-dir runs --output run.json",
+    "xrtm runs list",
+    "xrtm runs list --runs-dir runs",
+    "xrtm runs show",
+    "xrtm runs show <run-id> --runs-dir runs",
+    "xrtm tui --runs-dir runs",
+    "xrtm web --runs-dir runs",
+    "xrtm web --runs-dir runs --smoke",
+    "xrtm web --smoke",
+    "xrtm-data --version",
+    "xrtm-forecast --version",
+    "xrtm-train --version"
+  ],
+  "scopes": {
+    "xrtm": {
+      "files": [
+        "README.md",
+        "docs/getting-started.md",
+        "docs/operator-runbook.md",
+        "docs/python-api-reference.md"
+      ]
+    },
+    "xrtm.org": {
+      "files": [
+        "docs/getting-started.md",
+        "docs/examples.md",
+        "docs/framework/intro.md",
+        "docs/index.mdx",
+        "docs/workflows/operator-runbook.md",
+        "docs/workflows/researcher-model-eval.md",
+        "src/pages/index.tsx"
+      ]
+    }
+  }
+}

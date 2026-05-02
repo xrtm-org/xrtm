@@ -636,7 +636,7 @@ XRTM follows semantic versioning:
 
 Pin to a specific version for production:
 ```bash
-pip install xrtm-forecast==0.3.0
+pip install xrtm-forecast==0.6.6
 ```
 
 ---
@@ -649,7 +649,7 @@ These examples are **integration patterns**, not extra built-in XRTM product sur
 
 - **[Batch Processing](../examples/integration/batch-processing/)** — Bring your own CSV/JSON question list into a reusable Python batch script
 - **[FastAPI Service](../examples/integration/fastapi-service/)** — Wrap the library in a sample HTTP service for other applications
-- **[Scheduled Monitor](../examples/integration/scheduled-monitor/)** — Build a lightweight Python scheduling/reporting loop; for the shipped monitor lifecycle use `xrtm monitor ...` from the [Operator Runbook](operator-runbook.md)
+- **[Scheduled Monitor](../examples/integration/scheduled-monitor/)** — Build a lightweight Python scheduling/reporting loop; for the shipped monitor lifecycle use the monitor commands from the [Operator Runbook](operator-runbook.md)
 - **[Data Export](../examples/integration/data-export/)** — Build custom ETL on top of canonical run directories; for one-off CLI exports use `xrtm runs export` from the [Operator Runbook](operator-runbook.md)
 
 Each example includes working code plus notes about where the pattern differs from the product workflow.

@@ -8,13 +8,13 @@ These examples are **not additional built-in product features**. They show how t
 
 - **Get your first successful local run**: use the [Getting Started Guide](../../docs/getting-started.md).
 - **Learn the canonical XRTM pipeline and run artifacts**: start with the [Getting Started Guide](../../docs/getting-started.md) and the [Operator Runbook](../../docs/operator-runbook.md).
-- **Configure providers, local LLMs, monitor lifecycle, validation, or performance workflows**: use the [Operator Runbook](../../docs/operator-runbook.md).
+- **Configure providers, local LLMs, monitor lifecycle, exports, or performance workflows**: use the [Operator Runbook](../../docs/operator-runbook.md).
 
 ## Choose an example by job to be done
 
 | Your job | Start here | Shipped XRTM surface to know about | What the example actually demonstrates |
 | --- | --- | --- | --- |
-| I need my **first local run** and want to inspect real artifacts | [Getting Started Guide](../../docs/getting-started.md) | guided `xrtm start`, latest-run inspect/report commands, canonical `runs/<run-id>/` artifacts | This is a product workflow, not an integration example |
+| I need my **first local run** and want to inspect real artifacts | [Getting Started Guide](../../docs/getting-started.md) | released `xrtm demo --provider mock --limit 1 --runs-dir runs`, explicit run-id inspect/report commands, canonical `runs/<run-id>/` artifacts | This is a product workflow, not an integration example |
 | I want to **reuse XRTM inside a script or batch job** with my own question list | [Batch Processing](./batch-processing/) | Forecast APIs, mock-provider smoke path | Reading CSV/JSON input and writing lightweight batch artifacts |
 | I need to **embed forecasting behind an HTTP API** for another application | [FastAPI Service](./fastapi-service/) | Python package APIs used inside your own service | A sample FastAPI wrapper with request validation and in-memory history |
 | I want to **schedule recurring forecasts or custom notifications** | [Scheduled Monitor](./scheduled-monitor/) | Built-in `xrtm monitor ...` workflow in the [Operator Runbook](../../docs/operator-runbook.md) | A lightweight Python scheduling/reporting pattern with SQLite trend history |

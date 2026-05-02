@@ -8,7 +8,7 @@ This guide documents realistic multi-user and desk-style workflows for XRTM, bas
 - Local-first architecture with comprehensive run artifacts
 - Profile system for reproducible analyst workflows
 - Built-in performance metrics (Brier scores, calibration)
-- Structured export formats (JSON, CSV)
+- Structured JSON export plus custom downstream transforms when teams need CSV or database reshaping
 - Event streams for run-level audit trails
 - Command-line automation capabilities
 
@@ -159,19 +159,13 @@ This shows differences in:
 
 ### Individual Run Export
 
-Export a run to JSON for integration:
+Released `xrtm runs export` is JSON-only in `0.3.0`:
 
 ```bash
 xrtm runs export runs/20260501T101710Z-d8967e54 --output exports/jane-2026-05-01.json
 ```
 
-Export to CSV for spreadsheet analysis:
-
-```bash
-xrtm runs export runs/20260501T101710Z-d8967e54 --output exports/jane-2026-05-01.csv --format csv
-```
-
-**CSV format** provides flattened forecasts with run metadata, perfect for Excel, Pandas, or R analysis.
+Use that JSON bundle for integrations, and treat spreadsheet-friendly rows as a custom layer built on top of the released export.
 
 ### Team Database Integration
 
@@ -425,7 +419,7 @@ xrtm runs list --runs-dir runs | grep "2026-05-01"
 for analyst in jane bob maria; do
     # Find latest run for analyst (using naming convention)
     run_id=$(xrtm runs list --runs-dir runs | grep $analyst | head -1 | awk '{print $1}')
-    xrtm runs export runs/$run_id --output exports/$analyst-weekly.csv --format csv
+    xrtm runs export runs/$run_id --output exports/$analyst-weekly.json
 done
 
 # Import to team database
@@ -734,8 +728,8 @@ if __name__ == "__main__":
 ### 3. Export Regularly
 
 - Export important runs to durable storage
-- Use CSV format for spreadsheet users
-- Use JSON format for programmatic access
+- Use JSON export as the released interchange format
+- Add CSV or warehouse transforms in your own integration layer when needed
 
 ### 4. Review Cadence
 
@@ -804,18 +798,14 @@ def import_run(run_dir):
         return import_run_v2(run_dir)
 ```
 
-### Problem: CSV export missing expected fields
+### Problem: Need spreadsheet-friendly rows
 
-**Cause:** CSV format is flattened and may not include all nested data.
+**Cause:** Released `xrtm==0.3.0` exports JSON only.
 
-**Solution:** Use JSON export for complete data, CSV for analysis:
+**Solution:** Use JSON export for the complete data bundle, then flatten it in your own ETL or analytics script:
 
 ```bash
-# Full data
 xrtm runs export runs/20260501T101710Z-d8967e54 --output full-data.json
-
-# Analysis-friendly format
-xrtm runs export runs/20260501T101710Z-d8967e54 --output analysis.csv --format csv
 ```
 
 ---

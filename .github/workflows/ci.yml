@@ -137,6 +137,9 @@ jobs:
           uv pip install --system -e ./data -e ./eval -e ./forecast -e ./train -e .
           uv pip install --system ruff mypy pytest build
 
+      - name: Release command claims
+        run: python scripts/check_release_claims.py --repo-root . --contract docs/release-command-contract.json --scope xrtm
+
       - name: Ruff
         run: ruff check .
 
@@ -177,8 +180,20 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Resolve documented release version
+        id: release-contract
+        shell: bash
+        run: |
+          release_version="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path('docs/release-command-contract.json').read_text(encoding='utf-8'))['release_version'])
+          PY
+          )"
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+
       - name: Install released stack
-        run: uv pip install --system "xrtm==0.2.1"
+        run: uv pip install --system "xrtm==${{ steps.release-contract.outputs.release_version }}"
 
       - name: Smoke released stack
         shell: bash
@@ -197,5 +212,10 @@ jobs:
           print("released stack imports ok")
           PY
           xrtm doctor
-          xrtm demo --provider mock --limit 2 --runs-dir /tmp/xrtm-release-smoke
+          xrtm demo --provider mock --limit 1 --runs-dir /tmp/xrtm-release-smoke
+          run_dir="$(find /tmp/xrtm-release-smoke -mindepth 1 -maxdepth 1 -type d | sort | head -n 1)"
+          run_id="$(basename "$run_dir")"
+          xrtm runs show "$run_id" --runs-dir /tmp/xrtm-release-smoke
+          xrtm artifacts inspect "$run_dir"
+          xrtm report html "$run_dir"
           xrtm web --runs-dir /tmp/xrtm-release-smoke --smoke

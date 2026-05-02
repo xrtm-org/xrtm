@@ -10,17 +10,23 @@ forecasting real-world events, keeping score, and getting measurably better
 over time. XRTM gives you a product path for that: run a forecasting workflow,
 inspect the artifacts, review the scores, compare runs, and iterate.
 
-**Start here:** run `xrtm start`, inspect the generated run, browse the results in the WebUI or TUI, then pick the guide that matches your job.
+**Start here:** run `xrtm doctor`, then `xrtm demo --provider mock --limit 1 --runs-dir runs`, inspect the generated run, and browse it in the WebUI or TUI.
+
+Top-level command blocks in this README, `docs/getting-started.md`, and
+`docs/operator-runbook.md` are release-gated to the published package surface
+recorded in `docs/release-command-contract.json`. Branch-only CLI additions stay
+out of these pages until the matching coordinated release updates that contract
+and the released-stack smoke.
 
 ## What you can prove in a few minutes
 
-- Run your first event-forecasting loop with `xrtm start`
-- Score the run and write reproducible artifacts under `runs/`
-- Inspect evidence with CLI commands and an HTML report
-- Browse the same run in the WebUI or TUI
-- Expand into benchmarking, monitoring, team workflows, or optional local-LLM setups later
+- Verify the published package health with `xrtm doctor`
+- Run your first provider-free event-forecasting loop with `xrtm demo --provider mock --limit 1 --runs-dir runs`
+- Inspect the canonical run directory with `xrtm runs list`, `xrtm runs show <run-id> --runs-dir runs`, `xrtm artifacts inspect runs/<run-id>`, and `xrtm report html runs/<run-id>`
+- Browse the same evidence in the WebUI or TUI
+- Expand into benchmarking, monitoring, history, JSON export, or optional local-LLM setups later
 
-## Quick proof: first forecast -> scored evidence -> browser
+## Quick proof: install -> provider-free demo -> inspect -> browser
 
 ### 1. Install
 
@@ -32,26 +38,34 @@ pip install xrtm==0.3.0
 
 Supported Python versions are `>=3.11,<3.13`.
 
-### 2. Run the guided first command
+### 2. Verify package health
 
 ```bash
-xrtm start
+xrtm doctor
 ```
 
-`xrtm start` checks readiness, runs the deterministic mock-provider demo, confirms the core artifacts, and prints exact next commands. This default path is provider-free: no API keys, no cloud dependency, and no local model server required.
+`xrtm doctor` is the released package-health check: it verifies imports and reports the installed stack versions before you run a workflow.
 
-### 3. Inspect the run you just created
+### 3. Run the published provider-free demo
 
 ```bash
-xrtm runs show latest --runs-dir runs
-xrtm artifacts inspect --latest --runs-dir runs
-xrtm report html --latest --runs-dir runs
+xrtm demo --provider mock --limit 1 --runs-dir runs
 ```
 
-The generated report is written to `runs/<run-id>/report.html`.
-`xrtm artifacts inspect` lists the canonical files and their on-disk locations so you can confirm exactly what the first run produced.
+This default path is provider-free: no API keys, no cloud dependency, and no local model server required.
 
-### 4. Browse results visually
+### 4. Inspect the run you just created
+
+```bash
+xrtm runs list --runs-dir runs
+xrtm runs show <run-id> --runs-dir runs
+xrtm artifacts inspect runs/<run-id>
+xrtm report html runs/<run-id>
+```
+
+Use the run id from `xrtm runs list --runs-dir runs`. The regenerated report is written to `runs/<run-id>/report.html`.
+
+### 5. Browse results visually
 
 ```bash
 xrtm web --runs-dir runs
@@ -88,41 +102,37 @@ These files are the proof surface for the product: the CLI, TUI, WebUI, and expo
 
 ## Official proof-point workflows
 
-The story is simple: XRTM is AI for event forecasting. After `xrtm start`,
-these four workflows are how you prove it with shipped features:
+The story is simple: XRTM is AI for event forecasting. These release-gated
+workflows are the published proof behind that claim today:
 
 ### 1. Provider-free first success
 
 ```bash
-xrtm start
-xrtm runs show latest --runs-dir runs
-xrtm artifacts inspect --latest --runs-dir runs
-xrtm report html --latest --runs-dir runs
+xrtm doctor
+xrtm demo --provider mock --limit 1 --runs-dir runs
+xrtm runs list --runs-dir runs
+xrtm runs show <run-id> --runs-dir runs
+xrtm artifacts inspect runs/<run-id>
+xrtm report html runs/<run-id>
 xrtm web --runs-dir runs
 ```
 
-This is the canonical first proof: a full local forecasting run, scored artifacts on disk, and a browser/TUI view over the same evidence.
-
-### 2. Benchmark and validation workflow
+### 2. Benchmark and performance workflow
 
 ```bash
 xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 --runs-dir runs-perf --output performance.json
-xrtm validate run --provider mock --limit 10 --iterations 2 --runs-dir runs-validation
+xrtm web --runs-dir runs --smoke
 ```
 
-Use this workflow when you need deterministic benchmark evidence and a larger corpus-backed validation pass without introducing provider noise.
-
-### 3. Monitoring, history, and report workflow
+### 3. Monitoring, history, and export workflow
 
 ```bash
-xrtm profile starter my-local --runs-dir runs
-xrtm run profile my-local
+xrtm profile create local-mock --provider mock --limit 2 --runs-dir runs
+xrtm run profile local-mock
 xrtm monitor start --provider mock --limit 2 --runs-dir runs
 xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs
-xrtm runs export latest --runs-dir runs --output latest-run.json
+xrtm runs export <run-id> --runs-dir runs --output export.json
 ```
-
-This is the official operator loop for repeatable local runs, monitor state, history review, and portable report/export evidence.
 
 ### 4. Local-LLM advanced workflow
 
@@ -132,14 +142,15 @@ xrtm local-llm status
 xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local
 ```
 
-Only use this path after the provider-free workflow is already healthy.
+Commands that are still on the next coordinated release train—new guided-start shortcuts, corpus-validation flows, latest-run aliases, CSV export, and user-attribution flags—intentionally stay out of these top-level docs until the release contract moves forward.
 
-## Minimal starter scaffold after your first run
+## Minimal reusable profile after your first run
 
-When you want a reusable local workflow without inventing structure, create the starter profile:
+When you want a reusable local workflow without inventing structure, create a
+profile explicitly:
 
 ```bash
-xrtm profile starter my-local --runs-dir runs
+xrtm profile create my-local --provider mock --limit 2 --runs-dir runs
 xrtm run profile my-local
 ```
 
@@ -147,19 +158,14 @@ This creates `.xrtm/profiles/my-local.json`, keeps the workflow on the honest mo
 
 ## Choose your next path
 
-- **Researcher / model-eval**: read the [Getting Started Guide](docs/getting-started.md) for the full first-success flow and the benchmark/validation workflow.
-- **Operator**: use the [Operator Runbook](docs/operator-runbook.md) for the monitoring/history/report workflow, repeatable profiles, and troubleshooting.
+- **Researcher / model-eval**: read the [Getting Started Guide](docs/getting-started.md) for the full released first-success flow and the benchmark/performance path.
+- **Operator**: use the [Operator Runbook](docs/operator-runbook.md) for profiles, monitoring, history review, JSON exports, and troubleshooting.
 - **Team**: read [Team Workflows](docs/team-workflows.md) for honest current-team patterns built from profiles, exports, and conventions.
 - **Developer / integrator**: use the [Python API Reference](docs/python-api-reference.md) and the clearly-labeled [integration examples](examples/integration/) for programmatic usage.
 
 ## Optional later: local LLMs
 
-If you want real local-model inference, XRTM also supports `--provider
-local-llm` against a local OpenAI-compatible endpoint. Treat that as a
-secondary path after your first provider-free run; setup takes more time and
-hardware. Start from the advanced section in
-[docs/getting-started.md](docs/getting-started.md) and the [Operator
-Runbook](docs/operator-runbook.md).
+If you want real local-model inference, XRTM also supports `--provider local-llm` against a local OpenAI-compatible endpoint. Treat that as a secondary path after your first provider-free run; setup takes more time and hardware. Start from the advanced section in [docs/getting-started.md](docs/getting-started.md) and the [Operator Runbook](docs/operator-runbook.md).
 
 ## Packages in the ecosystem
 
@@ -173,7 +179,7 @@ system. It installs and coordinates these underlying packages:
 | **xrtm-eval** | [![PyPI](https://img.shields.io/pypi/v/xrtm-eval?style=flat-square)](https://pypi.org/project/xrtm-eval/) | Evaluation metrics, scoring, and calibration tooling |
 | **xrtm-train** | [![PyPI](https://img.shields.io/pypi/v/xrtm-train?style=flat-square)](https://pypi.org/project/xrtm-train/) | Training and optimization pipeline components |
 
-Maintainers should use the governance repo's [Cross-Repository Compatibility and Coordination Policy](https://github.com/xrtm-org/governance/blob/main/policies/cross-repo-compatibility-policy.md) and [Release Train Playbook](https://github.com/xrtm-org/governance/blob/main/policies/release-train-playbook.md) for coordinated changes across `data`, `forecast`, `xrtm`, and `xrtm.org`. `xrtm` should validate against explicit released or candidate upstream refs, not same-name sibling branches or hidden branch aliases. Default `push`/`pull_request` CI uses explicit `main` upstream refs; use `workflow_dispatch` to pin exact upstream refs for coordinated validation.
+Maintainers should use the governance repo's [Cross-Repository Compatibility and Coordination Policy](https://github.com/xrtm-org/governance/blob/main/policies/cross-repo-compatibility-policy.md) and [Release Readiness Policy](https://github.com/xrtm-org/governance/blob/main/policies/release-readiness-policy.md) for coordinated changes across `data`, `forecast`, `xrtm`, and `xrtm.org`. The release-gated command contract lives in `docs/release-command-contract.json`; update it only after the matching published package release exists and the released-stack smoke has passed against that version.
 
 ## Documentation
 
