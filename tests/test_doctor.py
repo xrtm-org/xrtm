@@ -40,10 +40,11 @@ def test_doctor_reports_provider_free_readiness_and_next_steps() -> None:
     assert "xrtm-forecast" in output
     assert "Provider-Free Readiness Checks" in output
     assert "Default provider-free first run: READY" in output
-    assert "Canonical first command: xrtm start" in output
-    assert "xrtm start runs doctor + the deterministic mock-provider demo for you." in output
+    assert "Released next command: xrtm demo --provider mock --limit 1 --runs-dir runs" in output
+    assert "xrtm doctor verifies package health" in output
     assert "runs/ will be created" in output
-    assert "xrtm runs show latest --runs-dir runs" in output
+    assert "xrtm runs list --runs-dir runs" in output
+    assert "xrtm artifacts inspect runs/<run-id>" in output
     assert "local-llm is optional and does not affect provider-free readiness." in output
     assert "Status: not ready (optional)" in output
 
@@ -97,7 +98,8 @@ def test_doctor_fails_when_default_runs_dir_is_blocked() -> None:
     assert "Default provider-free first run: NOT READY" in output
     assert "runs exists but is not a directory." in output
     assert "Default runs dir: Remove or rename runs" in output
-    assert "When doctor shows READY, run xrtm start" in output
+    assert "When doctor shows READY" in output
+    assert "xrtm demo --provider mock --limit 1 --runs-dir runs" in output
 
 
 def _strip_ansi(output: str) -> str:

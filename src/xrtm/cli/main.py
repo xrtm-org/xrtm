@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from shlex import quote as shell_quote
 
 import click
 from rich.console import Console
@@ -207,7 +208,15 @@ def profile_create(
         path = ProfileStore(profiles_dir).create(profile, overwrite=overwrite)
     except (FileExistsError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
-    console.print(f"[green]Profile written:[/green] {path}")
+    profiles_dir_arg = profiles_dir_command_arg(profiles_dir)
+    runs_dir_arg = runs_dir_command_arg(runs_dir)
+    lines = [
+        f"Profile written: {path}",
+        f"Run it: xrtm run profile {name}{profiles_dir_arg}",
+        f"Inspect it: xrtm profile show {name}{profiles_dir_arg}",
+        f"Review runs in this workspace: xrtm runs list {runs_dir_arg}",
+    ]
+    console.print(Panel("\n".join(lines), title="Profile saved", border_style="green"))
 
 
 @profile_group.command("starter")
@@ -232,7 +241,7 @@ def profile_starter(name: str, profiles_dir: Path, runs_dir: Path, user: str | N
         f"Runs directory ready: {runs_dir}",
         f"Repeat this local workflow: xrtm run profile {name}{profiles_dir_arg}",
         f"Inspect the profile: xrtm profile show {name}{profiles_dir_arg}",
-        f"Inspect the newest run later: xrtm runs show latest {runs_dir_arg}",
+        f"Review future runs: xrtm runs list {runs_dir_arg}",
     ]
     console.print(Panel("\n".join(lines), title="Starter scaffold ready", border_style="green"))
 
@@ -373,6 +382,15 @@ def artifacts_inspect(run_dir: Path | None, runs_dir: Path, use_latest: bool) ->
     for name, status, location in canonical_artifact_inventory(run_dir):
         artifact_table.add_row(name, status, location)
     console.print(artifact_table)
+    runs_dir_arg = runs_dir_command_arg(run_dir.parent)
+    run_dir_arg = shell_quote(run_dir.as_posix())
+    next_lines = [
+        f"Inspect summary: xrtm runs show {run_payload.get('run_id', run_dir.name)} {runs_dir_arg}",
+        f"Open/regenerate report: xrtm report html {run_dir_arg}",
+        f"Browse the same workspace in WebUI: xrtm web {runs_dir_arg}",
+        f"Browse the same workspace in TUI: xrtm tui {runs_dir_arg}",
+    ]
+    console.print(Panel("\n".join(next_lines), title="Common next steps", border_style="blue"))
 
 
 @artifacts.command("cleanup")
@@ -739,7 +757,17 @@ def monitor_start(
         )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
-    console.print(f"[green]Monitor started:[/green] {run.run_dir}")
+    runs_dir_arg = runs_dir_command_arg(runs_dir)
+    run_dir_arg = shell_quote(run.run_dir.as_posix())
+    lines = [
+        f"Monitor started: {run.run_id}",
+        f"Directory: {run.run_dir}",
+        f"List active monitors: xrtm monitor list {runs_dir_arg}",
+        f"Inspect this monitor: xrtm monitor show {run_dir_arg}",
+        f"Run one update cycle: xrtm monitor run-once {run_dir_arg}",
+        f"Plain forecast runs still live under: xrtm runs list {runs_dir_arg}",
+    ]
+    console.print(Panel("\n".join(lines), title="Monitor ready", border_style="green"))
 
 
 @monitor_group.command("list")
@@ -747,13 +775,44 @@ def monitor_start(
 def monitor_list(runs_dir: Path) -> None:
     """List monitor runs."""
 
+    monitors = list_monitors(runs_dir)
+    if not monitors:
+        runs_dir_arg = runs_dir_command_arg(runs_dir)
+        console.print(
+            Panel(
+                "\n".join(
+                    [
+                        "No monitor runs found in this workspace.",
+                        f"Start one with: xrtm monitor start --provider mock --limit 2 {runs_dir_arg}",
+                        f"Review regular forecast runs with: xrtm runs list {runs_dir_arg}",
+                    ]
+                ),
+                title="XRTM Monitors",
+                border_style="yellow",
+            )
+        )
+        return
+
     table = Table(title="XRTM Monitors")
-    table.add_column("Run", style="cyan")
+    table.add_column("Run", style="cyan", no_wrap=True)
     table.add_column("Status", style="green")
+    table.add_column("Provider")
     table.add_column("Watches", justify="right")
+    table.add_column("Updates", justify="right")
+    table.add_column("Warnings", justify="right")
+    table.add_column("Monitor dir")
     table.add_column("Updated", style="dim")
-    for monitor in list_monitors(runs_dir):
-        table.add_row(monitor["run_dir"], str(monitor["status"]), str(monitor["watches"]), str(monitor["updated_at"]))
+    for monitor in monitors:
+        table.add_row(
+            str(monitor["run_id"]),
+            str(monitor["status"]),
+            str(monitor.get("provider") or ""),
+            str(monitor["watches"]),
+            str(monitor.get("updates") or 0),
+            str(monitor.get("warning_count") or 0),
+            str(monitor["run_dir"]),
+            str(monitor["updated_at"]),
+        )
     console.print(table)
 
 
@@ -777,13 +836,26 @@ def monitor_show(run_dir: Path) -> None:
         latest = trajectory[-1]["probability"] if trajectory else "N/A"
         table.add_row(
             str(watch.get("watch_id")),
-            str(watch.get("question_id")),
+            str(watch.get("title") or watch.get("question_id")),
             str(watch.get("status")),
             str(len(trajectory)),
             str(latest),
         )
     console.print(Panel(f"Status: {monitor.get('status')}", title="Monitor State"))
     console.print(table)
+    run_dir_arg = shell_quote(run_dir.as_posix())
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    f"Run one update cycle: xrtm monitor run-once {run_dir_arg}",
+                    f"Pause or halt: xrtm monitor pause {run_dir_arg} | xrtm monitor halt {run_dir_arg}",
+                ]
+            ),
+            title="Monitor commands",
+            border_style="blue",
+        )
+    )
 
 
 @monitor_group.command("run-once")
@@ -929,6 +1001,19 @@ def report_html(run_dir: Path | None, runs_dir: Path, use_latest: bool) -> None:
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     console.print(f"[green]Report written:[/green] {report_path}")
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    f"Run dir: {run_dir}",
+                    f"Inspect artifacts: xrtm artifacts inspect {shell_quote(run_dir.as_posix())}",
+                    f"Browse the same workspace: xrtm web {runs_dir_command_arg(run_dir.parent)}",
+                ]
+            ),
+            title="Report follow-through",
+            border_style="blue",
+        )
+    )
 
 
 @cli.command()

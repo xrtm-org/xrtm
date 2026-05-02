@@ -19,6 +19,7 @@ SUPPORTED_PYTHON = ">=3.11,<3.13"
 SUPPORTED_PYTHON_MIN = (3, 11)
 SUPPORTED_PYTHON_MAX_EXCLUSIVE = (3, 13)
 DEFAULT_RUNS_DIR = Path("runs")
+RELEASED_DEMO_COMMAND = "xrtm demo --provider mock --limit 1 --runs-dir runs"
 _PACKAGE_IMPORTS = {
     "xrtm": "xrtm.product.pipeline",
     "xrtm-data": "xrtm.data.corpora",
@@ -144,7 +145,7 @@ def _runs_dir_check(runs_dir: Path) -> DoctorCheck:
         name="Default runs dir",
         ok=False,
         detail=f"{display} cannot be created because {parent} is not writable.",
-        fix="Choose a writable working directory before running xrtm start.",
+        fix="Choose a writable working directory before running the provider-free demo path.",
     )
 
 
@@ -180,8 +181,8 @@ def _print_readiness_summary(console: Console, ready: bool) -> None:
     color = "green" if ready else "red"
     lines = [
         f"Default provider-free first run: {status}",
-        "Canonical first command: xrtm start",
-        "xrtm start runs doctor + the deterministic mock-provider demo for you.",
+        f"Released next command: {RELEASED_DEMO_COMMAND}",
+        "xrtm doctor verifies package health; the released demo writes the first scored run and report.",
         "No API keys, cloud provider, or local model server are required for this path.",
     ]
     console.print(Panel("\n".join(lines), title="Readiness Summary", border_style=color))
@@ -190,12 +191,13 @@ def _print_readiness_summary(console: Console, ready: bool) -> None:
 def _print_next_steps(console: Console, ready: bool, checks: list[DoctorCheck]) -> None:
     if ready:
         lines = [
-            "1. Run xrtm start",
-            "2. Inspect the newest run with xrtm runs show latest --runs-dir runs",
-            "3. Confirm artifacts with xrtm artifacts inspect --latest --runs-dir runs",
-            "4. Open the report with xrtm report html --latest --runs-dir runs",
-            "5. Browse the same run with xrtm web --runs-dir runs or xrtm tui --runs-dir runs",
-            "6. Only after that, treat local-llm as the optional advanced path.",
+            f"1. Run {RELEASED_DEMO_COMMAND}",
+            "2. Review run history with xrtm runs list --runs-dir runs",
+            "3. Copy the run id from the demo output or runs list, then inspect it with xrtm runs show <run-id> --runs-dir runs",
+            "4. Confirm artifacts with xrtm artifacts inspect runs/<run-id>",
+            "5. Open/regenerate the report with xrtm report html runs/<run-id>",
+            "6. Browse the same run with xrtm web --runs-dir runs or xrtm tui --runs-dir runs",
+            "7. Only after that, treat local-llm as the optional advanced path.",
         ]
     else:
         failed_checks = [check for check in checks if not check.ok]
@@ -204,7 +206,7 @@ def _print_next_steps(console: Console, ready: bool, checks: list[DoctorCheck]) 
             action = check.fix or check.detail
             lines.append(f"{index}. {check.name}: {action}")
         lines.append(f"{len(failed_checks) + 2}. Rerun xrtm doctor")
-        lines.append(f"{len(failed_checks) + 3}. When doctor shows READY, run xrtm start")
+        lines.append(f"{len(failed_checks) + 3}. When doctor shows READY, run {RELEASED_DEMO_COMMAND}")
     console.print(Panel("\n".join(lines), title="What to do next", border_style="blue"))
 
 

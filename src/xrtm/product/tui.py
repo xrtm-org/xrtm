@@ -100,8 +100,8 @@ def _side_panel(runs_dir: Path) -> Panel:
 
 def _latest_monitor_summary(runs_dir: Path, monitors: list[dict[str, Any]]) -> str:
     if not monitors:
-        return "No monitor runs"
-    latest = monitors[-1]
+        return "No monitor runs yet.\nStart one with xrtm monitor start.\nPlain forecast runs stay in the Runs table."
+    latest = monitors[0]
     try:
         monitor = load_monitor(Path(latest["run_dir"]))
     except FileNotFoundError:
@@ -115,6 +115,7 @@ def _latest_monitor_summary(runs_dir: Path, monitors: list[dict[str, Any]]) -> s
             f"Status: {monitor.get('status')}",
             f"Watches: {len(monitor.get('watches', []))}",
             f"Updates: {updated}",
+            f"Warnings: {latest.get('warning_count', 0) or 0}",
         ]
     )
 
