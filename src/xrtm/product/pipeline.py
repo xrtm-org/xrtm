@@ -47,6 +47,8 @@ class PipelineResult:
     forecast_records: int
     eval_brier_score: float | None
     train_brier_score: float | None
+    eval_summary: dict[str, Any]
+    train_summary: dict[str, Any]
     training_samples: int
     total_seconds: float
 
@@ -83,6 +85,8 @@ def run_pipeline(options: PipelineOptions) -> PipelineResult:
             forecast_records=len(execution.records),
             eval_brier_score=execution.eval_payload["summary_statistics"].get("brier_score"),
             train_brier_score=execution.train_payload["summary_statistics"].get("brier_score"),
+            eval_summary=execution.eval_payload["summary_statistics"],
+            train_summary=execution.train_payload["summary_statistics"],
             training_samples=execution.training_samples,
             total_seconds=total_seconds,
         )

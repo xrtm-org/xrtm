@@ -202,6 +202,10 @@ def _run_validation_iteration(
         "training_samples": result.training_samples,
         "eval_brier_score": result.eval_brier_score,
         "train_brier_score": result.train_brier_score,
+        "eval_ece": result.eval_summary.get("ece"),
+        "eval_reliability": result.eval_summary.get("reliability"),
+        "eval_resolution": result.eval_summary.get("resolution"),
+        "resolved_count": result.eval_summary.get("resolved_count"),
     }
 
 
@@ -252,6 +256,13 @@ def _build_validation_report(
 
     durations = [r["duration_seconds"] for r in iteration_results]
     total_forecasts = sum(r["forecast_records"] for r in iteration_results)
+    eval_briers = [r["eval_brier_score"] for r in iteration_results if r["eval_brier_score"] is not None]
+    train_briers = [r["train_brier_score"] for r in iteration_results if r["train_brier_score"] is not None]
+    eval_eces = [r["eval_ece"] for r in iteration_results if r["eval_ece"] is not None]
+    eval_reliabilities = [r["eval_reliability"] for r in iteration_results if r["eval_reliability"] is not None]
+    eval_resolutions = [r["eval_resolution"] for r in iteration_results if r["eval_resolution"] is not None]
+    best_eval_run = _select_iteration(iteration_results, metric="eval_brier_score", prefer="lower")
+    worst_eval_run = _select_iteration(iteration_results, metric="eval_brier_score", prefer="higher")
 
     return {
         "schema_version": VALIDATION_SCHEMA_VERSION,
@@ -276,6 +287,8 @@ def _build_validation_report(
             "question_pool_size": question_pool_size,
             "iterations": options.iterations,
             "release_gate_mode": options.release_gate_mode,
+            "runs_dir": str(options.runs_dir),
+            "output_dir": str(options.output_dir),
         },
         "iterations": iteration_results,
         "summary": {
@@ -287,19 +300,33 @@ def _build_validation_report(
             "forecasts_per_second": total_forecasts / total_duration if total_duration > 0 else 0.0,
         },
         "evaluation": {
-            "mean_eval_brier": statistics.fmean(
-                [r["eval_brier_score"] for r in iteration_results if r["eval_brier_score"] is not None]
-            )
-            if iteration_results
-            else None,
-            "mean_train_brier": statistics.fmean(
-                [r["train_brier_score"] for r in iteration_results if r["train_brier_score"] is not None]
-            )
-            if iteration_results
-            else None,
+            "mean_eval_brier": statistics.fmean(eval_briers) if eval_briers else None,
+            "best_eval_brier": min(eval_briers) if eval_briers else None,
+            "worst_eval_brier": max(eval_briers) if eval_briers else None,
+            "eval_brier_spread": (max(eval_briers) - min(eval_briers)) if len(eval_briers) > 1 else 0.0,
+            "best_eval_run_id": best_eval_run.get("run_id") if best_eval_run else None,
+            "worst_eval_run_id": worst_eval_run.get("run_id") if worst_eval_run else None,
+            "mean_eval_ece": statistics.fmean(eval_eces) if eval_eces else None,
+            "eval_ece_spread": (max(eval_eces) - min(eval_eces)) if len(eval_eces) > 1 else 0.0,
+            "mean_eval_reliability": statistics.fmean(eval_reliabilities) if eval_reliabilities else None,
+            "mean_eval_resolution": statistics.fmean(eval_resolutions) if eval_resolutions else None,
+            "mean_train_brier": statistics.fmean(train_briers) if train_briers else None,
         },
         "recorded_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _select_iteration(
+    iteration_results: list[dict[str, Any]],
+    *,
+    metric: str,
+    prefer: str,
+) -> dict[str, Any] | None:
+    populated = [row for row in iteration_results if row.get(metric) is not None]
+    if not populated:
+        return None
+    reverse = prefer == "higher"
+    return sorted(populated, key=lambda row: float(row[metric]), reverse=reverse)[0]
 
 
 def _percentile(values: list[float], percentile: float) -> float:

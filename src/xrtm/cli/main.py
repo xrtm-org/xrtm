@@ -18,6 +18,7 @@ from xrtm.cli.presenters import (
     print_post_run_summary,
     print_prepared_corpus_report,
     print_quickstart_summary,
+    print_run_compare,
     print_runs_table,
     print_validation_report,
     profiles_dir_command_arg,
@@ -460,13 +461,7 @@ def runs_compare(left: str, right: str, runs_dir: Path) -> None:
         rows = compare_runs(resolve_run_dir(runs_dir, left), resolve_run_dir(runs_dir, right))
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
-    table = Table(title="XRTM Run Compare")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Left", style="green")
-    table.add_column("Right", style="yellow")
-    for row in rows:
-        table.add_row(str(row["metric"]), str(row["left"]), str(row["right"]))
-    console.print(table)
+    print_run_compare(console, rows)
 
 
 @runs_group.command("export")

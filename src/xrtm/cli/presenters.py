@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from xrtm.product.pipeline import PipelineResult
-from xrtm.product.profiles import DEFAULT_PROFILES_DIR, STARTER_PROFILE_LIMIT
+from xrtm.product.profiles import DEFAULT_PROFILES_DIR
 
 
 def print_pipeline_result(console: Console, result: PipelineResult, *, title: str = "XRTM Pipeline") -> None:
@@ -45,20 +45,23 @@ def print_quickstart_summary(console: Console, result: PipelineResult, *, runs_d
     )
 
     runs_dir_arg = runs_dir_command_arg(runs_dir)
+    run_dir_arg = shell_quote(result.run.run_dir.as_posix())
+    run_id = result.run.run_id
     proof_point_lines = [
         "1. Provider-free first success: xrtm start (already proved above).",
         (
-            "2. Benchmark and validation workflow: "
+            "2. Benchmark and performance workflow: "
             "xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 "
             "--runs-dir runs-perf --output performance.json"
         ),
-        "   Follow with: xrtm validate run --provider mock --limit 10 --iterations 2 --runs-dir runs-validation",
-        f"3. Monitoring, history, and report workflow: xrtm profile starter my-local {runs_dir_arg}",
-        f"   Then: xrtm monitor start --provider mock --limit 2 {runs_dir_arg}",
-        f"   Review/export: xrtm runs export latest {runs_dir_arg} --output latest-run.json",
+        f"   Review the run above: xrtm runs show {run_id} {runs_dir_arg}",
+        f"   Inspect artifacts/report: xrtm artifacts inspect {run_dir_arg} && xrtm report html {run_dir_arg}",
+        f"3. Monitoring, history, and report workflow: xrtm profile create my-local --provider mock --limit 2 {runs_dir_arg}",
+        "   Then: xrtm run profile my-local",
+        f"   Monitor/history: xrtm monitor start --provider mock --limit 2 {runs_dir_arg} && xrtm monitor list {runs_dir_arg}",
+        f"   Compare/export: xrtm runs compare <run-id-a> <run-id-b> {runs_dir_arg} && xrtm runs export <run-id> {runs_dir_arg} --output export.json",
         "4. Local-LLM advanced workflow: xrtm local-llm status",
         "   Then: xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local",
-        f"Starter profile uses provider=mock, limit={STARTER_PROFILE_LIMIT}, and saves to {DEFAULT_PROFILES_DIR}.",
         "Developer / integrator path: docs/python-api-reference.md and examples/integration/.",
     ]
     console.print(Panel("\n".join(proof_point_lines), title="Official proof-point workflows", border_style="magenta"))
@@ -78,6 +81,8 @@ def print_post_run_summary(
     confirmed_artifacts = _confirm_post_run_artifacts(result.run.run_dir, require_report=write_report)
     summary = result.run.summary
     report_path = _artifact_path(confirmed_artifacts, "report.html")
+    run_id = result.run.run_id
+    run_dir_arg = shell_quote(result.run.run_dir.as_posix())
     success_lines = [
         f"Succeeded: {success_label}.",
         f"What just succeeded: {what_succeeded}.",
@@ -98,13 +103,14 @@ def print_post_run_summary(
 
     runs_dir_arg = runs_dir_command_arg(runs_dir)
     report_command = (
-        f"Open/regenerate the report: xrtm report html --latest {runs_dir_arg}"
+        f"Open/regenerate the report: xrtm report html {run_dir_arg}"
         if write_report
-        else f"Generate the report now: xrtm report html --latest {runs_dir_arg}"
+        else f"Generate the report now: xrtm report html {run_dir_arg}"
     )
     next_lines = [
-        f"Inspect the newest run: xrtm runs show latest {runs_dir_arg}",
-        f"Inspect artifacts: xrtm artifacts inspect --latest {runs_dir_arg}",
+        f"Review run history: xrtm runs list {runs_dir_arg}",
+        f"Inspect this run: xrtm runs show {run_id} {runs_dir_arg}",
+        f"Inspect artifacts: xrtm artifacts inspect {run_dir_arg}",
         report_command,
         f"Open the WebUI: xrtm web {runs_dir_arg}",
         f"Open the TUI: xrtm tui {runs_dir_arg}",
@@ -163,12 +169,46 @@ def print_local_llm_status(console: Console, status: dict[str, Any]) -> None:
     console.print(Panel("\n".join(lines), title="Local LLM", border_style=color))
 
 
+def print_run_compare(console: Console, rows: list[dict[str, Any]]) -> None:
+    table = Table(title="XRTM Run Compare")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Left", style="green")
+    table.add_column("Right", style="yellow")
+    table.add_column("Δ", justify="right")
+    table.add_column("Interpretation", style="magenta")
+
+    for row in rows:
+        table.add_row(
+            str(row["metric"]),
+            _format_compare_value(row.get("left")),
+            _format_compare_value(row.get("right")),
+            _format_compare_value(row.get("delta")),
+            str(row.get("interpretation") or ""),
+        )
+    console.print(table)
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    "Compare best practice:",
+                    "- Lower is better for Brier, ECE, runtime, warnings, and errors.",
+                    "- Shared-question rows are the apples-to-apples quality check after a provider/model/prompt change.",
+                    "- Export the winning run when you want notebook or spreadsheet follow-up.",
+                ]
+            ),
+            title="Compare → learn loop",
+            border_style="blue",
+        )
+    )
+
+
 def print_validation_report(console: Console, report: dict[str, Any]) -> None:
     table = Table(title="XRTM Validation")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green")
 
     corpus_info = report["corpus"]
+    configuration = report["configuration"]
     summary = report["summary"]
 
     table.add_row("Corpus", f"{corpus_info['name']} ({corpus_info['corpus_id']})")
@@ -176,9 +216,10 @@ def print_validation_report(console: Console, report: dict[str, Any]) -> None:
     table.add_row("License", corpus_info["license"])
     table.add_row("Release-Gate", "✓" if corpus_info["release_gate_approved"] else "✗")
     table.add_row("Source Mode", corpus_info["source_mode"])
-    table.add_row("Provider", report["configuration"]["provider"])
-    table.add_row("Split", report["configuration"]["split"] or "full")
-    table.add_row("Iterations", str(report["configuration"]["iterations"]))
+    table.add_row("Provider", configuration["provider"])
+    table.add_row("Split", configuration["split"] or "full")
+    table.add_row("Selected Questions", f"{configuration['selected_questions']} / {configuration['question_pool_size']}")
+    table.add_row("Iterations", str(configuration["iterations"]))
     table.add_row("Total Forecasts", str(summary["total_forecasts"]))
     table.add_row("Duration", f"{summary['total_duration_seconds']:.2f}s")
     table.add_row("Throughput", f"{summary['forecasts_per_second']:.2f} forecasts/sec")
@@ -191,8 +232,44 @@ def print_validation_report(console: Console, report: dict[str, Any]) -> None:
     eval_metrics = report.get("evaluation", {})
     if eval_metrics.get("mean_eval_brier") is not None:
         console.print(f"\n[cyan]Eval Brier Score:[/cyan] {eval_metrics['mean_eval_brier']:.4f}")
+    if eval_metrics.get("mean_eval_ece") is not None:
+        console.print(f"[cyan]Eval ECE:[/cyan] {eval_metrics['mean_eval_ece']:.4f}")
     if eval_metrics.get("mean_train_brier") is not None:
         console.print(f"[cyan]Train Brier Score:[/cyan] {eval_metrics['mean_train_brier']:.4f}")
+
+    compare_pair = _validation_compare_pair(report.get("iterations", []))
+    compare_hint = (
+        f"xrtm runs compare {compare_pair[0]} {compare_pair[1]} --runs-dir {configuration['runs_dir']}"
+        if compare_pair
+        else "Re-run validation after a provider/model change, then compare the new run against this baseline."
+    )
+    best_run_id = eval_metrics.get("best_eval_run_id")
+    export_hint = (
+        f"xrtm runs export {best_run_id} --runs-dir {configuration['runs_dir']} --output export.json"
+        if best_run_id
+        else "xrtm runs export <run-id> --runs-dir runs-validation --output export.json"
+    )
+    assessment_lines = [
+        "How to read this:",
+        "- Brier lower is better; 0.000 is perfect and ~0.250 is the balanced 50/50 binary baseline.",
+        "- ECE lower is better; values near 0 mean your confidence matches observed frequency.",
+    ]
+    if eval_metrics.get("eval_brier_spread") is not None:
+        assessment_lines.append(
+            f"- Iteration stability: Brier spread {eval_metrics['eval_brier_spread']:.4f} across {configuration['iterations']} run(s)."
+        )
+    if best_run_id:
+        assessment_lines.append(f"- Current baseline run: {best_run_id}")
+    assessment_lines.extend(
+        [
+            "",
+            "Next concrete steps:",
+            f"1. Compare runs: {compare_hint}",
+            f"2. Export the current best run: {export_hint}",
+            "3. Change provider/model/prompt settings, re-run validation, and use shared-question rows to judge improvement.",
+        ]
+    )
+    console.print(Panel("\n".join(assessment_lines), title="Benchmark → compare → improve", border_style="magenta"))
 
 
 def print_prepared_corpus_report(console: Console, report: dict[str, Any]) -> None:
@@ -231,6 +308,23 @@ def profiles_dir_command_arg(profiles_dir: Path) -> str:
 
 def runs_dir_command_arg(runs_dir: Path) -> str:
     return f"--runs-dir {shell_quote(runs_dir.as_posix())}"
+
+
+def _validation_compare_pair(iterations: list[dict[str, Any]]) -> tuple[str, str] | None:
+    run_ids = [str(item.get("run_id")) for item in iterations if item.get("run_id")]
+    if len(run_ids) >= 2:
+        return run_ids[0], run_ids[-1]
+    return None
+
+
+def _format_compare_value(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return ""
+    return str(value)
 
 
 def canonical_artifact_inventory(run_dir: Path) -> list[tuple[str, str, str]]:

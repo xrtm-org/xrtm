@@ -130,6 +130,12 @@ xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 --runs-dir
 xrtm web --runs-dir runs --smoke
 ```
 
+Read `performance.json` as your reproducible baseline artifact:
+
+- mean and p95 runtime tell you whether the workflow stays within budget
+- the paired `runs-perf/<run-id>/run_summary.json` carries the same scored Brier/ECE surface used by compare/export
+- repeated provider-free runs should stay stable enough to act as a control before you try a different provider or model
+
 ### 3. Monitoring, history, and export workflow
 
 ```bash
@@ -139,6 +145,12 @@ xrtm monitor start --provider mock --limit 2 --runs-dir runs
 xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs
 xrtm runs export <run-id> --runs-dir runs --output export.json
 ```
+
+This is the released compare/learn loop:
+
+- use `xrtm runs compare` after a provider, model, or prompt change
+- treat lower Brier/ECE, fewer warnings/errors, and acceptable runtime as improvement signals
+- export the winning run when you want notebook or spreadsheet follow-up
 
 ### 4. Local-LLM advanced workflow
 
@@ -164,7 +176,7 @@ This creates `.xrtm/profiles/my-local.json`, keeps the workflow on the honest mo
 
 ## Choose your next path
 
-- **Researcher / model-eval**: read the [Getting Started Guide](docs/getting-started.md) for the full released first-success flow and the benchmark/performance path.
+- **Researcher / model-eval**: finish the [Getting Started Guide](docs/getting-started.md), then use the dedicated researcher workflow on [xrtm.org](https://xrtm.org/docs/workflows/researcher-model-eval) for benchmark interpretation, compare/export review, and the released quality loop.
 - **Operator**: use the [Operator Runbook](docs/operator-runbook.md) for profiles, monitoring, history review, JSON exports, and troubleshooting.
 - **Team**: read [Team Workflows](docs/team-workflows.md) for honest current-team patterns built from profiles, exports, and conventions.
 - **Developer / integrator**: start with `xrtm` if you still need the released provider-free proof path; switch to the [Python API Reference](docs/python-api-reference.md) and [integration examples](examples/integration/) once you are embedding forecasting directly in code.

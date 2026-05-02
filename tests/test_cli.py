@@ -10,7 +10,7 @@ import pytest
 from click.testing import CliRunner
 
 from xrtm.cli.main import cli
-from xrtm.product.history import resolve_run_dir
+from xrtm.product.history import compare_runs, resolve_run_dir
 from xrtm.product.monitoring import run_monitor_once
 from xrtm.product.profiles import STARTER_PROFILE_LIMIT, WorkflowProfile
 from xrtm.product.web import create_web_server, web_snapshot
@@ -25,7 +25,18 @@ _PACKAGE_VERSIONS = {
 }
 
 
-def _write_canonical_run_fixture(runs_dir: Path, run_id: str, *, user: str | None = None) -> Path:
+def _write_canonical_run_fixture(
+    runs_dir: Path,
+    run_id: str,
+    *,
+    user: str | None = None,
+    probability: float = 0.6,
+    outcome: bool = True,
+    eval_brier: float = 0.16,
+    eval_ece: float = 0.05,
+    train_brier: float = 0.16,
+    training_samples: int = 1,
+) -> Path:
     run_dir = runs_dir / run_id
     run_dir.mkdir(parents=True)
     run_payload = {
@@ -41,12 +52,22 @@ def _write_canonical_run_fixture(runs_dir: Path, run_id: str, *, user: str | Non
     }
     (run_dir / "run.json").write_text(json.dumps(run_payload), encoding="utf-8")
     (run_dir / "run_summary.json").write_text(
-        json.dumps({"forecast_count": 1, "warning_count": 0, "error_count": 0}),
+        json.dumps(
+            {
+                "forecast_count": 1,
+                "warning_count": 0,
+                "error_count": 0,
+                "duration_seconds": 1.5,
+                "token_counts": {"total_tokens": 42},
+                "eval": {"brier_score": eval_brier, "ece": eval_ece},
+                "train": {"brier_score": train_brier, "training_samples": training_samples},
+            }
+        ),
         encoding="utf-8",
     )
     (run_dir / "events.jsonl").write_text("", encoding="utf-8")
     (run_dir / "forecasts.jsonl").write_text(
-        json.dumps({"question_id": "q1", "probability": 0.6, "reasoning": "fixture"}) + "\n",
+        json.dumps({"question_id": "q1", "probability": probability, "reasoning": "fixture"}) + "\n",
         encoding="utf-8",
     )
     (run_dir / "questions.jsonl").write_text(
@@ -58,7 +79,7 @@ def _write_canonical_run_fixture(runs_dir: Path, run_id: str, *, user: str | Non
                 "resolution_time": "2026-05-02T00:00:00Z",
                 "metadata": {
                     "raw_data": {
-                        "resolved_outcome": True,
+                        "resolved_outcome": outcome,
                         "resolution_criteria": "Fixture criteria",
                         "resolution_notes": "Fixture notes",
                         "source_metadata": {"source_url": "https://example.com/fixture"},
@@ -322,6 +343,7 @@ def test_csv_export_flattens_nested_forecast_fields_and_run_timestamps() -> None
         assert row["resolved"] == "True"
         assert row["outcome"] == str(question_payload["metadata"]["raw_data"]["resolved_outcome"])
         assert float(row["brier_score"]) == pytest.approx((float(row["forecast_probability"]) - 1.0) ** 2)
+        assert row["eval_ece"]
         assert row["tokens_used"]
 
 
@@ -685,6 +707,41 @@ def test_runs_compare_and_web_filters() -> None:
         assert "bob" in compare.output
         assert len(snapshot["runs"]) == 1
         assert snapshot["runs"][0]["run_id"] == run_ids[0]
+
+
+def test_runs_compare_surfaces_shared_question_quality_rows() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        runs_dir = Path("runs")
+        _write_canonical_run_fixture(
+            runs_dir,
+            "20260501T101710Z-d8967e54",
+            user="alice",
+            probability=0.60,
+            outcome=True,
+            eval_brier=0.1600,
+            eval_ece=0.0800,
+        )
+        _write_canonical_run_fixture(
+            runs_dir,
+            "20260501T101711Z-e50ac5f1",
+            user="bob",
+            probability=0.80,
+            outcome=True,
+            eval_brier=0.0400,
+            eval_ece=0.0200,
+        )
+
+        rows = compare_runs(runs_dir / "20260501T101710Z-d8967e54", runs_dir / "20260501T101711Z-e50ac5f1")
+        metrics = {row["metric"]: row for row in rows}
+
+        assert metrics["eval_ece"]["interpretation"] == "lower is better; right improved"
+        assert metrics["shared_question_brier"]["left"] == pytest.approx(0.16)
+        assert metrics["shared_question_brier"]["right"] == pytest.approx(0.04)
+        assert metrics["shared_question_brier"]["interpretation"] == "lower is better; right improved"
+        assert metrics["shared_questions_improved"]["right"] == 1
+        assert metrics["avg_abs_probability_shift"]["right"] == pytest.approx(0.2)
 
 
 def test_run_history_rejects_paths_outside_runs_dir() -> None:

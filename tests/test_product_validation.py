@@ -73,9 +73,13 @@ def test_validation_run_basic() -> None:
     assert report["corpus"]["tier"] == "tier-1"
     assert report["configuration"]["limit"] == 2
     assert report["configuration"]["iterations"] == 1
+    assert report["configuration"]["runs_dir"] == "runs-validation"
+    assert report["configuration"]["output_dir"] == ".cache/validation-tests"
     assert report["summary"]["total_forecasts"] == 2
     assert report["summary"]["total_duration_seconds"] > 0
     assert len(report["iterations"]) == 1
+    assert report["evaluation"]["mean_eval_ece"] is not None
+    assert report["evaluation"]["best_eval_run_id"] == report["iterations"][0]["run_id"]
 
 
 def test_validation_run_multiple_iterations() -> None:
@@ -101,6 +105,30 @@ def test_validation_run_multiple_iterations() -> None:
         assert "run_id" in iteration
         assert "duration_seconds" in iteration
         assert "forecast_records" in iteration
+        assert "eval_ece" in iteration
+        assert "eval_reliability" in iteration
+
+
+def test_validation_report_includes_compare_ready_metrics() -> None:
+    """Validation reports should surface score interpretation and compare-ready ids."""
+    report = run_validation(
+        ValidationOptions(
+            corpus_id="xrtm-real-binary-v1",
+            provider="mock",
+            limit=1,
+            iterations=2,
+            output_dir=Path(".cache/validation-tests"),
+            write_artifacts=False,
+        )
+    )
+
+    evaluation = report["evaluation"]
+    assert evaluation["best_eval_run_id"] in {item["run_id"] for item in report["iterations"]}
+    assert evaluation["worst_eval_run_id"] in {item["run_id"] for item in report["iterations"]}
+    assert evaluation["eval_brier_spread"] >= 0
+    assert evaluation["eval_ece_spread"] >= 0
+    assert evaluation["mean_eval_reliability"] is not None
+    assert evaluation["mean_eval_resolution"] is not None
 
 
 def test_validation_run_uses_selected_split_question_count() -> None:
