@@ -214,6 +214,7 @@ Maintainers should use the governance repo's [Cross-Repository Compatibility and
 - [Operator Runbook](docs/operator-runbook.md)
 - [Team Workflows](docs/team-workflows.md)
 - [Next-release feature track](docs/next-release-feature-track.md)
+- [Contributing guide](CONTRIBUTING.md)
 - [Python API Reference](docs/python-api-reference.md)
 - [Integration Examples](examples/integration/)
 - Full documentation: [xrtm.org](https://xrtm.org)

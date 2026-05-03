@@ -12,9 +12,17 @@ Fixes # (issue)
 ## How Has This Been Tested?
 Please describe the tests that you ran to verify your changes.
 
+- [ ] `python scripts/check_release_claims.py --repo-root . --contract docs/release-command-contract.json --scope xrtm`
 - [ ] `uv run pytest tests`
 - [ ] `uv run ruff check .`
-- [ ] `uv run mypy .`
+- [ ] `uv run mypy src/xrtm`
+- [ ] `uv run --with build python -m build`
+
+## Published surface impact
+
+- Release-pinned docs touched: <!-- README / getting-started / operator / xrtm.org mirror, or N/A -->
+- Stable surface changed: <!-- CLI / Python API / run artifact / install-version expectation / N/A -->
+- Next-release track updated: <!-- row updated in docs/next-release-feature-track.md, N/A, or why not -->
 
 ## Cross-repo coordination
 Complete this section when the PR changes contracts, packaging/version expectations, CI sibling refs, or release sequencing.
@@ -36,6 +44,7 @@ Complete this section when the PR changes contracts, packaging/version expectati
 - [ ] My changes generate no new warnings
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] New and existing unit tests pass locally with my changes
+- [ ] Release-pinned docs stay on the published package surface, or the change is explicitly labeled next-release/advanced elsewhere
 - [ ] Coordinated validation, when needed, uses explicit upstream refs rather than same-name branch fallback
 - [ ] Post-merge validation or release-train follow-up is documented when downstream repos or site/docs are affected
 
