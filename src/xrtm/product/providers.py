@@ -48,15 +48,25 @@ class DeterministicProvider(InferenceProvider):
         self.cache_misses += 1
         question_id = extract_question_id(prompt_text)
         probability = deterministic_probability(question_id)
+        confidence_interval = {
+            "low": round(max(0.0, probability - 0.1), 3),
+            "high": round(min(1.0, probability + 0.1), 3),
+            "level": 0.9,
+        }
+        causal_node = {
+            "node_id": f"{question_id}:llm:0",
+            "event": "deterministic_real_corpus_prior",
+            "probability": probability,
+            "description": "Stable hash-derived probability for product smoke validation.",
+        }
         payload = {
             "probability": probability,
+            "confidence_interval": confidence_interval,
             "reasoning": f"Deterministic provider-free forecast for {question_id}.",
+            "causal_nodes": [causal_node],
+            "causal_edges": [],
             "logical_trace": [
-                {
-                    "event": "deterministic_real_corpus_prior",
-                    "probability": probability,
-                    "description": "Stable hash-derived probability for product smoke validation.",
-                }
+                causal_node
             ],
             "structural_trace": ["load_question", "provider_free_forecast", "validate_output"],
         }
@@ -99,14 +109,33 @@ def build_provider(provider: str, *, base_url: str | None, model: str | None, ap
         base_url_value = local_llm_base_url(base_url)
         status = local_llm_status(base_url=base_url_value)
         if not status["healthy"]:
-            raise RuntimeError(status["error"] or f"Local LLM endpoint is not healthy: {base_url_value}")
+            error_msg = (
+                f"Cannot connect to local LLM endpoint at {base_url_value}\n\n"
+                f"What happened: Health check failed\n"
+                f"Why: {status['error'] or 'Endpoint did not respond to health check'}\n\n"
+                f"Next steps:\n"
+                f"1. Start your local LLM server (e.g., llama.cpp with --port 8080)\n"
+                f"2. Verify it's running: curl {status['health_url']}\n"
+                f"3. Check the base URL is correct: {base_url_value}\n"
+                f"4. Set XRTM_LOCAL_LLM_BASE_URL if using a different endpoint\n\n"
+                f"To test without a local LLM, use: --provider mock"
+            )
+            raise RuntimeError(error_msg)
         config = OpenAIConfig(
             model_id=model or os.getenv("XRTM_LOCAL_LLM_MODEL") or DEFAULT_LOCAL_LLM_MODEL,
             api_key=SecretStr(api_key or os.getenv("XRTM_LOCAL_LLM_API_KEY") or "test"),
             base_url=base_url_value,
         )
         return ModelFactory.get_provider(config)
-    raise ValueError(f"unsupported provider: {provider}")
+    raise ValueError(
+        f"Unsupported provider: '{provider}'\n\n"
+        f"What happened: Provider '{provider}' is not recognized\n"
+        f"Why: XRTM only supports specific provider types\n\n"
+        f"Available providers:\n"
+        f"  • mock       - Provider-free deterministic testing (no API calls)\n"
+        f"  • local-llm  - Local OpenAI-compatible endpoint (e.g., llama.cpp)\n\n"
+        f"Example: xrtm demo --provider mock --limit 2"
+    )
 
 
 def local_llm_base_url(base_url: str | None = None) -> str:

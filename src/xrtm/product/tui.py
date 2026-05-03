@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -12,9 +11,9 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 
-from xrtm.product.artifacts import ArtifactStore
-from xrtm.product.monitoring import list_monitors, load_monitor
+from xrtm.product.monitoring import load_monitor
 from xrtm.product.providers import local_llm_status
+from xrtm.product.read_models import list_monitor_records, list_run_records
 
 
 def render_tui_once(console: Console, *, runs_dir: Path) -> None:
@@ -57,7 +56,7 @@ def _runs_panel(runs_dir: Path) -> Panel:
     table.add_column("Warnings", justify="right")
     table.add_column("Command")
     table.add_column("Updated", style="dim")
-    for run in _list_runs(runs_dir):
+    for run in list_run_records(runs_dir):
         summary = run.get("summary", {})
         table.add_row(
             str(run.get("run_id")),
@@ -80,7 +79,7 @@ def _run_command_summary(run: dict[str, Any]) -> str:
 
 def _side_panel(runs_dir: Path) -> Panel:
     local_status = local_llm_status()
-    monitors = list_monitors(runs_dir)
+    monitors = list_monitor_records(runs_dir)
     latest_monitor = _latest_monitor_summary(runs_dir, monitors)
     body = Group(
         Panel(
@@ -101,8 +100,8 @@ def _side_panel(runs_dir: Path) -> Panel:
 
 def _latest_monitor_summary(runs_dir: Path, monitors: list[dict[str, Any]]) -> str:
     if not monitors:
-        return "No monitor runs"
-    latest = monitors[-1]
+        return "No monitor runs yet.\nStart one with xrtm monitor start.\nPlain forecast runs stay in the Runs table."
+    latest = monitors[0]
     try:
         monitor = load_monitor(Path(latest["run_dir"]))
     except FileNotFoundError:
@@ -116,24 +115,9 @@ def _latest_monitor_summary(runs_dir: Path, monitors: list[dict[str, Any]]) -> s
             f"Status: {monitor.get('status')}",
             f"Watches: {len(monitor.get('watches', []))}",
             f"Updates: {updated}",
+            f"Warnings: {latest.get('warning_count', 0) or 0}",
         ]
     )
-
-
-def _list_runs(runs_dir: Path) -> list[dict[str, Any]]:
-    if not runs_dir.exists():
-        return []
-    runs: list[dict[str, Any]] = []
-    for run_dir in sorted(path for path in runs_dir.iterdir() if path.is_dir()):
-        try:
-            run = ArtifactStore.read_run(run_dir)
-        except FileNotFoundError:
-            continue
-        summary_path = run_dir / "run_summary.json"
-        if summary_path.exists():
-            run["summary"] = json.loads(summary_path.read_text(encoding="utf-8"))
-        runs.append(run)
-    return runs
 
 
 __all__ = ["build_tui_view", "render_tui_once", "run_tui"]

@@ -11,9 +11,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from xrtm.product.artifacts import ArtifactStore
-from xrtm.product.monitoring import list_monitors, load_monitor
 from xrtm.product.providers import local_llm_status
+from xrtm.product.read_models import list_monitor_records, list_run_records, read_run_detail
 
 
 def create_web_server(*, runs_dir: Path, host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
@@ -99,8 +98,8 @@ def web_snapshot(
     return {
         "runs_dir": str(runs_dir),
         "filters": {"status": status, "provider": provider, "query": query},
-        "runs": _list_runs(runs_dir, status=status, provider=provider, query=query),
-        "monitors": list_monitors(runs_dir),
+        "runs": list_run_records(runs_dir, status=status, provider=provider, query=query),
+        "monitors": list_monitor_records(runs_dir),
         "local_llm": local_llm_status(),
     }
 
@@ -108,21 +107,7 @@ def web_snapshot(
 def run_detail(runs_dir: Path, run_id: str) -> dict[str, Any]:
     """Return one run with available monitor and forecast summaries."""
 
-    run_dir = _safe_run_dir(runs_dir, run_id)
-    run = ArtifactStore.read_run(run_dir)
-    detail: dict[str, Any] = {
-        "run": run,
-        "summary": _read_json(run_dir / "run_summary.json"),
-        "events": ArtifactStore.read_jsonl(run_dir / "events.jsonl"),
-        "forecasts": _read_jsonl(run_dir / "forecasts.jsonl"),
-        "eval": _read_json(run_dir / "eval.json"),
-        "train": _read_json(run_dir / "train.json"),
-        "provider": _read_json(run_dir / "provider.json"),
-    }
-    monitor_path = run_dir / "monitor.json"
-    if monitor_path.exists():
-        detail["monitor"] = load_monitor(run_dir)
-    return detail
+    return read_run_detail(_safe_run_dir(runs_dir, run_id))
 
 
 def render_index_html(runs_dir: Path, *, query_string: str = "") -> str:
@@ -205,34 +190,6 @@ def render_run_html(runs_dir: Path, run_id: str) -> str:
     )
 
 
-def _list_runs(
-    runs_dir: Path,
-    *,
-    status: str | None = None,
-    provider: str | None = None,
-    query: str | None = None,
-) -> list[dict[str, Any]]:
-    if not runs_dir.exists():
-        return []
-    runs: list[dict[str, Any]] = []
-    for run_dir in sorted((path for path in runs_dir.iterdir() if path.is_dir()), key=lambda path: path.name, reverse=True):
-        try:
-            run = ArtifactStore.read_run(run_dir)
-        except FileNotFoundError:
-            continue
-        summary = _read_json(run_dir / "run_summary.json")
-        run["summary"] = summary or run.get("summary", {})
-        run["run_dir"] = str(run_dir)
-        if status and run.get("status") != status:
-            continue
-        if provider and run.get("provider") != provider:
-            continue
-        if query and query.lower() not in _search_text(run).lower():
-            continue
-        runs.append(run)
-    return runs
-
-
 def _safe_run_dir(runs_dir: Path, run_id: str) -> Path:
     if "/" in run_id or "\\" in run_id or run_id in {"", ".", ".."}:
         raise ValueError("invalid run id")
@@ -240,18 +197,6 @@ def _safe_run_dir(runs_dir: Path, run_id: str) -> Path:
     if not run_dir.is_dir():
         raise FileNotFoundError(f"{run_dir} does not exist")
     return run_dir
-
-
-def _read_json(path: Path) -> Any:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def _filters_from_query(query_string: str) -> dict[str, str | None]:
@@ -271,19 +216,11 @@ def _first_query_value(parsed: dict[str, list[str]], key: str) -> str | None:
     return value or None
 
 
-def _search_text(run: dict[str, Any]) -> str:
-    return " ".join(
-        str(value)
-        for value in (run.get("run_id"), run.get("status"), run.get("provider"), run.get("command"), run.get("run_dir"))
-        if value is not None
-    )
-
-
 def _page(title: str, body: str) -> str:
     return f"""<!doctype html>
-<html lang="en">
+<html lang=\"en\">
 <head>
-  <meta charset="utf-8">
+  <meta charset=\"utf-8\">
   <title>{_escape(title)}</title>
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.5; }}

@@ -3,13 +3,30 @@
 from __future__ import annotations
 
 from pathlib import Path
+from shlex import quote as shell_quote
 
 import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from xrtm.cli.presenters import (
+    canonical_artifact_inventory,
+    pipeline_result_title,
+    pipeline_success_details,
+    print_local_llm_status,
+    print_pipeline_result,
+    print_post_run_summary,
+    print_prepared_corpus_report,
+    print_quickstart_summary,
+    print_run_compare,
+    print_runs_table,
+    print_validation_report,
+    profiles_dir_command_arg,
+    runs_dir_command_arg,
+)
 from xrtm.product.artifacts import ArtifactStore
+from xrtm.product.doctor import run_doctor
 from xrtm.product.history import (
     compare_runs,
     export_run,
@@ -31,11 +48,24 @@ from xrtm.product.monitoring import (
 )
 from xrtm.product.observability import MonitorThresholds
 from xrtm.product.performance import PerformanceBudgetError, PerformanceOptions, run_performance_benchmark
-from xrtm.product.pipeline import PipelineOptions, package_versions, run_pipeline
-from xrtm.product.profiles import DEFAULT_PROFILES_DIR, ProfileStore, WorkflowProfile
+from xrtm.product.pipeline import PipelineOptions, PipelineResult, run_pipeline
+from xrtm.product.profiles import (
+    DEFAULT_PROFILES_DIR,
+    ProfileStore,
+    WorkflowProfile,
+    starter_profile,
+)
 from xrtm.product.providers import local_llm_status
 from xrtm.product.reports import render_html_report
 from xrtm.product.tui import render_tui_once, run_tui
+from xrtm.product.validation import (
+    ValidationOptions,
+    ValidationSafetyError,
+    ValidationTierError,
+    list_validation_corpora,
+    prepare_validation_corpus,
+    run_validation,
+)
 from xrtm.product.web import create_web_server, web_snapshot
 from xrtm.version import __version__
 
@@ -45,20 +75,51 @@ console = Console()
 @click.group()
 @click.version_option(version=__version__)
 def cli() -> None:
-    """XRTM local-first product cockpit."""
+    """XRTM product cockpit for event forecasting."""
 
 
 @cli.command()
 def doctor() -> None:
-    """Check product-shell imports and package versions."""
+    """Check default first-run readiness and package health."""
 
-    table = Table(title="XRTM Doctor")
-    table.add_column("Package", style="cyan")
-    table.add_column("Version", style="green")
-    for package, package_version in package_versions().items():
-        table.add_row(package, package_version)
-    console.print(table)
-    console.print("[green]Product shell imports are available.[/green]")
+    if not run_doctor(console):
+        raise click.exceptions.Exit(1)
+
+
+@cli.command()
+@click.option("--limit", type=int, default=2, show_default=True, help="Number of bundled questions to run in the guided local demo.")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+@click.option("--user", default=None, help="User or analyst attribution for this run.")
+def start(limit: int, runs_dir: Path, user: str | None) -> None:
+    """Guided newcomer quickstart: readiness -> local demo -> next steps."""
+
+    if not run_doctor(console, runs_dir=runs_dir, show_next_steps=False):
+        raise click.exceptions.Exit(1)
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    "Readiness checks passed.",
+                    "Running the deterministic mock-provider demo now.",
+                    "This first run stays fully local and offline by default.",
+                ]
+            ),
+            title="Guided quickstart",
+            border_style="blue",
+        )
+    )
+    result = _execute_pipeline(
+        PipelineOptions(
+            provider="mock",
+            limit=limit,
+            runs_dir=runs_dir,
+            write_report=True,
+            command="xrtm start",
+            user=user,
+        )
+    )
+    print_pipeline_result(console, result, title="XRTM Quickstart")
+    print_quickstart_summary(console, result, runs_dir=runs_dir)
 
 
 @cli.command()
@@ -70,6 +131,7 @@ def doctor() -> None:
 @click.option("--api-key", default=None, help="API key for the local endpoint; defaults to test/env.")
 @click.option("--max-tokens", type=int, default=768, show_default=True)
 @click.option("--no-report", is_flag=True, help="Skip static report.html generation.")
+@click.option("--user", default=None, help="User or analyst attribution for this run.")
 def demo(
     provider: str,
     limit: int,
@@ -79,6 +141,7 @@ def demo(
     api_key: str | None,
     max_tokens: int,
     no_report: bool,
+    user: str | None,
 ) -> None:
     """Run a bounded local product demo over the real binary corpus."""
 
@@ -93,6 +156,7 @@ def demo(
             max_tokens=max_tokens,
             write_report=not no_report,
             command="xrtm demo",
+            user=user,
         )
     )
 
@@ -113,6 +177,7 @@ def profile_group() -> None:
 @click.option("--max-tokens", type=int, default=768, show_default=True)
 @click.option("--no-report", is_flag=True, help="Skip static report.html generation.")
 @click.option("--overwrite", is_flag=True, help="Replace an existing profile with the same name.")
+@click.option("--user", default=None, help="User or analyst attribution for this run.")
 def profile_create(
     name: str,
     profiles_dir: Path,
@@ -124,6 +189,7 @@ def profile_create(
     max_tokens: int,
     no_report: bool,
     overwrite: bool,
+    user: str | None,
 ) -> None:
     """Save a repeatable product workflow profile."""
 
@@ -137,11 +203,47 @@ def profile_create(
             model=model,
             max_tokens=max_tokens,
             write_report=not no_report,
+            user=user,
         )
         path = ProfileStore(profiles_dir).create(profile, overwrite=overwrite)
     except (FileExistsError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
-    console.print(f"[green]Profile written:[/green] {path}")
+    profiles_dir_arg = profiles_dir_command_arg(profiles_dir)
+    runs_dir_arg = runs_dir_command_arg(runs_dir)
+    lines = [
+        f"Profile written: {path}",
+        f"Run it: xrtm run profile {name}{profiles_dir_arg}",
+        f"Inspect it: xrtm profile show {name}{profiles_dir_arg}",
+        f"Review runs in this workspace: xrtm runs list {runs_dir_arg}",
+    ]
+    console.print(Panel("\n".join(lines), title="Profile saved", border_style="green"))
+
+
+@profile_group.command("starter")
+@click.argument("name")
+@click.option("--profiles-dir", type=click.Path(file_okay=False, path_type=Path), default=DEFAULT_PROFILES_DIR, show_default=True)
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+@click.option("--user", default=None, help="User or analyst attribution for this starter workflow.")
+@click.option("--overwrite", is_flag=True, help="Replace an existing profile with the same name.")
+def profile_starter(name: str, profiles_dir: Path, runs_dir: Path, user: str | None, overwrite: bool) -> None:
+    """Scaffold the minimal reusable local profile suggested after xrtm start."""
+
+    try:
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        path = ProfileStore(profiles_dir).create(starter_profile(name, runs_dir=runs_dir, user=user), overwrite=overwrite)
+    except (FileExistsError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    profiles_dir_arg = profiles_dir_command_arg(profiles_dir)
+    runs_dir_arg = runs_dir_command_arg(runs_dir)
+    lines = [
+        f"Starter profile: {path}",
+        f"Runs directory ready: {runs_dir}",
+        f"Repeat this local workflow: xrtm run profile {name}{profiles_dir_arg}",
+        f"Inspect the profile: xrtm profile show {name}{profiles_dir_arg}",
+        f"Review future runs: xrtm runs list {runs_dir_arg}",
+    ]
+    console.print(Panel("\n".join(lines), title="Starter scaffold ready", border_style="green"))
 
 
 @profile_group.command("list")
@@ -192,6 +294,7 @@ def run() -> None:
 @click.option("--api-key", default=None, help="API key for the local endpoint; defaults to test/env.")
 @click.option("--max-tokens", type=int, default=768, show_default=True)
 @click.option("--no-report", is_flag=True, help="Skip static report.html generation.")
+@click.option("--user", default=None, help="User or analyst attribution for this run.")
 def run_pipeline_command(
     provider: str,
     limit: int,
@@ -201,6 +304,7 @@ def run_pipeline_command(
     api_key: str | None,
     max_tokens: int,
     no_report: bool,
+    user: str | None,
 ) -> None:
     """Run forecast -> eval -> train/backtest over the real corpus."""
 
@@ -215,6 +319,7 @@ def run_pipeline_command(
             max_tokens=max_tokens,
             write_report=not no_report,
             command="xrtm run pipeline",
+            user=user,
         )
     )
 
@@ -239,19 +344,29 @@ def artifacts() -> None:
 
 
 @artifacts.command("inspect")
-@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
-def artifacts_inspect(run_dir: Path) -> None:
-    """Inspect a canonical run directory."""
+@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, path_type=Path), required=False)
+@click.option(
+    "--runs-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=Path("runs"),
+    show_default=True,
+    help="Run history directory used with --latest.",
+)
+@click.option("--latest", "use_latest", is_flag=True, help="Inspect the newest canonical run under --runs-dir.")
+def artifacts_inspect(run_dir: Path | None, runs_dir: Path, use_latest: bool) -> None:
+    """Inspect a canonical run directory and its artifact inventory, or use --latest."""
 
     try:
+        run_dir = _resolve_inspection_run_dir(run_dir=run_dir, runs_dir=runs_dir, use_latest=use_latest)
         run_payload = ArtifactStore.read_run(run_dir)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     table = Table(title=f"Run {run_payload.get('run_id', run_dir.name)}")
     table.add_column("Field", style="cyan")
     table.add_column("Value", style="green")
     for field in ("status", "provider", "command", "created_at", "updated_at"):
         table.add_row(field, str(run_payload.get(field, "")))
+    table.add_row("run_dir", str(run_dir))
     artifacts_payload = run_payload.get("artifacts", {})
     table.add_row("artifacts", str(len(artifacts_payload)))
     summary = run_payload.get("summary", {})
@@ -260,6 +375,22 @@ def artifacts_inspect(run_dir: Path) -> None:
         table.add_row("warnings", str(summary.get("warning_count", "")))
         table.add_row("errors", str(summary.get("error_count", "")))
     console.print(table)
+    artifact_table = Table(title="Canonical artifact inventory")
+    artifact_table.add_column("Artifact", style="cyan")
+    artifact_table.add_column("Status")
+    artifact_table.add_column("Location", style="green")
+    for name, status, location in canonical_artifact_inventory(run_dir):
+        artifact_table.add_row(name, status, location)
+    console.print(artifact_table)
+    runs_dir_arg = runs_dir_command_arg(run_dir.parent)
+    run_dir_arg = shell_quote(run_dir.as_posix())
+    next_lines = [
+        f"Inspect summary: xrtm runs show {run_payload.get('run_id', run_dir.name)} {runs_dir_arg}",
+        f"Open/regenerate report: xrtm report html {run_dir_arg}",
+        f"Browse the same workspace in WebUI: xrtm web {runs_dir_arg}",
+        f"Browse the same workspace in TUI: xrtm tui {runs_dir_arg}",
+    ]
+    console.print(Panel("\n".join(next_lines), title="Common next steps", border_style="blue"))
 
 
 @artifacts.command("cleanup")
@@ -291,7 +422,7 @@ def runs_group() -> None:
 def runs_list(runs_dir: Path, status: str | None, provider: str | None) -> None:
     """List run history."""
 
-    _print_runs_table(list_run_history(runs_dir, status=status, provider=provider), title="XRTM Runs")
+    print_runs_table(console, list_run_history(runs_dir, status=status, provider=provider), title="XRTM Runs")
 
 
 @runs_group.command("search")
@@ -300,16 +431,16 @@ def runs_list(runs_dir: Path, status: str | None, provider: str | None) -> None:
 @click.option("--status", default=None, help="Filter by run status.")
 @click.option("--provider", default=None, help="Filter by provider.")
 def runs_search(query: str, runs_dir: Path, status: str | None, provider: str | None) -> None:
-    """Search run history by id, command, provider, or status."""
+    """Search run history by id, user, command, provider, or status."""
 
-    _print_runs_table(list_run_history(runs_dir, status=status, provider=provider, query=query), title="XRTM Run Search")
+    print_runs_table(console, list_run_history(runs_dir, status=status, provider=provider, query=query), title="XRTM Run Search")
 
 
 @runs_group.command("show")
 @click.argument("run_ref")
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
 def runs_show(run_ref: str, runs_dir: Path) -> None:
-    """Show run details by run id."""
+    """Show run details by run id or ``latest``."""
 
     try:
         run_dir = resolve_run_dir(runs_dir, run_ref)
@@ -324,6 +455,7 @@ def runs_show(run_ref: str, runs_dir: Path) -> None:
     rows = {
         "status": run.get("status"),
         "provider": run.get("provider"),
+        "user": run.get("user"),
         "command": run.get("command"),
         "forecasts": summary.get("forecast_count"),
         "warnings": summary.get("warning_count"),
@@ -341,33 +473,38 @@ def runs_show(run_ref: str, runs_dir: Path) -> None:
 @click.argument("right")
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
 def runs_compare(left: str, right: str, runs_dir: Path) -> None:
-    """Compare two runs by id."""
+    """Compare two runs by id or ``latest``."""
 
     try:
         rows = compare_runs(resolve_run_dir(runs_dir, left), resolve_run_dir(runs_dir, right))
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
-    table = Table(title="XRTM Run Compare")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Left", style="green")
-    table.add_column("Right", style="yellow")
-    for row in rows:
-        table.add_row(str(row["metric"]), str(row["left"]), str(row["right"]))
-    console.print(table)
+    print_run_compare(console, rows)
 
 
 @runs_group.command("export")
 @click.argument("run_ref")
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
-@click.option("--output", type=click.Path(dir_okay=False, path_type=Path), required=True, help="Destination JSON file.")
-def runs_export(run_ref: str, runs_dir: Path, output: Path) -> None:
-    """Export one run as a portable JSON bundle."""
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path), required=True, help="Destination file.")
+@click.option(
+    "--format",
+    type=click.Choice(["json", "csv"], case_sensitive=False),
+    default="json",
+    show_default=True,
+    help="Export format: JSON (full detail) or CSV (flattened forecasts).",
+)
+def runs_export(run_ref: str, runs_dir: Path, output: Path, format: str) -> None:
+    """Export one run by id or ``latest`` as a portable bundle.
+
+    JSON format includes complete run detail with nested structures.
+    CSV format flattens forecasts into spreadsheet-friendly rows.
+    """
 
     try:
-        path = export_run(resolve_run_dir(runs_dir, run_ref), output)
+        path = export_run(resolve_run_dir(runs_dir, run_ref), output, format=format.lower())
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
-    console.print(f"[green]Run exported:[/green] {path}")
+    console.print(f"[green]Run exported as {format.upper()}:[/green] {path}")
 
 
 @cli.group("providers")
@@ -381,7 +518,7 @@ def providers_doctor(base_url: str | None) -> None:
     """Check configured provider availability."""
 
     status = local_llm_status(base_url=base_url)
-    _print_local_llm_status(status)
+    print_local_llm_status(console, status)
 
 
 @cli.group("perf")
@@ -457,6 +594,131 @@ def perf_run(
     console.print(table)
 
 
+@cli.group("validate")
+def validate_group() -> None:
+    """Large-scale validation with corpus registry integration."""
+
+
+@validate_group.command("run")
+@click.option("--corpus-id", default="xrtm-real-binary-v1", show_default=True, help="Corpus ID from registry.")
+@click.option("--split", type=click.Choice(["full", "train", "eval", "held-out", "dev"]), default=None, help="Corpus split to use.")
+@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--limit", type=int, default=10, show_default=True, help="Questions per iteration.")
+@click.option("--iterations", type=int, default=1, show_default=True, help="Number of validation iterations.")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs-validation"), show_default=True)
+@click.option("--output-dir", type=click.Path(file_okay=False, path_type=Path), default=Path(".cache/validation"), show_default=True)
+@click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for local-llm.")
+@click.option("--model", default=None, help="Local model id.")
+@click.option("--api-key", default=None, help="API key for local endpoint.")
+@click.option("--max-tokens", type=int, default=768, show_default=True)
+@click.option("--release-gate-mode", is_flag=True, help="Enforce Tier 1 corpus requirement.")
+@click.option("--allow-unsafe-local-llm", is_flag=True, help="Allow unbounded local-llm runs (USE WITH CAUTION).")
+@click.option("--no-artifacts", is_flag=True, help="Skip writing validation artifacts.")
+def validate_run(
+    corpus_id: str,
+    split: str | None,
+    provider: str,
+    limit: int,
+    iterations: int,
+    runs_dir: Path,
+    output_dir: Path,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    max_tokens: int,
+    release_gate_mode: bool,
+    allow_unsafe_local_llm: bool,
+    no_artifacts: bool,
+) -> None:
+    """Run a corpus-based validation sweep with structured metrics."""
+
+    try:
+        report = run_validation(
+            ValidationOptions(
+                corpus_id=corpus_id,
+                split=split,
+                provider=provider,
+                limit=limit,
+                iterations=iterations,
+                runs_dir=runs_dir,
+                output_dir=output_dir,
+                base_url=base_url,
+                model=model,
+                api_key=api_key,
+                max_tokens=max_tokens,
+                write_artifacts=not no_artifacts,
+                release_gate_mode=release_gate_mode,
+                allow_unsafe_local_llm=allow_unsafe_local_llm,
+            )
+        )
+    except (ValidationTierError, ValidationSafetyError, ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    print_validation_report(console, report)
+
+
+@validate_group.command("list-corpora")
+@click.option("--tier", type=click.Choice(["tier-1", "tier-2", "tier-3"]), default=None, help="Filter by tier.")
+@click.option("--release-gate-only", is_flag=True, help="Show only release-gate approved corpora.")
+def validate_list_corpora(tier: str | None, release_gate_only: bool) -> None:
+    """List available validation corpora from the registry."""
+
+    from xrtm.data.corpora import CorpusTier
+
+    tier_enum = CorpusTier(tier) if tier else None
+    corpora = list_validation_corpora(tier=tier_enum, release_gate_only=release_gate_only)
+
+    if not corpora:
+        console.print("[yellow]No corpora found matching the filter criteria.[/yellow]")
+        return
+
+    table = Table(title="Available Validation Corpora")
+    table.add_column("Corpus ID", style="cyan")
+    table.add_column("Name", style="white")
+    table.add_column("Tier", style="yellow")
+    table.add_column("License", style="green")
+    table.add_column("Release-Gate", style="magenta")
+    table.add_column("Bundled", style="blue")
+
+    for corpus in corpora:
+        table.add_row(
+            corpus["corpus_id"],
+            corpus["name"],
+            corpus["tier"],
+            corpus["license_type"],
+            "✓" if corpus["release_gate_approved"] else "✗",
+            "✓" if corpus["bundled"] else "✗",
+        )
+
+    console.print(table)
+
+
+@validate_group.command("prepare-corpus")
+@click.option("--corpus-id", default="forecast-v1", show_default=True, help="Corpus ID from registry.")
+@click.option("--cache-root", type=click.Path(file_okay=False, path_type=Path), default=None, help="Override external corpus cache root.")
+@click.option("--refresh", is_flag=True, help="Re-import even if the corpus is already cached.")
+@click.option("--fixture-preview", is_flag=True, help="Cache the deterministic preview instead of downloading the external dataset.")
+def validate_prepare_corpus(
+    corpus_id: str,
+    cache_root: Path | None,
+    refresh: bool,
+    fixture_preview: bool,
+) -> None:
+    """Prepare an external corpus cache for large validation runs."""
+
+    try:
+        report = prepare_validation_corpus(
+            corpus_id,
+            cache_root=cache_root,
+            refresh=refresh,
+            use_hf_datasets=not fixture_preview,
+        )
+    except (ImportError, ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    print_prepared_corpus_report(console, report)
+
+
 @cli.group("monitor")
 def monitor_group() -> None:
     """Monitor forecast questions with local artifact-backed state."""
@@ -495,7 +757,17 @@ def monitor_start(
         )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
-    console.print(f"[green]Monitor started:[/green] {run.run_dir}")
+    runs_dir_arg = runs_dir_command_arg(runs_dir)
+    run_dir_arg = shell_quote(run.run_dir.as_posix())
+    lines = [
+        f"Monitor started: {run.run_id}",
+        f"Directory: {run.run_dir}",
+        f"List active monitors: xrtm monitor list {runs_dir_arg}",
+        f"Inspect this monitor: xrtm monitor show {run_dir_arg}",
+        f"Run one update cycle: xrtm monitor run-once {run_dir_arg}",
+        f"Plain forecast runs still live under: xrtm runs list {runs_dir_arg}",
+    ]
+    console.print(Panel("\n".join(lines), title="Monitor ready", border_style="green"))
 
 
 @monitor_group.command("list")
@@ -503,13 +775,44 @@ def monitor_start(
 def monitor_list(runs_dir: Path) -> None:
     """List monitor runs."""
 
+    monitors = list_monitors(runs_dir)
+    if not monitors:
+        runs_dir_arg = runs_dir_command_arg(runs_dir)
+        console.print(
+            Panel(
+                "\n".join(
+                    [
+                        "No monitor runs found in this workspace.",
+                        f"Start one with: xrtm monitor start --provider mock --limit 2 {runs_dir_arg}",
+                        f"Review regular forecast runs with: xrtm runs list {runs_dir_arg}",
+                    ]
+                ),
+                title="XRTM Monitors",
+                border_style="yellow",
+            )
+        )
+        return
+
     table = Table(title="XRTM Monitors")
-    table.add_column("Run", style="cyan")
+    table.add_column("Run", style="cyan", no_wrap=True)
     table.add_column("Status", style="green")
+    table.add_column("Provider")
     table.add_column("Watches", justify="right")
+    table.add_column("Updates", justify="right")
+    table.add_column("Warnings", justify="right")
+    table.add_column("Monitor dir")
     table.add_column("Updated", style="dim")
-    for monitor in list_monitors(runs_dir):
-        table.add_row(monitor["run_dir"], str(monitor["status"]), str(monitor["watches"]), str(monitor["updated_at"]))
+    for monitor in monitors:
+        table.add_row(
+            str(monitor["run_id"]),
+            str(monitor["status"]),
+            str(monitor.get("provider") or ""),
+            str(monitor["watches"]),
+            str(monitor.get("updates") or 0),
+            str(monitor.get("warning_count") or 0),
+            str(monitor["run_dir"]),
+            str(monitor["updated_at"]),
+        )
     console.print(table)
 
 
@@ -520,7 +823,7 @@ def monitor_show(run_dir: Path) -> None:
 
     try:
         monitor = load_monitor(run_dir)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     table = Table(title=f"Monitor {run_dir.name}")
     table.add_column("Watch", style="cyan")
@@ -533,13 +836,26 @@ def monitor_show(run_dir: Path) -> None:
         latest = trajectory[-1]["probability"] if trajectory else "N/A"
         table.add_row(
             str(watch.get("watch_id")),
-            str(watch.get("question_id")),
+            str(watch.get("title") or watch.get("question_id")),
             str(watch.get("status")),
             str(len(trajectory)),
             str(latest),
         )
     console.print(Panel(f"Status: {monitor.get('status')}", title="Monitor State"))
     console.print(table)
+    run_dir_arg = shell_quote(run_dir.as_posix())
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    f"Run one update cycle: xrtm monitor run-once {run_dir_arg}",
+                    f"Pause or halt: xrtm monitor pause {run_dir_arg} | xrtm monitor halt {run_dir_arg}",
+                ]
+            ),
+            title="Monitor commands",
+            border_style="blue",
+        )
+    )
 
 
 @monitor_group.command("run-once")
@@ -647,9 +963,18 @@ def local_llm_status_command(base_url: str | None) -> None:
     """Show local llama.cpp/OpenAI-compatible endpoint status."""
 
     status = local_llm_status(base_url=base_url)
-    _print_local_llm_status(status)
+    print_local_llm_status(console, status)
     if not status["healthy"]:
-        raise click.ClickException(status["error"] or "Local LLM endpoint is not healthy")
+        error_msg = (
+            f"{status['error'] or 'Endpoint health check failed'}\n\n"
+            f"Troubleshooting steps:\n"
+            f"1. Ensure your local LLM server is running (e.g., llama.cpp)\n"
+            f"2. Verify the endpoint: curl {status['health_url']}\n"
+            f"3. Check base URL: {status['base_url']}\n"
+            f"4. Set correct URL: export XRTM_LOCAL_LLM_BASE_URL=http://localhost:YOUR_PORT/v1\n\n"
+            f"For setup help, see: docs/getting-started.md"
+        )
+        raise click.ClickException(error_msg)
 
 
 @cli.group("report")
@@ -658,15 +983,37 @@ def report_group() -> None:
 
 
 @report_group.command("html")
-@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
-def report_html(run_dir: Path) -> None:
-    """Generate a static HTML report for a run directory."""
+@click.argument("run_dir", type=click.Path(exists=True, file_okay=False, path_type=Path), required=False)
+@click.option(
+    "--runs-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=Path("runs"),
+    show_default=True,
+    help="Run history directory used with --latest.",
+)
+@click.option("--latest", "use_latest", is_flag=True, help="Generate a report for the newest canonical run.")
+def report_html(run_dir: Path | None, runs_dir: Path, use_latest: bool) -> None:
+    """Generate a static HTML report for a run directory or use --latest."""
 
     try:
+        run_dir = _resolve_inspection_run_dir(run_dir=run_dir, runs_dir=runs_dir, use_latest=use_latest)
         report_path = render_html_report(run_dir)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     console.print(f"[green]Report written:[/green] {report_path}")
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    f"Run dir: {run_dir}",
+                    f"Inspect artifacts: xrtm artifacts inspect {shell_quote(run_dir.as_posix())}",
+                    f"Browse the same workspace: xrtm web {runs_dir_command_arg(run_dir.parent)}",
+                ]
+            ),
+            title="Report follow-through",
+            border_style="blue",
+        )
+    )
 
 
 @cli.command()
@@ -707,61 +1054,34 @@ def web(runs_dir: Path, host: str, port: int, smoke: bool) -> None:
 
 
 def _run_pipeline_command(options: PipelineOptions) -> None:
+    result = _execute_pipeline(options)
+    print_pipeline_result(console, result, title=pipeline_result_title(options.command))
+    print_post_run_summary(
+        console,
+        result,
+        runs_dir=options.runs_dir,
+        success_title="Run complete",
+        success_label=f"{options.command} completed",
+        what_succeeded=pipeline_success_details(write_report=options.write_report),
+        write_report=options.write_report,
+    )
+
+
+def _execute_pipeline(options: PipelineOptions) -> PipelineResult:
     try:
-        result = run_pipeline(options)
+        return run_pipeline(options)
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 
-    table = Table(title="XRTM Pipeline")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green")
-    table.add_row("Run", str(result.run.run_dir))
-    table.add_row("Forecast records", str(result.forecast_records))
-    table.add_row("Eval Brier", _format_optional_float(result.eval_brier_score))
-    table.add_row("Train/backtest Brier", _format_optional_float(result.train_brier_score))
-    table.add_row("Training samples", str(result.training_samples))
-    table.add_row("Total seconds", f"{result.total_seconds:.3f}")
-    console.print(table)
-    console.print(f"[green]Artifacts:[/green] {result.run.run_dir}")
 
-
-def _print_runs_table(runs: list[dict], *, title: str) -> None:
-    table = Table(title=title)
-    table.add_column("Run", style="cyan", width=26, no_wrap=True)
-    table.add_column("Status", style="green")
-    table.add_column("Provider")
-    table.add_column("Forecasts", justify="right")
-    table.add_column("Warnings", justify="right")
-    table.add_column("Updated", style="dim", width=19)
-    for run in runs:
-        summary = run.get("summary", {})
-        table.add_row(
-            str(run.get("run_id")),
-            str(run.get("status")),
-            str(run.get("provider")),
-            str(summary.get("forecast_count", "")),
-            str(summary.get("warning_count", "")),
-            str(run.get("updated_at")),
-        )
-    console.print(table)
-
-
-def _print_local_llm_status(status: dict) -> None:
-    color = "green" if status["healthy"] else "red"
-    lines = [
-        f"Base URL: {status['base_url']}",
-        f"Health URL: {status['health_url']}",
-        f"Healthy: {status['healthy']}",
-    ]
-    if status["models"]:
-        lines.append(f"Models: {', '.join(status['models'])}")
-    if status["error"]:
-        lines.append(f"Error: {status['error']}")
-    console.print(Panel("\n".join(lines), title="Local LLM", border_style=color))
-
-
-def _format_optional_float(value: float | None) -> str:
-    return "N/A" if value is None else f"{value:.6f}"
+def _resolve_inspection_run_dir(*, run_dir: Path | None, runs_dir: Path, use_latest: bool) -> Path:
+    if use_latest:
+        if run_dir is not None:
+            raise ValueError("pass either RUN_DIR or --latest, not both")
+        return resolve_run_dir(runs_dir, "latest")
+    if run_dir is None:
+        raise ValueError("missing RUN_DIR; pass a run directory path or use --latest with --runs-dir")
+    return run_dir
 
 
 def _set_monitor_status_command(run_dir: Path, status: str) -> None:

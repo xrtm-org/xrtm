@@ -12,6 +12,7 @@ from xrtm.product.pipeline import PipelineOptions
 
 PROFILE_SCHEMA_VERSION = "xrtm.profile.v1"
 DEFAULT_PROFILES_DIR = Path(".xrtm/profiles")
+STARTER_PROFILE_LIMIT = 5
 _PROFILE_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
@@ -27,6 +28,7 @@ class WorkflowProfile:
     model: str | None = None
     max_tokens: int = 768
     write_report: bool = True
+    user: str | None = None
     schema_version: str = PROFILE_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -49,6 +51,7 @@ class WorkflowProfile:
             "model": self.model,
             "max_tokens": self.max_tokens,
             "write_report": self.write_report,
+            "user": self.user,
         }
 
     def to_pipeline_options(self, *, runs_dir: Path | None = None, command: str | None = None) -> PipelineOptions:
@@ -61,6 +64,7 @@ class WorkflowProfile:
             max_tokens=self.max_tokens,
             write_report=self.write_report,
             command=command or f"xrtm run profile {self.name}",
+            user=self.user,
         )
 
     @classmethod
@@ -74,6 +78,7 @@ class WorkflowProfile:
             model=payload.get("model"),
             max_tokens=int(payload.get("max_tokens", 768)),
             write_report=bool(payload.get("write_report", True)),
+            user=payload.get("user"),
             schema_version=str(payload.get("schema_version", PROFILE_SCHEMA_VERSION)),
         )
 
@@ -118,4 +123,23 @@ def validate_profile_name(name: str) -> None:
         raise ValueError("profile name may only contain letters, numbers, dots, underscores, and dashes")
 
 
-__all__ = ["DEFAULT_PROFILES_DIR", "PROFILE_SCHEMA_VERSION", "ProfileStore", "WorkflowProfile"]
+def starter_profile(name: str, *, runs_dir: Path = Path("runs"), user: str | None = None) -> WorkflowProfile:
+    """Create the minimal reusable local profile suggested after xrtm start."""
+
+    return WorkflowProfile(
+        name=name,
+        provider="mock",
+        limit=STARTER_PROFILE_LIMIT,
+        runs_dir=str(runs_dir),
+        user=user,
+    )
+
+
+__all__ = [
+    "DEFAULT_PROFILES_DIR",
+    "PROFILE_SCHEMA_VERSION",
+    "ProfileStore",
+    "STARTER_PROFILE_LIMIT",
+    "WorkflowProfile",
+    "starter_profile",
+]

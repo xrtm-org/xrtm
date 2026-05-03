@@ -1,9 +1,38 @@
 name: CI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      coordination_context:
+        description: "Linked issue/PR family or release-train note"
+        required: false
+        type: string
+      data_ref:
+        description: "Explicit xrtm-org/data ref (branch, tag, SHA, or refs/pull/.../head)"
+        required: false
+        default: main
+        type: string
+      eval_ref:
+        description: "Explicit xrtm-org/eval ref (branch, tag, SHA, or refs/pull/.../head)"
+        required: false
+        default: main
+        type: string
+      forecast_ref:
+        description: "Explicit xrtm-org/forecast ref (branch, tag, SHA, or refs/pull/.../head)"
+        required: false
+        default: main
+        type: string
+      train_ref:
+        description: "Explicit xrtm-org/train ref (branch, tag, SHA, or refs/pull/.../head)"
+        required: false
+        default: main
+        type: string
 
 jobs:
   test:
@@ -18,6 +47,81 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Resolve workspace refs
+        id: workspace-refs
+        shell: bash
+        env:
+          INPUT_COORDINATION_CONTEXT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.coordination_context || '' }}
+          INPUT_DATA_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.data_ref || '' }}
+          INPUT_EVAL_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.eval_ref || '' }}
+          INPUT_FORECAST_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.forecast_ref || '' }}
+          INPUT_TRAIN_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.train_ref || '' }}
+        run: |
+          default_ref="main"
+
+          requested_ref() {
+            local value="$1"
+            if [ -n "$value" ]; then
+              printf '%s' "$value"
+            else
+              printf '%s' "$default_ref"
+            fi
+          }
+
+          {
+            echo "coordination_context=${INPUT_COORDINATION_CONTEXT}"
+            echo "data_ref=$(requested_ref "$INPUT_DATA_REF")"
+            echo "eval_ref=$(requested_ref "$INPUT_EVAL_REF")"
+            echo "forecast_ref=$(requested_ref "$INPUT_FORECAST_REF")"
+            echo "train_ref=$(requested_ref "$INPUT_TRAIN_REF")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout workspace siblings
+        id: workspace-siblings
+        shell: bash
+        run: |
+          checkout_repo() {
+            local repo="$1"
+            local ref="$2"
+            git init -q "$repo"
+            git -C "$repo" remote add origin "https://github.com/xrtm-org/${repo}.git"
+            git -C "$repo" fetch --depth 1 --quiet origin "$ref"
+            git -C "$repo" checkout --detach --quiet FETCH_HEAD
+            git -C "$repo" rev-parse HEAD
+          }
+
+          data_sha="$(checkout_repo data "${{ steps.workspace-refs.outputs.data_ref }}")"
+          eval_sha="$(checkout_repo eval "${{ steps.workspace-refs.outputs.eval_ref }}")"
+          forecast_sha="$(checkout_repo forecast "${{ steps.workspace-refs.outputs.forecast_ref }}")"
+          train_sha="$(checkout_repo train "${{ steps.workspace-refs.outputs.train_ref }}")"
+
+          {
+            echo "data_sha=$data_sha"
+            echo "eval_sha=$eval_sha"
+            echo "forecast_sha=$forecast_sha"
+            echo "train_sha=$train_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summarize workspace refs
+        shell: bash
+        run: |
+          {
+            echo "### Workspace compatibility refs"
+            echo
+            echo "| Repo | Requested ref | Resolved commit |"
+            echo "| --- | --- | --- |"
+            echo "| data | \`${{ steps.workspace-refs.outputs.data_ref }}\` | \`${{ steps.workspace-siblings.outputs.data_sha }}\` |"
+            echo "| eval | \`${{ steps.workspace-refs.outputs.eval_ref }}\` | \`${{ steps.workspace-siblings.outputs.eval_sha }}\` |"
+            echo "| forecast | \`${{ steps.workspace-refs.outputs.forecast_ref }}\` | \`${{ steps.workspace-siblings.outputs.forecast_sha }}\` |"
+            echo "| train | \`${{ steps.workspace-refs.outputs.train_ref }}\` | \`${{ steps.workspace-siblings.outputs.train_sha }}\` |"
+            echo
+            if [ -n "${{ steps.workspace-refs.outputs.coordination_context }}" ]; then
+              echo "Coordination context: ${{ steps.workspace-refs.outputs.coordination_context }}"
+              echo
+            fi
+            echo "Default push/pull_request CI validates against explicit \`main\` upstream refs. Use workflow_dispatch for coordinated validation against exact upstream refs."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -30,8 +134,11 @@ jobs:
 
       - name: Install package and test tools
         run: |
-          uv pip install --system -e .
+          uv pip install --system -e ./data -e ./eval -e ./forecast -e ./train -e .
           uv pip install --system ruff mypy pytest build
+
+      - name: Release command claims
+        run: python scripts/check_release_claims.py --repo-root . --contract docs/release-command-contract.json --scope xrtm
 
       - name: Ruff
         run: ruff check .
@@ -49,7 +156,7 @@ jobs:
         shell: bash
         run: |
           python -m venv /tmp/xrtm-wheel-smoke
-          uv pip install --python /tmp/xrtm-wheel-smoke/bin/python dist/xrtm-*.whl
+          uv pip install --python /tmp/xrtm-wheel-smoke/bin/python -e ./data -e ./eval -e ./forecast -e ./train dist/xrtm-*.whl
           /tmp/xrtm-wheel-smoke/bin/xrtm --help
           /tmp/xrtm-wheel-smoke/bin/xrtm doctor
           /tmp/xrtm-wheel-smoke/bin/xrtm web --smoke
@@ -73,8 +180,20 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Resolve documented release version
+        id: release-contract
+        shell: bash
+        run: |
+          release_version="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path('docs/release-command-contract.json').read_text(encoding='utf-8'))['release_version'])
+          PY
+          )"
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+
       - name: Install released stack
-        run: uv pip install --system "xrtm==0.2.1"
+        run: uv pip install --system "xrtm==${{ steps.release-contract.outputs.release_version }}"
 
       - name: Smoke released stack
         shell: bash
@@ -93,5 +212,10 @@ jobs:
           print("released stack imports ok")
           PY
           xrtm doctor
-          xrtm demo --provider mock --limit 2 --runs-dir /tmp/xrtm-release-smoke
+          xrtm demo --provider mock --limit 1 --runs-dir /tmp/xrtm-release-smoke
+          run_dir="$(find /tmp/xrtm-release-smoke -mindepth 1 -maxdepth 1 -type d | sort | head -n 1)"
+          run_id="$(basename "$run_dir")"
+          xrtm runs show "$run_id" --runs-dir /tmp/xrtm-release-smoke
+          xrtm artifacts inspect "$run_dir"
+          xrtm report html "$run_dir"
           xrtm web --runs-dir /tmp/xrtm-release-smoke --smoke

@@ -14,6 +14,19 @@ PERFORMANCE_SCHEMA_VERSION = "xrtm.performance.v1"
 MAX_ITERATIONS = 100
 MAX_LIMIT = 1000
 
+# Performance budgets for CI/regression detection (seconds)
+DEFAULT_BUDGETS = {
+    "provider-free-smoke": {
+        "max_mean_seconds": 0.050,  # 50ms mean per iteration (10 forecasts)
+        "max_p95_seconds": 0.100,   # 100ms p95
+    },
+    "provider-free-scale": {
+        "max_mean_seconds": 0.500,  # 500ms mean per iteration (100 forecasts)
+        "max_p95_seconds": 1.000,   # 1s p95
+    },
+    # local-llm-smoke intentionally has no default budget (depends on hardware)
+}
+
 
 class PerformanceBudgetError(RuntimeError):
     """Raised when a performance report violates a fail-on-budget gate."""
@@ -42,6 +55,17 @@ def run_performance_benchmark(options: PerformanceOptions) -> dict[str, Any]:
 
     _validate_options(options)
     provider = _provider_for_scenario(options.scenario)
+
+    # Apply default budgets if not explicitly set
+    max_mean = options.max_mean_seconds
+    max_p95 = options.max_p95_seconds
+    if max_mean is None or max_p95 is None:
+        defaults = DEFAULT_BUDGETS.get(options.scenario, {})
+        if max_mean is None:
+            max_mean = defaults.get("max_mean_seconds")
+        if max_p95 is None:
+            max_p95 = defaults.get("max_p95_seconds")
+
     samples = []
     for index in range(options.iterations):
         result = run_pipeline(
@@ -69,7 +93,13 @@ def run_performance_benchmark(options: PerformanceOptions) -> dict[str, Any]:
                 "train_brier_score": result.train_brier_score,
             }
         )
-    report = _build_report(options=options, provider=provider, samples=samples)
+    report = _build_report(
+        options=options,
+        provider=provider,
+        samples=samples,
+        effective_max_mean=max_mean,
+        effective_max_p95=max_p95,
+    )
     options.output.parent.mkdir(parents=True, exist_ok=True)
     options.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if options.fail_on_budget and report["budget"]["status"] == "failed":
@@ -111,7 +141,14 @@ def _provider_for_scenario(scenario: str) -> str:
     return "mock"
 
 
-def _build_report(*, options: PerformanceOptions, provider: str, samples: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_report(
+    *,
+    options: PerformanceOptions,
+    provider: str,
+    samples: list[dict[str, Any]],
+    effective_max_mean: float | None,
+    effective_max_p95: float | None,
+) -> dict[str, Any]:
     durations = [float(sample["duration_seconds"]) for sample in samples]
     forecast_count = sum(int(sample["forecast_records"]) for sample in samples)
     total_seconds = sum(durations)
@@ -119,10 +156,10 @@ def _build_report(*, options: PerformanceOptions, provider: str, samples: list[d
     max_seconds = max(durations)
     p95_seconds = _percentile(durations, 0.95)
     violations = []
-    if options.max_mean_seconds is not None and mean_seconds > options.max_mean_seconds:
-        violations.append(f"mean_seconds {mean_seconds:.3f} exceeded budget {options.max_mean_seconds:.3f}")
-    if options.max_p95_seconds is not None and p95_seconds > options.max_p95_seconds:
-        violations.append(f"p95_seconds {p95_seconds:.3f} exceeded budget {options.max_p95_seconds:.3f}")
+    if effective_max_mean is not None and mean_seconds > effective_max_mean:
+        violations.append(f"mean_seconds {mean_seconds:.3f} exceeded budget {effective_max_mean:.3f}")
+    if effective_max_p95 is not None and p95_seconds > effective_max_p95:
+        violations.append(f"p95_seconds {p95_seconds:.3f} exceeded budget {effective_max_p95:.3f}")
     return {
         "schema_version": PERFORMANCE_SCHEMA_VERSION,
         "scenario": options.scenario,
@@ -141,9 +178,10 @@ def _build_report(*, options: PerformanceOptions, provider: str, samples: list[d
         },
         "budget": {
             "status": "failed" if violations else "passed",
-            "max_mean_seconds": options.max_mean_seconds,
-            "max_p95_seconds": options.max_p95_seconds,
+            "max_mean_seconds": effective_max_mean,
+            "max_p95_seconds": effective_max_p95,
             "violations": violations,
+            "budgets_applied": effective_max_mean is not None or effective_max_p95 is not None,
         },
     }
 
@@ -160,6 +198,7 @@ def _percentile(values: list[float], percentile: float) -> float:
 
 
 __all__ = [
+    "DEFAULT_BUDGETS",
     "PERFORMANCE_SCHEMA_VERSION",
     "PerformanceBudgetError",
     "PerformanceOptions",
