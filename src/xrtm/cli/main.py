@@ -823,7 +823,7 @@ def monitor_show(run_dir: Path) -> None:
 
     try:
         monitor = load_monitor(run_dir)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     table = Table(title=f"Monitor {run_dir.name}")
     table.add_column("Watch", style="cyan")

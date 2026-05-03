@@ -69,10 +69,12 @@ runs/<run-id>/
   provider.json
   events.jsonl
   run_summary.json
-  monitor.json
   report.html
   logs/
 ```
+
+`monitor.json` is only written for monitor runs created with `xrtm monitor start`;
+ordinary forecast runs stay visible in run-centric views only.
 
 ## 5. Browse the results
 

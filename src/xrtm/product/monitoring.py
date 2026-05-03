@@ -20,7 +20,7 @@ from xrtm.product.observability import (
 )
 from xrtm.product.pipeline import package_versions
 from xrtm.product.providers import build_provider, provider_snapshot
-from xrtm.product.read_models import list_monitor_records
+from xrtm.product.read_models import is_monitor_record, list_monitor_records
 
 
 @dataclass(frozen=True)
@@ -304,12 +304,16 @@ def _persist_failed_monitor_cycle(runtime: _MonitorRuntime, error: Exception) ->
 
 
 def _read_monitor(run_dir: Path) -> dict[str, Any]:
+    run_payload = ArtifactStore.read_run(run_dir)
     monitor_path = run_dir / "monitor.json"
     if not monitor_path.exists():
         raise FileNotFoundError(f"{monitor_path} does not exist")
     import json
 
-    return json.loads(monitor_path.read_text(encoding="utf-8"))
+    monitor = json.loads(monitor_path.read_text(encoding="utf-8"))
+    if not is_monitor_record(run_payload, monitor):
+        raise ValueError(f"{run_dir} is not a monitor run")
+    return monitor
 
 
 def _run_from_payload(run_dir: Path, payload: dict[str, Any]) -> RunArtifact:

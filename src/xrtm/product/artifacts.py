@@ -61,7 +61,6 @@ class ArtifactStore:
             user=user,
         )
         self.write_json(run, "run.json", run.to_json_dict())
-        self.write_json(run, "monitor.json", {"status": "idle", "watches": []})
         return run
 
     def write_json(self, run: RunArtifact, name: str, payload: Any) -> Path:

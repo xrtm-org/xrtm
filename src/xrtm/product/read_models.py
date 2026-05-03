@@ -52,7 +52,7 @@ def list_monitor_records(runs_dir: Path) -> list[dict[str, Any]]:
         if run is None:
             continue
         monitor = _read_optional_json(monitor_path)
-        if not _is_monitor_record(run, monitor):
+        if not is_monitor_record(run, monitor):
             continue
         summary = _read_optional_json(run_dir / "run_summary.json")
         monitors.append(
@@ -86,7 +86,9 @@ def read_run_detail(run_dir: Path) -> dict[str, Any]:
     }
     monitor_path = run_dir / "monitor.json"
     if monitor_path.exists():
-        detail["monitor"] = _read_optional_json(monitor_path)
+        monitor = _read_optional_json(monitor_path)
+        if is_monitor_record(detail["run"], monitor):
+            detail["monitor"] = monitor
     return detail
 
 
@@ -129,10 +131,9 @@ def _search_text(run: dict[str, Any]) -> str:
     return " ".join(str(value) for value in values if value is not None)
 
 
-def _is_monitor_record(run: dict[str, Any], monitor: dict[str, Any]) -> bool:
+def is_monitor_record(run: dict[str, Any], monitor: dict[str, Any]) -> bool:
     if monitor.get("schema_version") == MONITOR_SCHEMA_VERSION:
         return True
     return run.get("command") == "xrtm monitor start"
 
-
-__all__ = ["list_monitor_records", "list_run_records", "read_run_detail"]
+__all__ = ["is_monitor_record", "list_monitor_records", "list_run_records", "read_run_detail"]

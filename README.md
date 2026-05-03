@@ -95,7 +95,6 @@ runs/<run-id>/
   provider.json
   events.jsonl
   run_summary.json
-  monitor.json
   report.html
   logs/
 ```
@@ -105,6 +104,7 @@ These files are the proof surface for the product: the CLI, TUI, WebUI, and expo
 - `eval.json` records scoring outputs such as Brier metrics
 - `events.jsonl` is the versioned event stream (`xrtm.events.v1`)
 - `run_summary.json` is the compact summary contract used by higher-level views
+- `monitor.json` appears only for real monitor runs created with `xrtm monitor start`
 
 ## Official proof-point workflows
 

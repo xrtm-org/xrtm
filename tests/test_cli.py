@@ -8,11 +8,13 @@ from urllib.request import urlopen
 
 import pytest
 from click.testing import CliRunner
+from rich.console import Console
 
 from xrtm.cli.main import cli
 from xrtm.product.history import compare_runs, resolve_run_dir
 from xrtm.product.monitoring import run_monitor_once
 from xrtm.product.profiles import STARTER_PROFILE_LIMIT, WorkflowProfile
+from xrtm.product.tui import render_tui_once
 from xrtm.product.web import create_web_server, web_snapshot
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -133,10 +135,10 @@ def test_provider_free_demo_writes_canonical_artifacts() -> None:
             "provider.json",
             "events.jsonl",
             "run_summary.json",
-            "monitor.json",
             "report.html",
         ]:
             assert (run_dir / name).exists(), name
+        assert not (run_dir / "monitor.json").exists()
         summary = json.loads((run_dir / "run_summary.json").read_text(encoding="utf-8"))
         events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
         assert summary["schema_version"] == "xrtm.run-summary.v1"
@@ -910,6 +912,29 @@ def test_monitor_missing_output_transitions_watch_to_degraded() -> None:
         assert watch["status"] == "degraded"
         assert watch["warnings"]
         assert summary["warning_count"] == 1
+
+
+def test_monitor_views_ignore_legacy_placeholder_monitor_files_on_regular_runs() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        run_dir = _write_canonical_run_fixture(Path("runs"), "20260501T101710Z-d8967e54")
+        (run_dir / "monitor.json").write_text(json.dumps({"status": "idle", "watches": []}), encoding="utf-8")
+
+        listed = runner.invoke(cli, ["monitor", "list", "--runs-dir", "runs"])
+        shown = runner.invoke(cli, ["monitor", "show", str(run_dir)])
+        snapshot = web_snapshot(Path("runs"))
+        console = Console(record=True, width=120)
+        render_tui_once(console, runs_dir=Path("runs"))
+        tui_output = console.export_text()
+
+        assert listed.exit_code == 0, listed.output
+        assert "No monitor runs found in this workspace." in _strip_ansi(listed.output)
+        assert shown.exit_code != 0
+        assert "is not a monitor run" in _strip_ansi(shown.output)
+        assert "No monitor runs yet." in tui_output
+        assert snapshot["monitors"] == []
+        assert "monitor" not in snapshot["runs"][0]
 
 
 def test_tui_and_web_smoke_over_run_artifacts() -> None:

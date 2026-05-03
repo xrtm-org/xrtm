@@ -101,13 +101,14 @@ runs/<run-id>/
   provider.json
   events.jsonl
   run_summary.json
-  monitor.json
   report.html
   logs/
 ```
 
 `events.jsonl` uses the `xrtm.events.v1` schema. `run_summary.json` uses the
-`xrtm.run-summary.v1` schema for pipeline runs.
+`xrtm.run-summary.v1` schema for pipeline runs. `monitor.json` is only present
+for monitor runs created with `xrtm monitor start`, so ordinary forecast runs do
+not appear in monitor-only views.
 
 Inspect and report:
 
