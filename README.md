@@ -169,7 +169,7 @@ xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local
 - **What it does not prove by itself:** visible forecast-quality improvement from repeated mock runs. The mock provider is deterministic, so repeated runs are supposed to stay stable.
 - **Deeper paths:** local-LLM evaluation plus the replay/calibration work in `xrtm-forecast` and `xrtm-train` are where stronger improvement claims belong once you are intentionally changing the system.
 
-Commands that are still on the next coordinated release train—new guided-start shortcuts, corpus-validation flows, latest-run aliases, CSV export, and user-attribution flags—intentionally stay out of these top-level docs until the release contract moves forward.
+Commands that are still on the next coordinated release train—new guided-start shortcuts, corpus-validation flows, latest-run aliases, CSV export, and user-attribution flags—are tracked in `docs/next-release-feature-track.md` and intentionally stay out of these top-level docs until the release contract moves forward.
 
 ## Minimal reusable profile after your first run
 
@@ -213,6 +213,7 @@ Maintainers should use the governance repo's [Cross-Repository Compatibility and
 - [Getting Started Guide](docs/getting-started.md)
 - [Operator Runbook](docs/operator-runbook.md)
 - [Team Workflows](docs/team-workflows.md)
+- [Next-release feature track](docs/next-release-feature-track.md)
 - [Python API Reference](docs/python-api-reference.md)
 - [Integration Examples](examples/integration/)
 - Full documentation: [xrtm.org](https://xrtm.org)

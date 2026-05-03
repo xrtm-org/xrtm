@@ -9,13 +9,13 @@ Flatten canonical XRTM run artifacts into analysis-friendly CSV, JSON, SQLite, o
 - exports one row per forecast with run metadata
 - computes per-forecast Brier scores when resolved outcomes are available
 
-If you only need a single run export from the CLI, the built-in product command may be enough:
+If you only need a single run export from the CLI, the current source tree also contains a built-in CSV path:
 
 ```bash
 xrtm runs export <run-id> --output export.csv --format csv
 ```
 
-Use this example when you want a **custom data pipeline** or a reusable Python integration surface. For the shipped CLI export and artifact workflow, see the [Operator Runbook](../../../docs/operator-runbook.md).
+That CSV flag is tracked on the next coordinated release train rather than the published `xrtm==0.3.0` docs surface. Use this example when you want a **custom data pipeline** or a reusable Python integration surface. For the released CLI artifact flow today, see the [Operator Runbook](../../../docs/operator-runbook.md), which stays on JSON export until the coordinated release moves forward.
 
 Use exports honestly:
 
