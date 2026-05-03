@@ -6,9 +6,10 @@
 **XRTM** is AI for event forecasting.
 
 AI can already generate plausible answers. The bigger opportunity is
-forecasting real-world events, keeping score, and getting measurably better
-over time. XRTM gives you a product path for that: run a forecasting workflow,
-inspect the artifacts, review the scores, compare runs, and iterate.
+forecasting real-world events, keeping score, and learning which changes
+actually help. XRTM gives you a product path for that: run a forecasting
+workflow, inspect the artifacts, review the scores, compare runs, and only
+claim improvement when a meaningful change earns it.
 
 **Start here:** run `xrtm doctor`, then `xrtm demo --provider mock --limit 1 --runs-dir runs`, inspect the generated run, and browse it in the WebUI or TUI.
 
@@ -148,8 +149,9 @@ xrtm runs export <run-id> --runs-dir runs --output export.json
 
 This is the released compare/learn loop:
 
-- use `xrtm runs compare` after a provider, model, or prompt change
-- treat lower Brier/ECE, fewer warnings/errors, and acceptable runtime as improvement signals
+- first use repeated mock runs as a stable control and to learn how the compare surface reads
+- if two provider-free runs are unchanged, treat that as evidence that the baseline is deterministic by design, not as product stagnation
+- only call something an improvement after a meaningful provider, model, or prompt/runtime change lowers Brier/ECE without adding warnings/errors or unacceptable runtime/tokens
 - export the winning run when you want notebook or spreadsheet follow-up
 
 ### 4. Local-LLM advanced workflow
@@ -159,6 +161,13 @@ export XRTM_LOCAL_LLM_BASE_URL=http://localhost:8080/v1
 xrtm local-llm status
 xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local
 ```
+
+## What belongs in the default path vs deeper paths
+
+- **Default released path:** provider-free first success, deterministic benchmark evidence, compare/export literacy, WebUI/TUI review, and explicit artifact inspection.
+- **What it honestly proves:** you can create a scored baseline, compare runs, and decide whether a later change helped.
+- **What it does not prove by itself:** visible forecast-quality improvement from repeated mock runs. The mock provider is deterministic, so repeated runs are supposed to stay stable.
+- **Deeper paths:** local-LLM evaluation plus the replay/calibration work in `xrtm-forecast` and `xrtm-train` are where stronger improvement claims belong once you are intentionally changing the system.
 
 Commands that are still on the next coordinated release train—new guided-start shortcuts, corpus-validation flows, latest-run aliases, CSV export, and user-attribution flags—intentionally stay out of these top-level docs until the release contract moves forward.
 

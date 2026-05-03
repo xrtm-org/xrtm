@@ -103,6 +103,11 @@ You completed the first published XRTM event-forecasting loop:
 
 That is the core product path for newcomers today.
 
+It is also intentionally modest: the default mock-provider run proves that
+XRTM can create scored, inspectable evidence and teach you how to review it.
+It does **not** by itself prove visible forecast-quality improvement over time,
+because the released mock provider is deterministic and should remain stable.
+
 ## Official proof-point workflows
 
 After the first run, these release-gated workflows expand the same
@@ -135,6 +140,7 @@ Treat it as the released evaluation baseline:
 - `performance.json` captures repeatable runtime evidence
 - the paired `runs-perf/<run-id>/run_summary.json` carries scored run metrics such as Brier and ECE
 - on the provider-free path, repeated runs should stay stable enough to act as a control before you change provider/model settings
+- if the compare output is effectively unchanged across repeated mock runs, that is the expected control behavior
 
 ### 3. Monitoring, history, and export workflow
 
@@ -152,6 +158,8 @@ When you compare two runs, read the output like an evaluation gate:
 - **warnings / errors:** should stay at zero
 - **duration / tokens:** efficiency cost of a change
 - use compare only after the two runs are meant to answer the same question set
+- unchanged mock-vs-mock compares mean the baseline is stable; introduce a real provider/model/runtime change before claiming improvement
+- improved scores with similar operational health are promotion candidates; regressions or large runtime jumps should be investigated or rejected
 
 ### 4. Local-LLM advanced workflow
 
@@ -186,7 +194,7 @@ mock-provider path you just proved.
 
 ### Pick the guide that matches your role
 
-- **Researcher / model-eval**: stay on the provider-free path, then use the dedicated workflow on [xrtm.org](https://xrtm.org/docs/workflows/researcher-model-eval) for benchmark interpretation, compare/export review, and the released quality loop.
+- **Researcher / model-eval**: stay on the provider-free path, then use the dedicated workflow on [xrtm.org](https://xrtm.org/docs/workflows/researcher-model-eval) for the honest control → candidate → compare decision loop and the clearly labeled advanced paths.
 - **Operator**: continue with the [Operator Runbook](operator-runbook.md) for monitoring, profiles, performance checks, exports, and troubleshooting.
 - **Team**: read [Team Workflows](team-workflows.md) for realistic multi-user patterns and current limitations.
 - **Developer / integrator**: use the [Python API Reference](python-api-reference.md) and the [integration examples](../examples/integration/), which are organized by user job and clearly separate custom patterns from shipped product workflows.

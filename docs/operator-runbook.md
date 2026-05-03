@@ -138,6 +138,13 @@ xrtm artifacts cleanup --runs-dir runs --keep 50
 Treat this monitor/history/report loop as one proof point: the same local run
 evidence powers review, export, and operational monitoring.
 
+Use it as an operator decision gate:
+
+- repeated mock runs are your stable control and should usually compare as unchanged
+- unchanged compare output means the baseline is trustworthy, not that XRTM secretly improved
+- only promote a candidate workflow after a meaningful change lowers Brier/ECE without introducing warnings/errors or an unacceptable runtime/tokens cost
+- export the winning run when you want downstream spreadsheet or notebook review
+
 ## TUI and WebUI
 
 Terminal cockpit:
@@ -166,6 +173,11 @@ xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 --runs-dir
 
 The report uses the `xrtm.performance.v1` schema and includes per-iteration
 run ids, durations, forecast counts, Brier scores, and budget status.
+
+That makes the performance harness the honest default baseline for later
+experiments. Stronger "improved over time" claims belong to deeper paths where
+you actually change provider/model/runtime behavior, such as local-LLM or the
+calibration/replay tooling in the wider package stack.
 
 ## Optional later: local-LLM mode
 

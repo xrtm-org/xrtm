@@ -17,6 +17,12 @@ xrtm runs export <run-id> --output export.csv --format csv
 
 Use this example when you want a **custom data pipeline** or a reusable Python integration surface. For the shipped CLI export and artifact workflow, see the [Operator Runbook](../../../docs/operator-runbook.md).
 
+Use exports honestly:
+
+- first decide in the product shell whether a run is worth keeping
+- unchanged mock-provider comparisons mean you are still looking at the control, not a visible improvement
+- export becomes most valuable after a meaningful provider/model/runtime change earns a better compare result and you want notebook, SQL, or spreadsheet follow-up
+
 ## Quick Start
 
 ### 1. Create a sample run
