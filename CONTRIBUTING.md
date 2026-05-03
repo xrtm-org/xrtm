@@ -2,12 +2,47 @@
 
 `xrtm` is the product shell for the released XRTM workflow: the CLI, canonical run artifacts, and the newcomer/operator docs path.
 
+## Start with the right repo
+
+| If you are changing... | Start here | Why |
+| --- | --- | --- |
+| released CLI flows, run artifacts, WebUI/TUI behavior, or product docs | `xrtm` | this repo owns the published product surface |
+| runtime APIs, providers, orchestration internals, or code-first examples | [`forecast`](https://github.com/xrtm-org/forecast) | package behavior belongs with the runtime |
+| public site navigation, repo maps, or presentation-layer docs | [`xrtm.org`](https://github.com/xrtm-org/xrtm.org) | the site mirrors accepted product/governance truth |
+| schemas, compatibility rules, or contributor/review policy | [`governance`](https://github.com/xrtm-org/governance) | cross-repo standards live there |
+
+If work spans multiple repos, land the source-of-truth change first and mirror it outward after that decision is accepted.
+
+## Local setup
+
+For a normal single-repo change:
+
+```bash
+uv sync
+```
+
+If you are validating coordinated sibling changes in the standard XRTM workspace, install sibling repos in editable mode so local package changes resolve together:
+
+```bash
+uv sync
+uv pip install -e ../data -e ../eval -e ../forecast -e ../train
+```
+
 ## Ground rules
 
 1. Branch from `main`.
 2. Use `uv` for repository automation when possible.
 3. Keep release-pinned docs on the currently published package surface.
 4. Use explicit upstream refs for coordinated changes. Same-name sibling branches are a convenience, not a compatibility contract.
+
+## Where docs, tests, and policies belong
+
+- **`xrtm`**: released product docs, CLI behavior, canonical run-artifact expectations, and product-level tests.
+- **`forecast` / other package repos**: package internals, lower-level API docs, examples, and runtime/library tests.
+- **`xrtm.org`**: newcomer-facing presentation, repo maps, and mirrors of accepted released behavior.
+- **`governance`**: schemas, compatibility rules, release discipline, and contributor/review policy.
+
+When in doubt: behavior and tests belong with the owning implementation repo; policy belongs in governance; public presentation belongs on the site only after the source-of-truth change is settled.
 
 ## Release-pinned docs vs next-release work
 
