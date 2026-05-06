@@ -17,10 +17,9 @@ release readiness policy:
 ## Release-gated top-level surface
 
 This runbook is validated against `docs/release-command-contract.json` by
-`scripts/check_release_claims.py`. Guided-start shortcuts, corpus-validation
-flows, latest-run aliases, CSV export, and user-attribution flags stay out of
-this page until a coordinated release updates the contract and the
-released-stack smoke.
+`scripts/check_release_claims.py`. Corpus-validation flows and user-attribution
+flags remain intentionally unreleased, but guided start helpers, latest-run
+aliases, and CSV export are now part of the published surface.
 
 ## Supported environment
 
@@ -35,7 +34,7 @@ unsupported Python versions.
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.3.0
+pip install xrtm==0.3.1
 ```
 
 Verify the installed stack:
@@ -54,7 +53,7 @@ xrtm doctor
 After the first proof from `getting-started.md`, XRTM expands through four
 published workflows:
 
-1. **Provider-free first success** via `xrtm doctor` and `xrtm demo --provider mock --limit 1 --runs-dir runs`
+1. **Provider-free first success** via `xrtm start`
 2. **Benchmark and performance workflow** via `xrtm perf run`
 3. **Monitoring, history, and export workflow** via profiles, monitor commands, compare/export, and HTML reports
 4. **Local-LLM advanced workflow** via `xrtm local-llm status` and the bounded local-LLM demo command
@@ -81,7 +80,7 @@ when you want project-specific or test-specific profile storage.
 Use provider-free mode for deterministic validation and CI-safe smoke tests:
 
 ```bash
-xrtm demo --provider mock --limit 2 --runs-dir runs
+xrtm start --runs-dir runs
 xrtm web --runs-dir runs --smoke
 ```
 
@@ -114,9 +113,9 @@ Inspect and report:
 
 ```bash
 xrtm runs list --runs-dir runs
-xrtm runs show <run-id> --runs-dir runs
-xrtm artifacts inspect runs/<run-id>
-xrtm report html runs/<run-id>
+xrtm runs show latest --runs-dir runs
+xrtm artifacts inspect --latest --runs-dir runs
+xrtm report html --latest --runs-dir runs
 ```
 
 `xrtm artifacts inspect` prints the canonical artifact inventory with
@@ -131,7 +130,8 @@ Create and update a monitor:
 xrtm monitor start --provider mock --limit 2 --runs-dir runs
 xrtm monitor list --runs-dir runs
 xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs
-xrtm runs export <run-id> --runs-dir runs --output export.json
+xrtm runs export latest --runs-dir runs --output export.json
+xrtm runs export latest --runs-dir runs --output export.csv --format csv
 xrtm artifacts cleanup --runs-dir runs --keep 50
 ```
 
@@ -190,13 +190,10 @@ xrtm local-llm status
 xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local
 ```
 
-## Next-release track
+## Still intentionally unreleased
 
-Corpus-aware validation, starter-profile scaffolding, latest-run shortcuts,
-CSV export, and user attribution are on the coordinated next-release track.
-They should not reappear in this runbook until the published package surface,
-`docs/release-command-contract.json`, and the released-stack smoke all move in
-lockstep.
+Corpus-aware validation flows and user attribution remain off the released
+surface until their semantics and release evidence are stronger.
 
 ## Troubleshooting
 

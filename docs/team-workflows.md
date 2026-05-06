@@ -57,7 +57,7 @@ Each analyst works in the same Python environment or uses identical virtual envi
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install xrtm==0.3.0
+pip install xrtm==0.3.1
 xrtm doctor
 ```
 
@@ -159,13 +159,14 @@ This shows differences in:
 
 ### Individual Run Export
 
-Released `xrtm runs export` is JSON-only in `0.3.0`:
+Released `xrtm runs export` supports both JSON and CSV in `0.3.1`:
 
 ```bash
 xrtm runs export runs/20260501T101710Z-d8967e54 --output exports/jane-2026-05-01.json
+xrtm runs export runs/20260501T101710Z-d8967e54 --output exports/jane-2026-05-01.csv --format csv
 ```
 
-Use that JSON bundle for integrations, and treat spreadsheet-friendly rows as a custom layer built on top of the released export.
+Use JSON as the full-fidelity integration bundle, and use CSV when you need quick spreadsheet-friendly rows.
 
 ### Team Database Integration
 
@@ -800,11 +801,12 @@ def import_run(run_dir):
 
 ### Problem: Need spreadsheet-friendly rows
 
-**Cause:** Released `xrtm==0.3.0` exports JSON only.
+**Cause:** Teams often need spreadsheet-friendly rows in addition to the canonical JSON artifact bundle.
 
-**Solution:** Use JSON export for the complete data bundle, then flatten it in your own ETL or analytics script:
+**Released path:** use the built-in CSV export for quick spreadsheet follow-up, or keep JSON as the full-fidelity bundle for deeper ETL:
 
 ```bash
+xrtm runs export runs/20260501T101710Z-d8967e54 --output team-export.csv --format csv
 xrtm runs export runs/20260501T101710Z-d8967e54 --output full-data.json
 ```
 
@@ -823,7 +825,7 @@ xrtm runs export runs/20260501T101710Z-d8967e54 --output full-data.json
 - Cross-run audit queries
 - Cost tracking per user
 
-**Current status:** These features are not in XRTM v0.3.0. Teams must use the patterns documented above.
+**Current status:** User attribution and built-in multi-user control-plane features are still not in XRTM v0.3.1. Teams must use the patterns documented above.
 
 ---
 

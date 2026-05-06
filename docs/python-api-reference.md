@@ -636,7 +636,7 @@ XRTM follows semantic versioning:
 
 Pin to a specific version for production:
 ```bash
-pip install xrtm-forecast==0.6.6
+pip install xrtm-forecast==0.6.7
 ```
 
 ---

@@ -11,7 +11,7 @@ actually help. XRTM gives you a product path for that: run a forecasting
 workflow, inspect the artifacts, review the scores, compare runs, and only
 claim improvement when a meaningful change earns it.
 
-**Start here:** run `xrtm doctor`, then `xrtm demo --provider mock --limit 1 --runs-dir runs`, inspect the generated run, and browse it in the WebUI or TUI.
+**Start here:** run `xrtm start`, inspect the newest run with the printed next commands, and browse it in the WebUI or TUI.
 
 Top-level command blocks in this README, `docs/getting-started.md`, and
 `docs/operator-runbook.md` are release-gated to the published package surface
@@ -27,11 +27,10 @@ and the released-stack smoke.
 
 ## What you can prove in a few minutes
 
-- Verify the published package health with `xrtm doctor`
-- Run your first provider-free event-forecasting loop with `xrtm demo --provider mock --limit 1 --runs-dir runs`
-- Inspect the canonical run directory with `xrtm runs list`, `xrtm runs show <run-id> --runs-dir runs`, `xrtm artifacts inspect runs/<run-id>`, and `xrtm report html runs/<run-id>`
+- Run the published guided first-success path with `xrtm start`
+- Inspect the newest canonical run directory with `xrtm runs show latest --runs-dir runs`, `xrtm artifacts inspect --latest --runs-dir runs`, and `xrtm report html --latest --runs-dir runs`
 - Browse the same evidence in the WebUI or TUI
-- Expand into benchmarking, monitoring, history, JSON export, or optional local-LLM setups later
+- Expand into benchmarking, monitoring, history, JSON/CSV export, or optional local-LLM setups later
 
 ## Quick proof: install -> provider-free demo -> inspect -> browser
 
@@ -40,39 +39,28 @@ and the released-stack smoke.
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.3.0
+pip install xrtm==0.3.1
 ```
 
 Supported Python versions are `>=3.11,<3.13`.
 
-### 2. Verify package health
+### 2. Run the guided first command
 
 ```bash
-xrtm doctor
+xrtm start
 ```
 
-`xrtm doctor` is the released package-health check: it verifies imports and reports the installed stack versions before you run a workflow.
+`xrtm start` is the released package-health check plus guided first run: it verifies imports, runs the deterministic mock-provider workflow, confirms the key artifacts, and prints the exact next commands.
 
-### 3. Run the published provider-free demo
+### 3. Inspect the run you just created
 
 ```bash
-xrtm demo --provider mock --limit 1 --runs-dir runs
+xrtm runs show latest --runs-dir runs
+xrtm artifacts inspect --latest --runs-dir runs
+xrtm report html --latest --runs-dir runs
 ```
 
-This default path is provider-free: no API keys, no cloud dependency, and no local model server required.
-
-### 4. Inspect the run you just created
-
-```bash
-xrtm runs list --runs-dir runs
-xrtm runs show <run-id> --runs-dir runs
-xrtm artifacts inspect runs/<run-id>
-xrtm report html runs/<run-id>
-```
-
-Use the run id from `xrtm runs list --runs-dir runs`. The regenerated report is written to `runs/<run-id>/report.html`.
-
-### 5. Browse results visually
+### 4. Browse results visually
 
 ```bash
 xrtm web --runs-dir runs
@@ -115,12 +103,10 @@ workflows are the published proof behind that claim today:
 ### 1. Provider-free first success
 
 ```bash
-xrtm doctor
-xrtm demo --provider mock --limit 1 --runs-dir runs
-xrtm runs list --runs-dir runs
-xrtm runs show <run-id> --runs-dir runs
-xrtm artifacts inspect runs/<run-id>
-xrtm report html runs/<run-id>
+xrtm start
+xrtm runs show latest --runs-dir runs
+xrtm artifacts inspect --latest --runs-dir runs
+xrtm report html --latest --runs-dir runs
 xrtm web --runs-dir runs
 ```
 
@@ -140,11 +126,12 @@ Read `performance.json` as your reproducible baseline artifact:
 ### 3. Monitoring, history, and export workflow
 
 ```bash
-xrtm profile create local-mock --provider mock --limit 2 --runs-dir runs
-xrtm run profile local-mock
+xrtm profile starter my-local --runs-dir runs
+xrtm run profile my-local
 xrtm monitor start --provider mock --limit 2 --runs-dir runs
 xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs
-xrtm runs export <run-id> --runs-dir runs --output export.json
+xrtm runs export latest --runs-dir runs --output export.json
+xrtm runs export latest --runs-dir runs --output export.csv --format csv
 ```
 
 This is the released compare/learn loop:
@@ -169,7 +156,7 @@ xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local
 - **What it does not prove by itself:** visible forecast-quality improvement from repeated mock runs. The mock provider is deterministic, so repeated runs are supposed to stay stable.
 - **Deeper paths:** local-LLM evaluation plus the replay/calibration work in `xrtm-forecast` and `xrtm-train` are where stronger improvement claims belong once you are intentionally changing the system.
 
-Commands that are still on the next coordinated release train—new guided-start shortcuts, corpus-validation flows, latest-run aliases, CSV export, and user-attribution flags—are tracked in `docs/next-release-feature-track.md` and intentionally stay out of these top-level docs until the release contract moves forward.
+Commands that are still intentionally unreleased—corpus-validation flows and user-attribution flags—are tracked in `docs/next-release-feature-track.md` and stay out of these top-level docs until the release contract moves forward again.
 
 ## Minimal reusable profile after your first run
 

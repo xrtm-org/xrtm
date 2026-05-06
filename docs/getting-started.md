@@ -16,46 +16,28 @@ mock provider, so you do **not** need API keys or a local model server.
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.3.0
+pip install xrtm==0.3.1
 ```
 
 **Supported Python versions:** `>=3.11,<3.13`
 
-## 2. Verify package health
+## 2. Run the guided first command
 
 ```bash
-xrtm doctor
+xrtm start
 ```
 
-`xrtm doctor` is the released health check. Use it to confirm imports and the
-installed package versions before you run a workflow.
+`xrtm start` is the released health check plus guided first run. It verifies
+imports, runs the deterministic mock-provider workflow, confirms the key
+artifacts, and prints exact next commands with the run id and report path.
 
-## 3. Run the published provider-free demo
+## 3. Inspect the run artifacts
 
 ```bash
-xrtm demo --provider mock --limit 1 --runs-dir runs
+xrtm runs show latest --runs-dir runs
+xrtm artifacts inspect --latest --runs-dir runs
+xrtm report html --latest --runs-dir runs
 ```
-
-This provider-free first run:
-
-- loads bundled questions locally
-- generates deterministic forecasts without API calls
-- evaluates the run with built-in scoring
-- writes a complete run directory under `runs/`
-
-## 4. Inspect the run artifacts
-
-```bash
-xrtm runs list --runs-dir runs
-xrtm runs show <run-id> --runs-dir runs
-xrtm artifacts inspect runs/<run-id>
-xrtm report html runs/<run-id>
-```
-
-Replace `<run-id>` with the id from `xrtm runs list --runs-dir runs`.
-`xrtm artifacts inspect` prints the canonical artifact inventory with on-disk
-locations, and `xrtm report html runs/<run-id>` regenerates
-`runs/<run-id>/report.html`.
 
 The run directory contains the same evidence used by higher-level views:
 
@@ -76,7 +58,7 @@ runs/<run-id>/
 `monitor.json` is only written for monitor runs created with `xrtm monitor start`;
 ordinary forecast runs stay visible in run-centric views only.
 
-## 5. Browse the results
+## 4. Browse the results
 
 Launch the local WebUI:
 
@@ -92,13 +74,13 @@ If you prefer the terminal, launch the TUI instead:
 xrtm tui --runs-dir runs
 ```
 
-## 6. What you just proved
+## 5. What you just proved
 
 You completed the first published XRTM event-forecasting loop:
 
-1. **Health check**: verified the installed stack with `xrtm doctor`
+1. **Health check**: verified the installed stack and local readiness
 2. **Forecast run**: ran a provider-free forecasting workflow without external providers
-3. **Scored evidence**: verified the run and its outputs on disk
+3. **Scored evidence**: verified the newest run and its outputs on disk
 4. **Review surface**: opened the same run through WebUI or TUI
 
 That is the core product path for newcomers today.
@@ -116,12 +98,10 @@ event-forecasting loop:
 ### 1. Provider-free first success
 
 ```bash
-xrtm doctor
-xrtm demo --provider mock --limit 1 --runs-dir runs
-xrtm runs list --runs-dir runs
-xrtm runs show <run-id> --runs-dir runs
-xrtm artifacts inspect runs/<run-id>
-xrtm report html runs/<run-id>
+xrtm start
+xrtm runs show latest --runs-dir runs
+xrtm artifacts inspect --latest --runs-dir runs
+xrtm report html --latest --runs-dir runs
 xrtm web --runs-dir runs
 ```
 
@@ -145,11 +125,12 @@ Treat it as the released evaluation baseline:
 ### 3. Monitoring, history, and export workflow
 
 ```bash
-xrtm profile create my-local --provider mock --limit 2 --runs-dir runs
+xrtm profile starter my-local --runs-dir runs
 xrtm run profile my-local
 xrtm monitor start --provider mock --limit 2 --runs-dir runs
 xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs
-xrtm runs export <run-id> --runs-dir runs --output export.json
+xrtm runs export latest --runs-dir runs --output export.json
+xrtm runs export latest --runs-dir runs --output export.csv --format csv
 ```
 
 When you compare two runs, read the output like an evaluation gate:

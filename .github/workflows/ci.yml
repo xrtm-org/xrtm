@@ -173,6 +173,61 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Resolve workspace refs
+        id: workspace-refs
+        shell: bash
+        env:
+          INPUT_COORDINATION_CONTEXT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.coordination_context || '' }}
+          INPUT_DATA_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.data_ref || '' }}
+          INPUT_EVAL_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.eval_ref || '' }}
+          INPUT_FORECAST_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.forecast_ref || '' }}
+          INPUT_TRAIN_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.train_ref || '' }}
+        run: |
+          default_ref="main"
+
+          requested_ref() {
+            local value="$1"
+            if [ -n "$value" ]; then
+              printf '%s' "$value"
+            else
+              printf '%s' "$default_ref"
+            fi
+          }
+
+          {
+            echo "coordination_context=${INPUT_COORDINATION_CONTEXT}"
+            echo "data_ref=$(requested_ref "$INPUT_DATA_REF")"
+            echo "eval_ref=$(requested_ref "$INPUT_EVAL_REF")"
+            echo "forecast_ref=$(requested_ref "$INPUT_FORECAST_REF")"
+            echo "train_ref=$(requested_ref "$INPUT_TRAIN_REF")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout workspace siblings
+        id: workspace-siblings
+        shell: bash
+        run: |
+          checkout_repo() {
+            local repo="$1"
+            local ref="$2"
+            git init -q "$repo"
+            git -C "$repo" remote add origin "https://github.com/xrtm-org/${repo}.git"
+            git -C "$repo" fetch --depth 1 --quiet origin "$ref"
+            git -C "$repo" checkout --detach --quiet FETCH_HEAD
+            git -C "$repo" rev-parse HEAD
+          }
+
+          data_sha="$(checkout_repo data "${{ steps.workspace-refs.outputs.data_ref }}")"
+          eval_sha="$(checkout_repo eval "${{ steps.workspace-refs.outputs.eval_ref }}")"
+          forecast_sha="$(checkout_repo forecast "${{ steps.workspace-refs.outputs.forecast_ref }}")"
+          train_sha="$(checkout_repo train "${{ steps.workspace-refs.outputs.train_ref }}")"
+
+          {
+            echo "data_sha=$data_sha"
+            echo "eval_sha=$eval_sha"
+            echo "forecast_sha=$forecast_sha"
+            echo "train_sha=$train_sha"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -183,30 +238,28 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Resolve documented release version
-        id: release-contract
+      - name: Install build tool
+        run: uv pip install --system build
+
+      - name: Build package
+        run: |
+          python -m build
+
+      - name: Install release-track stack
         shell: bash
         run: |
-          release_version="$(python - <<'PY'
-          import json
-          from pathlib import Path
-          print(json.loads(Path('docs/release-command-contract.json').read_text(encoding='utf-8'))['release_version'])
-          PY
-          )"
-          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+          python -m venv /tmp/xrtm-release-smoke
+          uv pip install --python /tmp/xrtm-release-smoke/bin/python -e ./data -e ./eval -e ./forecast -e ./train dist/xrtm-*.whl
 
-      - name: Install released stack
-        run: uv pip install --system "xrtm==${{ steps.release-contract.outputs.release_version }}"
-
-      - name: Smoke released stack
+      - name: Smoke release-track stack
         shell: bash
         run: |
-          xrtm --version
-          xrtm-data --version
-          forecast --version
-          xrtm-forecast --version
-          xrtm-train --version
-          python - <<'PY'
+          /tmp/xrtm-release-smoke/bin/xrtm --version
+          /tmp/xrtm-release-smoke/bin/xrtm-data --version
+          /tmp/xrtm-release-smoke/bin/forecast --version
+          /tmp/xrtm-release-smoke/bin/xrtm-forecast --version
+          /tmp/xrtm-release-smoke/bin/xrtm-train --version
+          /tmp/xrtm-release-smoke/bin/python - <<'PY'
           import xrtm
           import xrtm.data
           import xrtm.eval
@@ -214,11 +267,10 @@ jobs:
           import xrtm.train
           print("released stack imports ok")
           PY
-          xrtm doctor
-          xrtm demo --provider mock --limit 1 --runs-dir /tmp/xrtm-release-smoke
+          /tmp/xrtm-release-smoke/bin/xrtm doctor
+          /tmp/xrtm-release-smoke/bin/xrtm start --runs-dir /tmp/xrtm-release-smoke
           run_dir="$(find /tmp/xrtm-release-smoke -mindepth 1 -maxdepth 1 -type d | sort | head -n 1)"
-          run_id="$(basename "$run_dir")"
-          xrtm runs show "$run_id" --runs-dir /tmp/xrtm-release-smoke
-          xrtm artifacts inspect "$run_dir"
-          xrtm report html "$run_dir"
-          xrtm web --runs-dir /tmp/xrtm-release-smoke --smoke
+          /tmp/xrtm-release-smoke/bin/xrtm runs show latest --runs-dir /tmp/xrtm-release-smoke
+          /tmp/xrtm-release-smoke/bin/xrtm artifacts inspect --latest --runs-dir /tmp/xrtm-release-smoke
+          /tmp/xrtm-release-smoke/bin/xrtm report html --latest --runs-dir /tmp/xrtm-release-smoke
+          /tmp/xrtm-release-smoke/bin/xrtm web --runs-dir /tmp/xrtm-release-smoke --smoke
