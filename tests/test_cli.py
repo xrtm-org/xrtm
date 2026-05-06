@@ -19,10 +19,10 @@ from xrtm.product.web import create_web_server, web_snapshot
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _PACKAGE_VERSIONS = {
-    "xrtm": "0.3.0",
-    "xrtm-data": "0.2.5",
+    "xrtm": "0.3.1",
+    "xrtm-data": "0.2.6",
     "xrtm-eval": "0.2.5",
-    "xrtm-forecast": "0.6.6",
+    "xrtm-forecast": "0.6.7",
     "xrtm-train": "0.2.6",
 }
 
@@ -193,9 +193,9 @@ def test_start_guides_newcomers_through_provider_free_first_run() -> None:
         for artifact_name in ["run.json", "forecasts.jsonl", "eval.json", "train.json", "run_summary.json", "report.html"]:
             assert artifact_name in output
         assert "xrtm runs list --runs-dir runs" in output
-        assert f"xrtm runs show {run_dir.name} --runs-dir runs" in output
-        assert f"xrtm artifacts inspect {run_dir}" in output
-        assert f"Open/regenerate the report: xrtm report html {run_dir}" in output
+        assert "xrtm runs show latest --runs-dir runs" in output
+        assert "xrtm artifacts inspect --latest --runs-dir runs" in output
+        assert "Open/regenerate the report: xrtm report html --latest --runs-dir runs" in output
         assert "xrtm web --runs-dir runs" in output
         assert "xrtm tui --runs-dir runs" in output
         assert "Official proof-point workflows" in output
@@ -205,11 +205,16 @@ def test_start_guides_newcomers_through_provider_free_first_run() -> None:
         assert "Local-LLM advanced workflow" in output
         for phrase in ["provider-free-smoke", "performance.json", "xrtm runs show", "xrtm artifacts inspect"]:
             assert phrase in output
-        for phrase in ["xrtm profile create my-local", "--provider mock --limit 2 --runs-dir runs", "xrtm run profile my-local"]:
+        for phrase in ["xrtm profile starter my-local", "xrtm run profile my-local"]:
             assert phrase in output
         for phrase in ["xrtm monitor start --provider mock --limit 2", "xrtm monitor list --runs-dir runs"]:
             assert phrase in output
-        for phrase in ["xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs", "xrtm runs export <run-id> --runs-dir runs --output export.json"]:
+        for phrase in [
+            "xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs",
+            "xrtm runs export latest",
+            "--output export.json",
+            "--output export.csv --format csv",
+        ]:
             assert phrase in output
         assert "xrtm local-llm status" in output
         assert "docs/python-api-reference.md" in output

@@ -42,11 +42,10 @@ def print_quickstart_summary(console: Console, result: PipelineResult, *, runs_d
         success_label="guided provider-free quickstart completed",
         what_succeeded="readiness checks, deterministic forecasts, scoring, backtest, and HTML report write",
         proof_line="Proof cue: the default provider-free XRTM path worked end-to-end on this machine.",
+        prefer_latest_paths=True,
     )
 
     runs_dir_arg = runs_dir_command_arg(runs_dir)
-    run_dir_arg = shell_quote(result.run.run_dir.as_posix())
-    run_id = result.run.run_id
     proof_point_lines = [
         "1. Provider-free first success: xrtm start (already proved above).",
         (
@@ -54,12 +53,17 @@ def print_quickstart_summary(console: Console, result: PipelineResult, *, runs_d
             "xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 "
             "--runs-dir runs-perf --output performance.json"
         ),
-        f"   Review the run above: xrtm runs show {run_id} {runs_dir_arg}",
-        f"   Inspect artifacts/report: xrtm artifacts inspect {run_dir_arg} && xrtm report html {run_dir_arg}",
-        f"3. Monitoring, history, and report workflow: xrtm profile create my-local --provider mock --limit 2 {runs_dir_arg}",
+        f"   Review the run above: xrtm runs show latest {runs_dir_arg}",
+        f"   Inspect artifacts/report: xrtm artifacts inspect --latest {runs_dir_arg} && xrtm report html --latest {runs_dir_arg}",
+        f"3. Monitoring, history, and report workflow: xrtm profile starter my-local {runs_dir_arg}",
         "   Then: xrtm run profile my-local",
         f"   Monitor/history: xrtm monitor start --provider mock --limit 2 {runs_dir_arg} && xrtm monitor list {runs_dir_arg}",
-        f"   Compare/export: xrtm runs compare <run-id-a> <run-id-b> {runs_dir_arg} && xrtm runs export <run-id> {runs_dir_arg} --output export.json",
+        (
+            "   Compare/export: "
+            f"xrtm runs compare <run-id-a> <run-id-b> {runs_dir_arg} && "
+            f"xrtm runs export latest {runs_dir_arg} --output export.json && "
+            f"xrtm runs export latest {runs_dir_arg} --output export.csv --format csv"
+        ),
         "4. Local-LLM advanced workflow: xrtm local-llm status",
         "   Then: xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local",
         "Developer / integrator path: docs/python-api-reference.md and examples/integration/.",
@@ -77,6 +81,7 @@ def print_post_run_summary(
     what_succeeded: str,
     write_report: bool = True,
     proof_line: str | None = None,
+    prefer_latest_paths: bool = False,
 ) -> None:
     confirmed_artifacts = _confirm_post_run_artifacts(result.run.run_dir, require_report=write_report)
     summary = result.run.summary
@@ -102,19 +107,34 @@ def print_post_run_summary(
     console.print(Panel("\n".join(success_lines), title=success_title, border_style="green"))
 
     runs_dir_arg = runs_dir_command_arg(runs_dir)
-    report_command = (
-        f"Open/regenerate the report: xrtm report html {run_dir_arg}"
-        if write_report
-        else f"Generate the report now: xrtm report html {run_dir_arg}"
-    )
-    next_lines = [
-        f"Review run history: xrtm runs list {runs_dir_arg}",
-        f"Inspect this run: xrtm runs show {run_id} {runs_dir_arg}",
-        f"Inspect artifacts: xrtm artifacts inspect {run_dir_arg}",
-        report_command,
-        f"Open the WebUI: xrtm web {runs_dir_arg}",
-        f"Open the TUI: xrtm tui {runs_dir_arg}",
-    ]
+    if prefer_latest_paths:
+        report_command = (
+            f"Open/regenerate the report: xrtm report html --latest {runs_dir_arg}"
+            if write_report
+            else f"Generate the report now: xrtm report html --latest {runs_dir_arg}"
+        )
+        next_lines = [
+            f"Review run history: xrtm runs list {runs_dir_arg}",
+            f"Inspect the newest run: xrtm runs show latest {runs_dir_arg}",
+            f"Inspect newest artifacts: xrtm artifacts inspect --latest {runs_dir_arg}",
+            report_command,
+            f"Open the WebUI: xrtm web {runs_dir_arg}",
+            f"Open the TUI: xrtm tui {runs_dir_arg}",
+        ]
+    else:
+        report_command = (
+            f"Open/regenerate the report: xrtm report html {run_dir_arg}"
+            if write_report
+            else f"Generate the report now: xrtm report html {run_dir_arg}"
+        )
+        next_lines = [
+            f"Review run history: xrtm runs list {runs_dir_arg}",
+            f"Inspect this run: xrtm runs show {run_id} {runs_dir_arg}",
+            f"Inspect artifacts: xrtm artifacts inspect {run_dir_arg}",
+            report_command,
+            f"Open the WebUI: xrtm web {runs_dir_arg}",
+            f"Open the TUI: xrtm tui {runs_dir_arg}",
+        ]
     console.print(Panel("\n".join(next_lines), title="Exact next commands", border_style="blue"))
 
 
