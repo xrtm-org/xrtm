@@ -238,6 +238,9 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install build tool
+        run: uv pip install --system build
+
       - name: Build package
         run: |
           python -m build
