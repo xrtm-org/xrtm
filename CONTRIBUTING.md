@@ -89,6 +89,11 @@ uv run --with build python -m build
 
 If the change affects published package behavior, also record the released-artifact or downstream smoke you ran, or explain why that follow-up belongs in a coordinated sibling PR.
 
+For coordinated release work, treat clean-room evidence as part of the release record rather than optional extra credit:
+
+- provider-free: capture the disposable Docker lane from wheelhouse before publish and from PyPI after publish (`./workspace.sh docker-provider-free-acceptance --artifact-source wheelhouse|pypi` from the stack root, or the matching CI release-validation job artifact)
+- local-LLM: capture the disposable Docker lane when provider/local-model behavior changed and compatible hardware/model access exists; otherwise write down the explicit defer reason in the PR or release note
+
 ## Cross-repo policy
 
 Use the governance repo as the shared operating manual:

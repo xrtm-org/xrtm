@@ -93,7 +93,7 @@ These files are the proof surface for the product: the CLI, TUI, WebUI, and expo
 - `eval.json` records scoring outputs such as Brier metrics
 - `events.jsonl` is the versioned event stream (`xrtm.events.v1`)
 - `run_summary.json` is the compact summary contract used by higher-level views
-- `monitor.json` appears only for real monitor runs created with `xrtm monitor start`
+- `monitor.json` is optional monitor state; real monitor runs populate watches and thresholds, while some profile-driven runs may carry an idle placeholder
 
 ## Official proof-point workflows
 
@@ -193,7 +193,7 @@ system. It installs and coordinates these underlying packages:
 | **xrtm-eval** | [![PyPI](https://img.shields.io/pypi/v/xrtm-eval?style=flat-square)](https://pypi.org/project/xrtm-eval/) | Evaluation metrics, scoring, and calibration tooling |
 | **xrtm-train** | [![PyPI](https://img.shields.io/pypi/v/xrtm-train?style=flat-square)](https://pypi.org/project/xrtm-train/) | Training and optimization pipeline components |
 
-Maintainers should use the governance repo's [Cross-Repository Compatibility and Coordination Policy](https://github.com/xrtm-org/governance/blob/main/policies/cross-repo-compatibility-policy.md) and [Release Readiness Policy](https://github.com/xrtm-org/governance/blob/main/policies/release-readiness-policy.md) for coordinated changes across `data`, `forecast`, `xrtm`, and `xrtm.org`. The release-gated command contract lives in `docs/release-command-contract.json`; update it only after the matching published package release exists and the released-stack smoke has passed against that version.
+Maintainers should use the governance repo's [Cross-Repository Compatibility and Coordination Policy](https://github.com/xrtm-org/governance/blob/main/policies/cross-repo-compatibility-policy.md) and [Release Readiness Policy](https://github.com/xrtm-org/governance/blob/main/policies/release-readiness-policy.md) for coordinated changes across `data`, `forecast`, `xrtm`, and `xrtm.org`. The release-gated command contract lives in `docs/release-command-contract.json`; update it only after the matching published package release exists, the released-stack smoke has passed against that version, and the provider-free clean-room release evidence is recorded.
 
 ## Documentation
 
