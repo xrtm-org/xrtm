@@ -1,0 +1,62 @@
+services:
+  acceptance:
+    image: ${XRTM_ACCEPTANCE_IMAGE}
+    user: "${XRTM_ACCEPTANCE_UID}:${XRTM_ACCEPTANCE_GID}"
+    working_dir: /artifacts
+    depends_on:
+      - llama-cpp
+    command:
+      - inside
+      - --workspace-root
+      - /workspace
+      - --xrtm-repo-root
+      - ${XRTM_REPO_ROOT_IN_WORKSPACE}
+      - --artifacts-dir
+      - /artifacts
+      - --artifact-source
+      - ${XRTM_ARTIFACT_SOURCE}
+      - --wheelhouse-dir
+      - /wheelhouse
+      - --xrtm-spec
+      - ${XRTM_SPEC}
+      - --local-llm-base-url
+      - ${XRTM_LOCAL_LLM_BASE_URL}
+      - --local-llm-model
+      - ${XRTM_LOCAL_LLM_MODEL}
+      - --local-llm-api-key
+      - ${XRTM_LOCAL_LLM_API_KEY}
+      - --max-tokens
+      - "${XRTM_LOCAL_LLM_MAX_TOKENS}"
+      - --ready-timeout-seconds
+      - "${XRTM_LOCAL_LLM_READY_TIMEOUT_SECONDS}"
+      - --ready-interval-seconds
+      - "${XRTM_LOCAL_LLM_READY_INTERVAL_SECONDS}"
+      - --perf-iterations
+      - "${XRTM_LOCAL_LLM_PERF_ITERATIONS}"
+    volumes:
+      - ${XRTM_WORKSPACE_ROOT}:/workspace:ro
+      - ${XRTM_ARTIFACTS_DIR}:/artifacts
+      - ${XRTM_WHEELHOUSE_DIR}:/wheelhouse:ro
+
+  llama-cpp:
+    image: ${XRTM_LLAMA_CPP_IMAGE}
+    gpus: all
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    command:
+      - -m
+      - /models/${XRTM_LLAMA_CPP_MODEL_FILE}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "${XRTM_LLAMA_CPP_PORT}"
+      - --ctx-size
+      - "${XRTM_LLAMA_CPP_CTX_SIZE}"
+      - -ngl
+      - "99"
+      - --flash-attn
+      - "on"
+    volumes:
+      - ${XRTM_LLAMA_CPP_MODEL_DIR}:/models:ro

@@ -22,6 +22,12 @@ flows, latest-run aliases, CSV export, and user-attribution flags stay out of
 this page until a coordinated release updates the contract and the
 released-stack smoke.
 
+Maintainer note: when this page graduates new published behavior, release
+readiness also requires provider-free clean-room acceptance from release
+artifacts. Local-LLM-related promotions additionally need local-LLM clean-room
+evidence when the change touches local-model execution and compatible runner
+infrastructure is available.
+
 ## Supported environment
 
 Use Python `>=3.11,<3.13`.
@@ -106,9 +112,11 @@ runs/<run-id>/
 ```
 
 `events.jsonl` uses the `xrtm.events.v1` schema. `run_summary.json` uses the
-`xrtm.run-summary.v1` schema for pipeline runs. `monitor.json` is only present
-for monitor runs created with `xrtm monitor start`, so ordinary forecast runs do
-not appear in monitor-only views.
+`xrtm.run-summary.v1` schema for pipeline runs. `monitor.json` is optional
+monitor state: real monitor runs populate watches and thresholds, while some
+profile-driven runs may carry an idle placeholder entry. Use `xrtm monitor
+list` status and watch counts to distinguish actual monitors from ordinary
+runs.
 
 Inspect and report:
 

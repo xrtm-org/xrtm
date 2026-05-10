@@ -106,27 +106,7 @@ def build_provider(provider: str, *, base_url: str | None, model: str | None, ap
     if provider == "mock":
         return DeterministicProvider()
     if provider == "local-llm":
-        base_url_value = local_llm_base_url(base_url)
-        status = local_llm_status(base_url=base_url_value)
-        if not status["healthy"]:
-            error_msg = (
-                f"Cannot connect to local LLM endpoint at {base_url_value}\n\n"
-                f"What happened: Health check failed\n"
-                f"Why: {status['error'] or 'Endpoint did not respond to health check'}\n\n"
-                f"Next steps:\n"
-                f"1. Start your local LLM server (e.g., llama.cpp with --port 8080)\n"
-                f"2. Verify it's running: curl {status['health_url']}\n"
-                f"3. Check the base URL is correct: {base_url_value}\n"
-                f"4. Set XRTM_LOCAL_LLM_BASE_URL if using a different endpoint\n\n"
-                f"To test without a local LLM, use: --provider mock"
-            )
-            raise RuntimeError(error_msg)
-        config = OpenAIConfig(
-            model_id=model or os.getenv("XRTM_LOCAL_LLM_MODEL") or DEFAULT_LOCAL_LLM_MODEL,
-            api_key=SecretStr(api_key or os.getenv("XRTM_LOCAL_LLM_API_KEY") or "test"),
-            base_url=base_url_value,
-        )
-        return ModelFactory.get_provider(config)
+        return _build_local_llm_provider(base_url=base_url, model=model, api_key=api_key)
     raise ValueError(
         f"Unsupported provider: '{provider}'\n\n"
         f"What happened: Provider '{provider}' is not recognized\n"
@@ -140,6 +120,20 @@ def build_provider(provider: str, *, base_url: str | None, model: str | None, ap
 
 def local_llm_base_url(base_url: str | None = None) -> str:
     return (base_url or os.getenv("XRTM_LOCAL_LLM_BASE_URL") or DEFAULT_LOCAL_LLM_BASE_URL).rstrip("/")
+
+
+def _build_local_llm_provider(*, base_url: str | None, model: str | None, api_key: str | None) -> InferenceProvider:
+    base_url_value = local_llm_base_url(base_url)
+    status = local_llm_status(base_url=base_url_value)
+    if not status["healthy"]:
+        raise RuntimeError(_local_llm_connection_error(base_url_value=base_url_value, status=status))
+    return ModelFactory.get_provider(
+        OpenAIConfig(
+            model_id=_resolved_local_llm_model(model),
+            api_key=SecretStr(_resolved_local_llm_api_key(api_key)),
+            base_url=base_url_value,
+        )
+    )
 
 
 def local_llm_status(*, base_url: str | None = None) -> dict[str, Any]:
@@ -182,6 +176,28 @@ def cache_snapshot(provider: InferenceProvider) -> dict[str, Any]:
     if isinstance(snapshot, dict):
         return snapshot
     return {"enabled": False}
+
+
+def _resolved_local_llm_model(model: str | None) -> str:
+    return model or os.getenv("XRTM_LOCAL_LLM_MODEL") or DEFAULT_LOCAL_LLM_MODEL
+
+
+def _resolved_local_llm_api_key(api_key: str | None) -> str:
+    return api_key or os.getenv("XRTM_LOCAL_LLM_API_KEY") or "test"
+
+
+def _local_llm_connection_error(*, base_url_value: str, status: dict[str, Any]) -> str:
+    return (
+        f"Cannot connect to local LLM endpoint at {base_url_value}\n\n"
+        f"What happened: Health check failed\n"
+        f"Why: {status['error'] or 'Endpoint did not respond to health check'}\n\n"
+        f"Next steps:\n"
+        f"1. Start your local LLM server (e.g., llama.cpp with --port 8080)\n"
+        f"2. Verify it's running: curl {status['health_url']}\n"
+        f"3. Check the base URL is correct: {base_url_value}\n"
+        f"4. Set XRTM_LOCAL_LLM_BASE_URL if using a different endpoint\n\n"
+        f"To test without a local LLM, use: --provider mock"
+    )
 
 
 def gpu_snapshot() -> dict[str, Any]:
