@@ -134,7 +134,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="XRTM Forecasting API",
     description="REST API for probabilistic forecasting with XRTM",
-    version="0.3.1",
+    version="0.3.2",
     lifespan=lifespan
 )
 
@@ -158,7 +158,7 @@ async def root():
     """Root endpoint."""
     return {
         "service": "XRTM Forecasting API",
-        "version": "0.3.1",
+        "version": "0.3.2",
         "docs": "/docs",
         "health": "/api/v1/health"
     }
@@ -170,7 +170,7 @@ async def health_check():
     return HealthResponse(
         status="healthy",
         provider=PROVIDER,
-        version="0.3.1"
+        version="0.3.2"
     )
 
 
