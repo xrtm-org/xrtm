@@ -222,8 +222,30 @@ def print_run_compare(console: Console, rows: list[dict[str, Any]]) -> None:
     )
 
 
-def print_validation_report(console: Console, report: dict[str, Any]) -> None:
-    table = Table(title="XRTM Validation")
+def print_available_corpora_table(console: Console, corpora: list[dict[str, Any]], *, title: str) -> None:
+    table = Table(title=title)
+    table.add_column("Corpus ID", style="cyan")
+    table.add_column("Name", style="white")
+    table.add_column("Tier", style="yellow")
+    table.add_column("License", style="green")
+    table.add_column("Release-Gate", style="magenta")
+    table.add_column("Bundled", style="blue")
+
+    for corpus in corpora:
+        table.add_row(
+            corpus["corpus_id"],
+            corpus["name"],
+            corpus["tier"],
+            corpus["license_type"],
+            "✓" if corpus["release_gate_approved"] else "✗",
+            "✓" if corpus["bundled"] else "✗",
+        )
+
+    console.print(table)
+
+
+def print_validation_report(console: Console, report: dict[str, Any], *, title: str = "XRTM Validation") -> None:
+    table = Table(title=title)
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green")
 
@@ -292,11 +314,16 @@ def print_validation_report(console: Console, report: dict[str, Any]) -> None:
     console.print(Panel("\n".join(assessment_lines), title="Benchmark → compare → improve", border_style="magenta"))
 
 
-def print_prepared_corpus_report(console: Console, report: dict[str, Any]) -> None:
+def print_prepared_corpus_report(
+    console: Console,
+    report: dict[str, Any],
+    *,
+    title: str = "Prepared Validation Corpus",
+) -> None:
     corpus_info = report["corpus"]
     availability = report["availability"]
 
-    table = Table(title="Prepared Validation Corpus")
+    table = Table(title=title)
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green")
     table.add_row("Corpus", f"{corpus_info['name']} ({corpus_info['corpus_id']})")
@@ -318,6 +345,114 @@ def print_prepared_corpus_report(console: Console, report: dict[str, Any]) -> No
             "[yellow]Preview cache active:[/yellow] this corpus is using the deterministic 3-record fixture. "
             "Re-run without --fixture-preview (and with --refresh if needed) to cache the full external dataset."
         )
+
+
+def print_benchmark_compare_report(console: Console, report: dict[str, Any]) -> None:
+    benchmark = report["benchmark"]
+    comparison = report["comparison"]
+    table = Table(title="XRTM Benchmark Compare")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Baseline", style="green")
+    table.add_column("Candidate", style="yellow")
+    table.add_column("Delta", justify="right")
+    table.add_row("Corpus", benchmark["corpus_id"], benchmark["corpus_id"], "-")
+    table.add_row("Split", benchmark["split"], benchmark["split"], "-")
+    table.add_row(
+        "Eval Brier",
+        _format_optional_float(comparison["baseline_primary_score"]),
+        _format_optional_float(comparison["candidate_primary_score"]),
+        _format_optional_float(comparison["delta_primary_score"]),
+    )
+    table.add_row(
+        "Eval ECE",
+        _format_optional_float(comparison.get("baseline_eval_ece")),
+        _format_optional_float(comparison.get("candidate_eval_ece")),
+        _format_optional_float(comparison.get("delta_eval_ece")),
+    )
+    table.add_row(
+        "Reliability",
+        _format_optional_float(comparison.get("baseline_reliability")),
+        _format_optional_float(comparison.get("candidate_reliability")),
+        _format_optional_float(comparison.get("delta_reliability")),
+    )
+    table.add_row(
+        "Resolution",
+        _format_optional_float(comparison.get("baseline_resolution")),
+        _format_optional_float(comparison.get("candidate_resolution")),
+        _format_optional_float(comparison.get("delta_resolution")),
+    )
+    console.print(table)
+
+    baseline_run_id = report["baseline"]["run_ids"][0] if report["baseline"]["run_ids"] else None
+    candidate_run_id = report["candidate"]["run_ids"][0] if report["candidate"]["run_ids"] else None
+    lines = [
+        f"Frozen split signature: {benchmark['split_signature'] or 'none'}",
+        f"Selected questions: {benchmark['selected_questions']} / {benchmark['question_pool_size']}",
+        f"Candidate beats baseline: {comparison['candidate_beats_baseline']}",
+        f"Cohorts compared: {len(comparison.get('cohort_deltas', {}))}",
+    ]
+    if "artifact_path" in report:
+        lines.append(f"Compare artifact: {report['artifact_path']}")
+    runs_dir = report["baseline"]["spec"].get("metadata", {}).get("runs_dir")
+    if baseline_run_id and candidate_run_id and runs_dir:
+        lines.append(f"Run-level diff: xrtm runs compare {baseline_run_id} {candidate_run_id} --runs-dir {runs_dir}")
+    console.print(Panel("\n".join(lines), title="Rigorous compare loop", border_style="magenta"))
+
+
+def print_benchmark_stress_report(console: Console, report: dict[str, Any]) -> None:
+    spec = report["spec"]
+    comparison = report.get("comparison") or {}
+    arm_table = Table(title="XRTM Benchmark Stress Suite")
+    arm_table.add_column("Arm", style="cyan")
+    arm_table.add_column("Provider", style="green")
+    arm_table.add_column("Repeats", justify="right")
+    arm_table.add_column("Mean Eval Brier", justify="right")
+    arm_table.add_column("Mean Eval ECE", justify="right")
+    arm_table.add_column("Mean Duration (s)", justify="right")
+    arm_table.add_column("Forecasts / sec", justify="right")
+    arm_table.add_column("Mean Tokens", justify="right")
+    for arm_result in report["arm_results"]:
+        score_summary = arm_result["score_summary"]
+        systems = arm_result.get("systems_summary", {})
+        arm_table.add_row(
+            arm_result["arm"]["display_name"],
+            arm_result["arm"]["provider"],
+            str(len(arm_result.get("runs", []))),
+            _format_optional_float(score_summary.get("primary_score")),
+            _format_optional_float(score_summary.get("calibration_error")),
+            _format_optional_float(systems.get("mean_duration_seconds")),
+            _format_optional_float(systems.get("mean_forecasts_per_second")),
+            _format_optional_float(systems.get("mean_total_tokens")),
+        )
+    console.print(arm_table)
+
+    rows = comparison.get("rows", [])
+    if rows:
+        compare_table = Table(title="Stress-suite deltas vs baseline")
+        compare_table.add_column("Metric", style="cyan")
+        compare_table.add_column("Candidate", style="yellow")
+        compare_table.add_column("Baseline", style="green")
+        compare_table.add_column("Delta", justify="right")
+        compare_table.add_column("Interpretation", style="magenta")
+        for row in rows:
+            compare_table.add_row(
+                row["metric_name"],
+                f"{row['candidate_system_id']}={_format_optional_float(row.get('candidate_value'))}",
+                f"{row['baseline_system_id']}={_format_optional_float(row.get('baseline_value'))}",
+                _format_optional_float(row.get("delta")),
+                row["interpretation"],
+            )
+        console.print(compare_table)
+
+    lines = [
+        f"Frozen split signature: {spec.get('split_signature') or 'none'}",
+        f"Selected questions: {spec['run_limit']}",
+        f"Repeat count: {spec['repeat_count']}",
+        f"Baseline arm: {spec.get('baseline_arm_id') or 'none'}",
+    ]
+    if "artifact_path" in report:
+        lines.append(f"Stress artifact: {report['artifact_path']}")
+    console.print(Panel("\n".join(lines), title="Stress review loop", border_style="magenta"))
 
 
 def profiles_dir_command_arg(profiles_dir: Path) -> str:
@@ -414,6 +549,9 @@ __all__ = [
     "pipeline_success_details",
     "print_local_llm_status",
     "print_pipeline_result",
+    "print_available_corpora_table",
+    "print_benchmark_compare_report",
+    "print_benchmark_stress_report",
     "print_post_run_summary",
     "print_prepared_corpus_report",
     "print_quickstart_summary",

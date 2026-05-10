@@ -14,6 +14,9 @@ from xrtm.cli.presenters import (
     canonical_artifact_inventory,
     pipeline_result_title,
     pipeline_success_details,
+    print_available_corpora_table,
+    print_benchmark_compare_report,
+    print_benchmark_stress_report,
     print_local_llm_status,
     print_pipeline_result,
     print_post_run_summary,
@@ -59,11 +62,16 @@ from xrtm.product.providers import local_llm_status
 from xrtm.product.reports import render_html_report
 from xrtm.product.tui import render_tui_once, run_tui
 from xrtm.product.validation import (
+    BenchmarkArmOptions,
+    BenchmarkCompareOptions,
+    BenchmarkStressOptions,
     ValidationOptions,
     ValidationSafetyError,
     ValidationTierError,
     list_validation_corpora,
     prepare_validation_corpus,
+    run_benchmark_compare,
+    run_benchmark_stress_suite,
     run_validation,
 )
 from xrtm.product.web import create_web_server, web_snapshot
@@ -76,6 +84,197 @@ console = Console()
 @click.version_option(version=__version__)
 def cli() -> None:
     """XRTM product cockpit for event forecasting."""
+
+
+def _validation_options_from_args(
+    *,
+    corpus_id: str,
+    command: str,
+    split: str | None,
+    provider: str,
+    limit: int,
+    iterations: int,
+    runs_dir: Path,
+    output_dir: Path,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    max_tokens: int,
+    release_gate_mode: bool,
+    allow_unsafe_local_llm: bool,
+    no_artifacts: bool,
+) -> ValidationOptions:
+    return ValidationOptions(
+        corpus_id=corpus_id,
+        command=command,
+        split=split,
+        provider=provider,
+        limit=limit,
+        iterations=iterations,
+        runs_dir=runs_dir,
+        output_dir=output_dir,
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        write_artifacts=not no_artifacts,
+        release_gate_mode=release_gate_mode,
+        allow_unsafe_local_llm=allow_unsafe_local_llm,
+    )
+
+
+def _run_validation_command(
+    *,
+    corpus_id: str,
+    command: str,
+    split: str | None,
+    provider: str,
+    limit: int,
+    iterations: int,
+    runs_dir: Path,
+    output_dir: Path,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    max_tokens: int,
+    release_gate_mode: bool,
+    allow_unsafe_local_llm: bool,
+    no_artifacts: bool,
+    report_title: str,
+) -> None:
+    try:
+        report = run_validation(
+            _validation_options_from_args(
+                corpus_id=corpus_id,
+                command=command,
+                split=split,
+                provider=provider,
+                limit=limit,
+                iterations=iterations,
+                runs_dir=runs_dir,
+                output_dir=output_dir,
+                base_url=base_url,
+                model=model,
+                api_key=api_key,
+                max_tokens=max_tokens,
+                release_gate_mode=release_gate_mode,
+                allow_unsafe_local_llm=allow_unsafe_local_llm,
+                no_artifacts=no_artifacts,
+            )
+        )
+    except (ValidationTierError, ValidationSafetyError, ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    print_validation_report(console, report, title=report_title)
+
+
+def _list_registered_corpora(
+    *,
+    tier: str | None,
+    release_gate_only: bool,
+    title: str,
+) -> None:
+    from xrtm.data.corpora import CorpusTier
+
+    tier_enum = CorpusTier(tier) if tier else None
+    corpora = list_validation_corpora(tier=tier_enum, release_gate_only=release_gate_only)
+
+    if not corpora:
+        console.print("[yellow]No corpora found matching the filter criteria.[/yellow]")
+        return
+
+    print_available_corpora_table(console, corpora, title=title)
+
+
+def _prepare_registered_corpus(
+    *,
+    corpus_id: str,
+    cache_root: Path | None,
+    refresh: bool,
+    fixture_preview: bool,
+    title: str,
+) -> None:
+    try:
+        report = prepare_validation_corpus(
+            corpus_id,
+            cache_root=cache_root,
+            refresh=refresh,
+            use_hf_datasets=not fixture_preview,
+        )
+    except (ImportError, ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    print_prepared_corpus_report(console, report, title=title)
+
+
+def _benchmark_arm_options(
+    *,
+    label: str,
+    provider: str,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    max_tokens: int,
+) -> BenchmarkArmOptions:
+    return BenchmarkArmOptions(
+        label=label,
+        provider=provider,
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        max_tokens=max_tokens,
+    )
+
+
+def _default_benchmark_arms(
+    *,
+    baseline_label: str,
+    baseline_provider: str,
+    baseline_base_url: str | None,
+    baseline_model: str | None,
+    baseline_api_key: str | None,
+    baseline_max_tokens: int,
+    candidate_label: str,
+    candidate_provider: str,
+    candidate_base_url: str | None,
+    candidate_model: str | None,
+    candidate_api_key: str | None,
+    candidate_max_tokens: int,
+) -> tuple[BenchmarkArmOptions, BenchmarkArmOptions]:
+    return (
+        _benchmark_arm_options(
+            label=baseline_label,
+            provider=baseline_provider,
+            base_url=baseline_base_url,
+            model=baseline_model,
+            api_key=baseline_api_key,
+            max_tokens=baseline_max_tokens,
+        ),
+        _benchmark_arm_options(
+            label=candidate_label,
+            provider=candidate_provider,
+            base_url=candidate_base_url,
+            model=candidate_model,
+            api_key=candidate_api_key,
+            max_tokens=candidate_max_tokens,
+        ),
+    )
+
+
+def _show_local_llm_status(*, base_url: str | None, fail_on_unhealthy: bool) -> None:
+    status = local_llm_status(base_url=base_url)
+    print_local_llm_status(console, status)
+    if fail_on_unhealthy and not status["healthy"]:
+        error_msg = (
+            f"{status['error'] or 'Endpoint health check failed'}\n\n"
+            f"Troubleshooting steps:\n"
+            f"1. Ensure your local LLM server is running (e.g., llama.cpp)\n"
+            f"2. Verify the endpoint: curl {status['health_url']}\n"
+            f"3. Check base URL: {status['base_url']}\n"
+            f"4. Set correct URL: export XRTM_LOCAL_LLM_BASE_URL=http://localhost:YOUR_PORT/v1\n\n"
+            f"For setup help, see: docs/getting-started.md"
+        )
+        raise click.ClickException(error_msg)
 
 
 @cli.command()
@@ -517,8 +716,7 @@ def providers_group() -> None:
 def providers_doctor(base_url: str | None) -> None:
     """Check configured provider availability."""
 
-    status = local_llm_status(base_url=base_url)
-    print_local_llm_status(console, status)
+    _show_local_llm_status(base_url=base_url, fail_on_unhealthy=False)
 
 
 @cli.group("perf")
@@ -631,30 +829,24 @@ def validate_run(
     no_artifacts: bool,
 ) -> None:
     """Run a corpus-based validation sweep with structured metrics."""
-
-    try:
-        report = run_validation(
-            ValidationOptions(
-                corpus_id=corpus_id,
-                split=split,
-                provider=provider,
-                limit=limit,
-                iterations=iterations,
-                runs_dir=runs_dir,
-                output_dir=output_dir,
-                base_url=base_url,
-                model=model,
-                api_key=api_key,
-                max_tokens=max_tokens,
-                write_artifacts=not no_artifacts,
-                release_gate_mode=release_gate_mode,
-                allow_unsafe_local_llm=allow_unsafe_local_llm,
-            )
-        )
-    except (ValidationTierError, ValidationSafetyError, ValueError, RuntimeError) as exc:
-        raise click.ClickException(str(exc)) from exc
-
-    print_validation_report(console, report)
+    _run_validation_command(
+        corpus_id=corpus_id,
+        command="xrtm validate",
+        split=split,
+        provider=provider,
+        limit=limit,
+        iterations=iterations,
+        runs_dir=runs_dir,
+        output_dir=output_dir,
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        release_gate_mode=release_gate_mode,
+        allow_unsafe_local_llm=allow_unsafe_local_llm,
+        no_artifacts=no_artifacts,
+        report_title="XRTM Validation",
+    )
 
 
 @validate_group.command("list-corpora")
@@ -662,35 +854,11 @@ def validate_run(
 @click.option("--release-gate-only", is_flag=True, help="Show only release-gate approved corpora.")
 def validate_list_corpora(tier: str | None, release_gate_only: bool) -> None:
     """List available validation corpora from the registry."""
-
-    from xrtm.data.corpora import CorpusTier
-
-    tier_enum = CorpusTier(tier) if tier else None
-    corpora = list_validation_corpora(tier=tier_enum, release_gate_only=release_gate_only)
-
-    if not corpora:
-        console.print("[yellow]No corpora found matching the filter criteria.[/yellow]")
-        return
-
-    table = Table(title="Available Validation Corpora")
-    table.add_column("Corpus ID", style="cyan")
-    table.add_column("Name", style="white")
-    table.add_column("Tier", style="yellow")
-    table.add_column("License", style="green")
-    table.add_column("Release-Gate", style="magenta")
-    table.add_column("Bundled", style="blue")
-
-    for corpus in corpora:
-        table.add_row(
-            corpus["corpus_id"],
-            corpus["name"],
-            corpus["tier"],
-            corpus["license_type"],
-            "✓" if corpus["release_gate_approved"] else "✗",
-            "✓" if corpus["bundled"] else "✗",
-        )
-
-    console.print(table)
+    _list_registered_corpora(
+        tier=tier,
+        release_gate_only=release_gate_only,
+        title="Available Validation Corpora",
+    )
 
 
 @validate_group.command("prepare-corpus")
@@ -705,18 +873,263 @@ def validate_prepare_corpus(
     fixture_preview: bool,
 ) -> None:
     """Prepare an external corpus cache for large validation runs."""
+    _prepare_registered_corpus(
+        corpus_id=corpus_id,
+        cache_root=cache_root,
+        refresh=refresh,
+        fixture_preview=fixture_preview,
+        title="Prepared Validation Corpus",
+    )
 
+
+@cli.group("benchmark")
+def benchmark_group() -> None:
+    """Thin benchmark-facing workflows over the corpus registry and evaluation stack."""
+
+
+@benchmark_group.command("run")
+@click.option("--corpus-id", default="xrtm-real-binary-v1", show_default=True, help="Corpus ID from registry.")
+@click.option("--split", type=click.Choice(["full", "train", "eval", "held-out", "dev"]), default=None, help="Corpus split to use.")
+@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--limit", type=int, default=10, show_default=True, help="Questions per iteration.")
+@click.option("--iterations", type=int, default=1, show_default=True, help="Number of benchmark iterations.")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs-benchmark"), show_default=True)
+@click.option("--output-dir", type=click.Path(file_okay=False, path_type=Path), default=Path(".cache/benchmark"), show_default=True)
+@click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for local-llm.")
+@click.option("--model", default=None, help="Local model id.")
+@click.option("--api-key", default=None, help="API key for local endpoint.")
+@click.option("--max-tokens", type=int, default=768, show_default=True)
+@click.option("--release-gate-mode", is_flag=True, help="Enforce Tier 1 corpus requirement.")
+@click.option("--allow-unsafe-local-llm", is_flag=True, help="Allow unbounded local-llm runs (USE WITH CAUTION).")
+@click.option("--no-artifacts", is_flag=True, help="Skip writing benchmark artifacts.")
+def benchmark_run(
+    corpus_id: str,
+    split: str | None,
+    provider: str,
+    limit: int,
+    iterations: int,
+    runs_dir: Path,
+    output_dir: Path,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    max_tokens: int,
+    release_gate_mode: bool,
+    allow_unsafe_local_llm: bool,
+    no_artifacts: bool,
+) -> None:
+    """Run a benchmark sweep over a registered corpus without owning the engine."""
+    _run_validation_command(
+        corpus_id=corpus_id,
+        command="xrtm benchmark run",
+        split=split,
+        provider=provider,
+        limit=limit,
+        iterations=iterations,
+        runs_dir=runs_dir,
+        output_dir=output_dir,
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        release_gate_mode=release_gate_mode,
+        allow_unsafe_local_llm=allow_unsafe_local_llm,
+        no_artifacts=no_artifacts,
+        report_title="XRTM Benchmark",
+    )
+
+
+@benchmark_group.command("list-corpora")
+@click.option("--tier", type=click.Choice(["tier-1", "tier-2", "tier-3"]), default=None, help="Filter by tier.")
+@click.option("--release-gate-only", is_flag=True, help="Show only release-gate approved corpora.")
+def benchmark_list_corpora(tier: str | None, release_gate_only: bool) -> None:
+    """List benchmark-ready corpora from the registry."""
+    _list_registered_corpora(
+        tier=tier,
+        release_gate_only=release_gate_only,
+        title="Available Benchmark Corpora",
+    )
+
+
+@benchmark_group.command("cache-corpus")
+@click.option("--corpus-id", default="forecast-v1", show_default=True, help="Corpus ID from registry.")
+@click.option("--cache-root", type=click.Path(file_okay=False, path_type=Path), default=None, help="Override external corpus cache root.")
+@click.option("--refresh", is_flag=True, help="Re-import even if the corpus is already cached.")
+@click.option("--fixture-preview", is_flag=True, help="Cache the deterministic preview instead of downloading the external dataset.")
+def benchmark_cache_corpus(
+    corpus_id: str,
+    cache_root: Path | None,
+    refresh: bool,
+    fixture_preview: bool,
+) -> None:
+    """Cache an external benchmark corpus for offline benchmark runs."""
+    _prepare_registered_corpus(
+        corpus_id=corpus_id,
+        cache_root=cache_root,
+        refresh=refresh,
+        fixture_preview=fixture_preview,
+        title="Prepared Benchmark Corpus",
+    )
+
+
+@benchmark_group.command("compare")
+@click.option("--corpus-id", default="xrtm-real-binary-v1", show_default=True, help="Corpus ID from registry.")
+@click.option("--split", type=click.Choice(["full", "train", "eval", "held-out", "dev"]), default=None, help="Corpus split to use.")
+@click.option("--limit", type=int, default=10, show_default=True, help="Questions in the frozen compare slice.")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs-benchmark"), show_default=True)
+@click.option("--output-dir", type=click.Path(file_okay=False, path_type=Path), default=Path(".cache/benchmark"), show_default=True)
+@click.option("--release-gate-mode", is_flag=True, help="Enforce Tier 1 corpus requirement.")
+@click.option("--allow-unsafe-local-llm", is_flag=True, help="Allow large local-llm runs (USE WITH CAUTION).")
+@click.option("--no-artifact", is_flag=True, help="Skip writing the compare artifact.")
+@click.option("--baseline-label", default="baseline", show_default=True, help="Human-readable baseline arm label.")
+@click.option("--baseline-provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--baseline-base-url", default=None, help="Baseline local-LLM endpoint.")
+@click.option("--baseline-model", default=None, help="Baseline model id.")
+@click.option("--baseline-api-key", default=None, help="Baseline API key.")
+@click.option("--baseline-max-tokens", type=int, default=768, show_default=True)
+@click.option("--candidate-label", default="candidate", show_default=True, help="Human-readable candidate arm label.")
+@click.option("--candidate-provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--candidate-base-url", default=None, help="Candidate local-LLM endpoint.")
+@click.option("--candidate-model", default=None, help="Candidate model id.")
+@click.option("--candidate-api-key", default=None, help="Candidate API key.")
+@click.option("--candidate-max-tokens", type=int, default=768, show_default=True)
+def benchmark_compare(
+    corpus_id: str,
+    split: str | None,
+    limit: int,
+    runs_dir: Path,
+    output_dir: Path,
+    release_gate_mode: bool,
+    allow_unsafe_local_llm: bool,
+    no_artifact: bool,
+    baseline_label: str,
+    baseline_provider: str,
+    baseline_base_url: str | None,
+    baseline_model: str | None,
+    baseline_api_key: str | None,
+    baseline_max_tokens: int,
+    candidate_label: str,
+    candidate_provider: str,
+    candidate_base_url: str | None,
+    candidate_model: str | None,
+    candidate_api_key: str | None,
+    candidate_max_tokens: int,
+) -> None:
+    """Compare a baseline arm against a candidate arm on one frozen benchmark slice."""
+    baseline_arm, candidate_arm = _default_benchmark_arms(
+        baseline_label=baseline_label,
+        baseline_provider=baseline_provider,
+        baseline_base_url=baseline_base_url,
+        baseline_model=baseline_model,
+        baseline_api_key=baseline_api_key,
+        baseline_max_tokens=baseline_max_tokens,
+        candidate_label=candidate_label,
+        candidate_provider=candidate_provider,
+        candidate_base_url=candidate_base_url,
+        candidate_model=candidate_model,
+        candidate_api_key=candidate_api_key,
+        candidate_max_tokens=candidate_max_tokens,
+    )
     try:
-        report = prepare_validation_corpus(
-            corpus_id,
-            cache_root=cache_root,
-            refresh=refresh,
-            use_hf_datasets=not fixture_preview,
+        report = run_benchmark_compare(
+            BenchmarkCompareOptions(
+                corpus_id=corpus_id,
+                split=split,
+                limit=limit,
+                runs_dir=runs_dir,
+                output_dir=output_dir,
+                release_gate_mode=release_gate_mode,
+                allow_unsafe_local_llm=allow_unsafe_local_llm,
+                write_artifact=not no_artifact,
+                baseline=baseline_arm,
+                candidate=candidate_arm,
+            )
         )
-    except (ImportError, ValueError, RuntimeError) as exc:
+    except (ValidationTierError, ValidationSafetyError, ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
 
-    print_prepared_corpus_report(console, report)
+    print_benchmark_compare_report(console, report)
+
+
+@benchmark_group.command("stress")
+@click.option("--corpus-id", default="xrtm-real-binary-v1", show_default=True, help="Corpus ID from registry.")
+@click.option("--split", type=click.Choice(["full", "train", "eval", "held-out", "dev"]), default=None, help="Corpus split to use.")
+@click.option("--limit", type=int, default=10, show_default=True, help="Questions in the frozen stress slice.")
+@click.option("--repeats", type=int, default=3, show_default=True, help="How many times to rerun each arm.")
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs-benchmark"), show_default=True)
+@click.option("--output-dir", type=click.Path(file_okay=False, path_type=Path), default=Path(".cache/benchmark"), show_default=True)
+@click.option("--release-gate-mode", is_flag=True, help="Enforce Tier 1 corpus requirement.")
+@click.option("--allow-unsafe-local-llm", is_flag=True, help="Allow large local-llm runs (USE WITH CAUTION).")
+@click.option("--no-artifact", is_flag=True, help="Skip writing the stress artifact.")
+@click.option("--baseline-label", default="baseline", show_default=True, help="Human-readable baseline arm label.")
+@click.option("--baseline-provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--baseline-base-url", default=None, help="Baseline local-LLM endpoint.")
+@click.option("--baseline-model", default=None, help="Baseline model id.")
+@click.option("--baseline-api-key", default=None, help="Baseline API key.")
+@click.option("--baseline-max-tokens", type=int, default=768, show_default=True)
+@click.option("--candidate-label", default="candidate", show_default=True, help="Human-readable candidate arm label.")
+@click.option("--candidate-provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--candidate-base-url", default=None, help="Candidate local-LLM endpoint.")
+@click.option("--candidate-model", default=None, help="Candidate model id.")
+@click.option("--candidate-api-key", default=None, help="Candidate API key.")
+@click.option("--candidate-max-tokens", type=int, default=768, show_default=True)
+def benchmark_stress(
+    corpus_id: str,
+    split: str | None,
+    limit: int,
+    repeats: int,
+    runs_dir: Path,
+    output_dir: Path,
+    release_gate_mode: bool,
+    allow_unsafe_local_llm: bool,
+    no_artifact: bool,
+    baseline_label: str,
+    baseline_provider: str,
+    baseline_base_url: str | None,
+    baseline_model: str | None,
+    baseline_api_key: str | None,
+    baseline_max_tokens: int,
+    candidate_label: str,
+    candidate_provider: str,
+    candidate_base_url: str | None,
+    candidate_model: str | None,
+    candidate_api_key: str | None,
+    candidate_max_tokens: int,
+) -> None:
+    """Run a repeated baseline-vs-candidate stress suite on one frozen slice."""
+    baseline_arm, candidate_arm = _default_benchmark_arms(
+        baseline_label=baseline_label,
+        baseline_provider=baseline_provider,
+        baseline_base_url=baseline_base_url,
+        baseline_model=baseline_model,
+        baseline_api_key=baseline_api_key,
+        baseline_max_tokens=baseline_max_tokens,
+        candidate_label=candidate_label,
+        candidate_provider=candidate_provider,
+        candidate_base_url=candidate_base_url,
+        candidate_model=candidate_model,
+        candidate_api_key=candidate_api_key,
+        candidate_max_tokens=candidate_max_tokens,
+    )
+    try:
+        report = run_benchmark_stress_suite(
+            BenchmarkStressOptions(
+                corpus_id=corpus_id,
+                split=split,
+                limit=limit,
+                repeat_count=repeats,
+                runs_dir=runs_dir,
+                output_dir=output_dir,
+                release_gate_mode=release_gate_mode,
+                allow_unsafe_local_llm=allow_unsafe_local_llm,
+                write_artifact=not no_artifact,
+                arms=(baseline_arm, candidate_arm),
+            )
+        )
+    except (ValidationTierError, ValidationSafetyError, ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    print_benchmark_stress_report(console, report)
 
 
 @cli.group("monitor")
@@ -962,19 +1375,7 @@ def local_llm_group() -> None:
 def local_llm_status_command(base_url: str | None) -> None:
     """Show local llama.cpp/OpenAI-compatible endpoint status."""
 
-    status = local_llm_status(base_url=base_url)
-    print_local_llm_status(console, status)
-    if not status["healthy"]:
-        error_msg = (
-            f"{status['error'] or 'Endpoint health check failed'}\n\n"
-            f"Troubleshooting steps:\n"
-            f"1. Ensure your local LLM server is running (e.g., llama.cpp)\n"
-            f"2. Verify the endpoint: curl {status['health_url']}\n"
-            f"3. Check base URL: {status['base_url']}\n"
-            f"4. Set correct URL: export XRTM_LOCAL_LLM_BASE_URL=http://localhost:YOUR_PORT/v1\n\n"
-            f"For setup help, see: docs/getting-started.md"
-        )
-        raise click.ClickException(error_msg)
+    _show_local_llm_status(base_url=base_url, fail_on_unhealthy=True)
 
 
 @cli.group("report")
