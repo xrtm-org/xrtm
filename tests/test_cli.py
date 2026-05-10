@@ -106,6 +106,7 @@ def test_help_exposes_product_commands() -> None:
     assert "doctor" in result.output
     assert "demo" in result.output
     assert "artifacts" in result.output
+    assert "benchmark" in result.output
     assert "profile" in result.output
     assert "runs" in result.output
     assert "perf" in result.output
@@ -632,6 +633,182 @@ def test_validate_prepare_corpus_supports_preview_cache() -> None:
         assert "Prepared Validation Corpus" in cleaned
         assert "preview" in cleaned.lower()
         assert Path("corpora/forecast-v1/1.0/manifest.json").exists()
+
+
+def test_benchmark_commands_delegate_to_validation_stack() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        listed = runner.invoke(cli, ["benchmark", "list-corpora"])
+        cached = runner.invoke(
+            cli,
+            [
+                "benchmark",
+                "cache-corpus",
+                "--corpus-id",
+                "forecast-v1",
+                "--fixture-preview",
+                "--cache-root",
+                "benchmark-cache",
+            ],
+        )
+        run = runner.invoke(
+            cli,
+            [
+                "benchmark",
+                "run",
+                "--corpus-id",
+                "xrtm-real-binary-v1",
+                "--split",
+                "held-out",
+                "--provider",
+                "mock",
+                "--limit",
+                "10",
+                "--iterations",
+                "1",
+                "--runs-dir",
+                "runs-benchmark",
+                "--output-dir",
+                ".cache/benchmark",
+            ],
+        )
+
+        listed_output = _ANSI_RE.sub("", listed.output)
+        run_output = _ANSI_RE.sub("", run.output)
+
+        assert listed.exit_code == 0, listed.output
+        assert "Available Benchmark Corpora" in listed_output
+        assert "forecast-v1" in listed_output
+        assert cached.exit_code == 0, cached.output
+        assert "Prepared Benchmark Corpus" in _ANSI_RE.sub("", cached.output)
+        assert Path("benchmark-cache/forecast-v1/1.0/manifest.json").exists()
+        assert run.exit_code == 0, run.output
+        assert "XRTM Benchmark" in run_output
+        assert "held-out" in run_output
+        artifacts = list(Path(".cache/benchmark").glob("validation-xrtm-real-binary-v1-*.json"))
+        assert len(artifacts) == 1
+        report = json.loads(artifacts[0].read_text(encoding="utf-8"))
+        assert report["configuration"]["runs_dir"] == "runs-benchmark"
+        run_dir = next(Path("runs-benchmark").iterdir())
+        run_metadata = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+        assert run_metadata["command"] == "xrtm benchmark run xrtm-real-binary-v1"
+
+
+def test_benchmark_compare_writes_machine_readable_artifact() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            cli,
+            [
+                "benchmark",
+                "compare",
+                "--corpus-id",
+                "xrtm-real-binary-v1",
+                "--split",
+                "held-out",
+                "--limit",
+                "5",
+                "--runs-dir",
+                "runs-benchmark",
+                "--output-dir",
+                ".cache/benchmark",
+            ],
+        )
+
+        cleaned = _ANSI_RE.sub("", result.output)
+        assert result.exit_code == 0, result.output
+        assert "XRTM Benchmark Compare" in cleaned
+        assert "Frozen split signature:" in cleaned
+        assert "Candidate beats baseline:" in cleaned
+        artifacts = list(Path(".cache/benchmark").glob("benchmark-compare-xrtm-real-binary-v1-*.json"))
+        assert len(artifacts) == 1
+        payload = json.loads(artifacts[0].read_text(encoding="utf-8"))
+        assert payload["schema_version"] == "xrtm.benchmark-compare.v1"
+        assert payload["benchmark"]["split"] == "held-out"
+        assert payload["baseline"]["run_ids"]
+        assert payload["candidate"]["run_ids"]
+
+
+def test_benchmark_stress_writes_suite_artifact() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            cli,
+            [
+                "benchmark",
+                "stress",
+                "--corpus-id",
+                "xrtm-real-binary-v1",
+                "--split",
+                "held-out",
+                "--limit",
+                "4",
+                "--repeats",
+                "2",
+                "--runs-dir",
+                "runs-benchmark",
+                "--output-dir",
+                ".cache/benchmark",
+            ],
+        )
+
+        cleaned = _ANSI_RE.sub("", result.output)
+        assert result.exit_code == 0, result.output
+        assert "XRTM Benchmark Stress Suite" in cleaned
+        assert "Stress review loop" in cleaned
+        artifacts = list(Path(".cache/benchmark").glob("benchmark-stress-xrtm-real-binary-v1-*.json"))
+        assert len(artifacts) == 1
+        payload = json.loads(artifacts[0].read_text(encoding="utf-8"))
+        assert payload["schema_version"] == "xrtm.benchmark-suite-result.v1"
+        assert payload["spec"]["repeat_count"] == 2
+        assert len(payload["arm_results"]) == 2
+
+
+def test_providers_doctor_reports_status_without_failing() -> None:
+    runner = CliRunner()
+    local_status = {
+        "base_url": "http://127.0.0.1:8000/v1",
+        "health_url": "http://127.0.0.1:8000/health",
+        "models_url": "http://127.0.0.1:8000/v1/models",
+        "healthy": False,
+        "models": [],
+        "gpu": {"available": False},
+        "error": "connection refused",
+    }
+
+    with patch("xrtm.cli.main.local_llm_status", return_value=local_status):
+        result = runner.invoke(cli, ["providers", "doctor", "--base-url", local_status["base_url"]])
+
+    output = _strip_ansi(result.output)
+    assert result.exit_code == 0, output
+    assert "Local LLM" in output
+    assert "Healthy: False" in output
+    assert "connection refused" in output
+
+
+def test_local_llm_status_command_fails_with_guidance_when_unhealthy() -> None:
+    runner = CliRunner()
+    local_status = {
+        "base_url": "http://127.0.0.1:8000/v1",
+        "health_url": "http://127.0.0.1:8000/health",
+        "models_url": "http://127.0.0.1:8000/v1/models",
+        "healthy": False,
+        "models": [],
+        "gpu": {"available": False},
+        "error": "connection refused",
+    }
+
+    with patch("xrtm.cli.main.local_llm_status", return_value=local_status):
+        result = runner.invoke(cli, ["local-llm", "status", "--base-url", local_status["base_url"]])
+
+    output = _strip_ansi(result.output)
+    assert result.exit_code != 0
+    assert "Troubleshooting steps:" in output
+    assert f"curl {local_status['health_url']}" in output
+    assert local_status["base_url"] in output
 
 
 def test_profiles_and_run_history_commands_support_repeatable_workflows() -> None:
