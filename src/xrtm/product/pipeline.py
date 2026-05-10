@@ -48,6 +48,7 @@ class PipelineResult:
     eval_brier_score: float | None
     train_brier_score: float | None
     eval_summary: dict[str, Any]
+    eval_slices: dict[str, Any]
     train_summary: dict[str, Any]
     training_samples: int
     total_seconds: float
@@ -59,6 +60,7 @@ class _PipelineExecution:
     eval_payload: dict[str, Any]
     train_payload: dict[str, Any]
     training_samples: int
+    provider: Any
 
 
 def run_pipeline(options: PipelineOptions) -> PipelineResult:
@@ -86,6 +88,7 @@ def run_pipeline(options: PipelineOptions) -> PipelineResult:
             eval_brier_score=execution.eval_payload["summary_statistics"].get("brier_score"),
             train_brier_score=execution.train_payload["summary_statistics"].get("brier_score"),
             eval_summary=execution.eval_payload["summary_statistics"],
+            eval_slices=execution.eval_payload.get("slices", {}),
             train_summary=execution.train_payload["summary_statistics"],
             training_samples=execution.training_samples,
             total_seconds=total_seconds,
@@ -138,7 +141,6 @@ def _execute_pipeline(
         model=options.model,
         api_key=options.api_key,
     )
-    store.write_json(run, "provider.json", provider_snapshot(provider, options.provider, base_url=options.base_url))
     store.write_jsonl(run, "questions.jsonl", [question.model_dump(mode="json") for question in questions])
     records = tuple(_run_forecast_stage(options, store=store, run=run, questions=questions, provider=provider))
     eval_payload = _write_eval_payload(store, run=run, records=records)
@@ -148,6 +150,7 @@ def _execute_pipeline(
         eval_payload=eval_payload,
         train_payload=train_payload,
         training_samples=training_samples,
+        provider=provider,
     )
 
 
@@ -226,6 +229,7 @@ def _finalize_success(
     execution: _PipelineExecution,
     total_seconds: float,
 ) -> None:
+    store.write_json(run, "provider.json", provider_snapshot(execution.provider, options.provider, base_url=options.base_url))
     if options.write_report:
         report_path = render_html_report(run.run_dir)
         run.artifacts["report.html"] = str(report_path)
@@ -298,6 +302,7 @@ def _eval_payload(report: Any) -> dict[str, Any]:
         "total_evaluations": report.total_evaluations,
         "summary_statistics": to_json_safe(report.summary_statistics),
         "reliability_bins": to_json_safe(report.reliability_bins),
+        "slices": to_json_safe(report.slices),
     }
 
 

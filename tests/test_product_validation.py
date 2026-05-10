@@ -26,12 +26,29 @@ from xrtm.data.corpora import CorpusSplitter, CorpusTier, SplitConfig, get_corpu
 
 import xrtm.product.validation as validation_module
 from xrtm.product.validation import (
+    BenchmarkArmOptions,
+    BenchmarkCompareOptions,
+    BenchmarkStressOptions,
     ValidationOptions,
     ValidationSafetyError,
+    capture_forecastbench_baseline_reference,
     list_validation_corpora,
     prepare_validation_corpus,
+    run_benchmark_compare,
+    run_benchmark_stress_suite,
     run_validation,
 )
+
+_FORECASTBENCH_BASELINE_FIXTURE = """
+window.initLeaderboard_baseline = function()
+{
+    const data = [
+        {'Rank': 1, 'Model Organization': 'ForecastBench', 'Model': 'Superforecaster median forecast', 'Dataset': 63.7, 'N dataset': 521, 'Dataset 95% CI': '[62.4, 65.1]', 'Market': 80.0, 'N market': 56, 'Market 95% CI': '[76.0, 85.5]', 'Overall': 70.7, 'N': 577, 'Overall 95% CI': '[69.1, 72.5]', 'Supers > Forecaster?': '—', 'p-val Supers > Forecaster?': '—', 'Forecaster > Public?': 'Yes', 'p-val Forecaster > Public?': '<0.001', 'Team Name': 'ForecastBench'},
+        {'Rank': 2, 'Model Organization': 'ForecastBench', 'Model': 'Public median forecast', 'Dataset': 59.2, 'N dataset': 521, 'Dataset 95% CI': '[57.8, 60.9]', 'Market': 72.1, 'N market': 56, 'Market 95% CI': '[68.9, 76.0]', 'Overall': 65.1, 'N': 577, 'Overall 95% CI': '[63.5, 66.8]', 'Supers > Forecaster?': 'Yes', 'p-val Supers > Forecaster?': '<0.001', 'Forecaster > Public?': '—', 'p-val Forecaster > Public?': '—', 'Team Name': 'ForecastBench'},
+        {'Rank': 3, 'Model Organization': 'OpenAI', 'Model': 'O3-2025-04-16 (scratchpad)', 'Dataset': 60.5, 'N dataset': 1360, 'Dataset 95% CI': '[59.9, 61.2]', 'Market': 70.2, 'N market': 88, 'Market 95% CI': '[65.5, 75.2]', 'Overall': 65.0, 'N': 1448, 'Overall 95% CI': '[62.9, 67.1]', 'Supers > Forecaster?': 'Yes', 'p-val Supers > Forecaster?': '<0.001', 'Forecaster > Public?': 'No', 'p-val Forecaster > Public?': '0.53', 'Team Name': 'ForecastBench'}
+    ];
+}
+"""
 
 
 def test_list_validation_corpora() -> None:
@@ -298,3 +315,95 @@ def test_validation_report_marks_forecast_preview(monkeypatch, tmp_path: Path) -
 
     assert report["corpus"]["corpus_id"] == "forecast-v1"
     assert report["corpus"]["source_mode"] == "preview"
+
+
+def test_capture_forecastbench_baseline_reference_writes_public_artifacts(tmp_path: Path) -> None:
+    captured_at = datetime(2026, 5, 8, 1, 2, 3, tzinfo=timezone.utc)
+
+    report = capture_forecastbench_baseline_reference(
+        output_dir=tmp_path / "benchmark-review",
+        fetcher=lambda _: _FORECASTBENCH_BASELINE_FIXTURE,
+        captured_at=captured_at,
+    )
+
+    artifact_paths = [Path(path) for path in report["artifact_paths"]]
+    assert len(artifact_paths) == 3
+    assert all(path.exists() for path in artifact_paths)
+    assert artifact_paths[0].name == "public-source-forecastbench-baseline-20260508T010203Z.js"
+    assert artifact_paths[1].name == "public-benchmark-forecastbench-baseline-20260508T010203Z.json"
+    assert artifact_paths[2].name == "public-scorecard-forecastbench-baseline-20260508T010203Z.json"
+
+    lane_result = report["lane_result"]
+    assert lane_result["spec"]["benchmark_id"] == "forecastbench-baseline"
+    assert lane_result["leaderboards"][0]["source_name"] == "ForecastBench"
+    human_rows = [row for row in lane_result["comparisons"] if row["reporting_lane"] == "public-human-baseline"]
+    leaderboard_rows = [row for row in lane_result["comparisons"] if row["reporting_lane"] == "public-leaderboard"]
+    assert len(human_rows) == 2
+    assert len(leaderboard_rows) == 1
+    public_median = next(row for row in human_rows if row["display_name"] == "Public median forecast")
+    assert public_median["baseline_name"] == "Superforecaster median forecast"
+    assert public_median["delta_vs_baseline"] == pytest.approx(-5.6)
+    model_row = leaderboard_rows[0]
+    assert model_row["display_name"] == "O3-2025-04-16 (scratchpad)"
+    assert model_row["delta_vs_baseline"] == pytest.approx(-5.7)
+    assert model_row["score_summary"]["confidence_interval"]["low"] == 62.9
+    assert model_row["metadata"]["comparison_semantics"] == "official-difficulty-adjusted-public-reference"
+
+    scorecard = report["public_scorecard"]
+    assert scorecard["metadata"]["benchmark_id"] == "forecastbench-baseline"
+    assert len(scorecard["rows"]) == 3
+
+
+def test_benchmark_compare_reuses_one_frozen_selection_and_writes_artifact(tmp_path: Path) -> None:
+    report = run_benchmark_compare(
+        BenchmarkCompareOptions(
+            corpus_id="xrtm-real-binary-v1",
+            split="held-out",
+            limit=5,
+            runs_dir=tmp_path / "runs-benchmark",
+            output_dir=tmp_path / "benchmark-artifacts",
+            baseline=BenchmarkArmOptions(label="baseline", provider="mock"),
+            candidate=BenchmarkArmOptions(label="candidate", provider="mock"),
+        )
+    )
+
+    assert report["schema_version"] == "xrtm.benchmark-compare.v1"
+    assert report["benchmark"]["split"] == "held-out"
+    assert report["benchmark"]["selected_questions"] >= 1
+    assert report["baseline"]["spec"]["run_limit"] == report["candidate"]["spec"]["run_limit"]
+    assert report["baseline"]["run_ids"]
+    assert report["candidate"]["run_ids"]
+    assert report["baseline"]["run_ids"][0] != report["candidate"]["run_ids"][0]
+    assert report["comparison"]["direction"] == "lower-is-better"
+    assert "cohort_deltas" in report["comparison"]
+    artifact_path = Path(report["artifact_path"])
+    assert artifact_path.exists()
+    assert artifact_path.name.startswith("benchmark-compare-xrtm-real-binary-v1-")
+
+
+def test_benchmark_stress_suite_repeats_arms_and_records_system_metrics(tmp_path: Path) -> None:
+    report = run_benchmark_stress_suite(
+        BenchmarkStressOptions(
+            corpus_id="xrtm-real-binary-v1",
+            split="held-out",
+            limit=4,
+            repeat_count=2,
+            runs_dir=tmp_path / "runs-benchmark",
+            output_dir=tmp_path / "benchmark-artifacts",
+            arms=(
+                BenchmarkArmOptions(label="baseline", provider="mock"),
+                BenchmarkArmOptions(label="candidate", provider="mock"),
+            ),
+        )
+    )
+
+    assert report["schema_version"] == "xrtm.benchmark-suite-result.v1"
+    assert report["spec"]["repeat_count"] == 2
+    assert report["spec"]["split"] == "held-out"
+    assert len(report["arm_results"]) == 2
+    assert all(len(arm["runs"]) == 2 for arm in report["arm_results"])
+    assert report["arm_results"][0]["score_summary"]["metadata"]["systems"]["mean_total_tokens"] is not None
+    assert report["comparison"]["rows"]
+    artifact_path = Path(report["artifact_path"])
+    assert artifact_path.exists()
+    assert artifact_path.name.startswith("benchmark-stress-xrtm-real-binary-v1-")
