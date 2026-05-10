@@ -33,6 +33,15 @@ on:
         required: false
         default: main
         type: string
+      cleanroom_artifact_source:
+        description: "Run provider-free clean-room release validation (skip, wheelhouse, or pypi)"
+        required: false
+        default: skip
+        type: choice
+        options:
+          - skip
+          - wheelhouse
+          - pypi
 
 jobs:
   test:
@@ -254,12 +263,13 @@ jobs:
       - name: Smoke release-track stack
         shell: bash
         run: |
-          /tmp/xrtm-release-smoke/bin/xrtm --version
-          /tmp/xrtm-release-smoke/bin/xrtm-data --version
-          /tmp/xrtm-release-smoke/bin/forecast --version
-          /tmp/xrtm-release-smoke/bin/xrtm-forecast --version
-          /tmp/xrtm-release-smoke/bin/xrtm-train --version
-          /tmp/xrtm-release-smoke/bin/python - <<'PY'
+          release_smoke_bin=/tmp/xrtm-release-smoke/bin
+          "$release_smoke_bin"/xrtm --version
+          "$release_smoke_bin"/xrtm-data --version
+          "$release_smoke_bin"/forecast --version
+          "$release_smoke_bin"/xrtm-forecast --version
+          "$release_smoke_bin"/xrtm-train --version
+          "$release_smoke_bin"/python - <<'PY'
           import xrtm
           import xrtm.data
           import xrtm.eval
@@ -267,10 +277,159 @@ jobs:
           import xrtm.train
           print("released stack imports ok")
           PY
-          /tmp/xrtm-release-smoke/bin/xrtm doctor
-          /tmp/xrtm-release-smoke/bin/xrtm start --runs-dir /tmp/xrtm-release-smoke
-          run_dir="$(find /tmp/xrtm-release-smoke -mindepth 1 -maxdepth 1 -type d | sort | head -n 1)"
-          /tmp/xrtm-release-smoke/bin/xrtm runs show latest --runs-dir /tmp/xrtm-release-smoke
-          /tmp/xrtm-release-smoke/bin/xrtm artifacts inspect --latest --runs-dir /tmp/xrtm-release-smoke
-          /tmp/xrtm-release-smoke/bin/xrtm report html --latest --runs-dir /tmp/xrtm-release-smoke
-          /tmp/xrtm-release-smoke/bin/xrtm web --runs-dir /tmp/xrtm-release-smoke --smoke
+          "$release_smoke_bin"/xrtm doctor
+          "$release_smoke_bin"/xrtm start --runs-dir /tmp/xrtm-release-smoke
+          "$release_smoke_bin"/xrtm runs show latest --runs-dir /tmp/xrtm-release-smoke
+          "$release_smoke_bin"/xrtm artifacts inspect --latest --runs-dir /tmp/xrtm-release-smoke
+          "$release_smoke_bin"/xrtm report html --latest --runs-dir /tmp/xrtm-release-smoke
+          "$release_smoke_bin"/xrtm web --runs-dir /tmp/xrtm-release-smoke --smoke
+
+  provider-free-cleanroom:
+    name: Provider-free clean-room (${{ github.event.inputs.cleanroom_artifact_source }})
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.cleanroom_artifact_source != 'skip'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve workspace refs
+        id: workspace-refs
+        shell: bash
+        env:
+          INPUT_COORDINATION_CONTEXT: ${{ github.event.inputs.coordination_context || '' }}
+          INPUT_DATA_REF: ${{ github.event.inputs.data_ref || '' }}
+          INPUT_EVAL_REF: ${{ github.event.inputs.eval_ref || '' }}
+          INPUT_FORECAST_REF: ${{ github.event.inputs.forecast_ref || '' }}
+          INPUT_TRAIN_REF: ${{ github.event.inputs.train_ref || '' }}
+        run: |
+          default_ref="main"
+
+          requested_ref() {
+            local value="$1"
+            if [ -n "$value" ]; then
+              printf '%s' "$value"
+            else
+              printf '%s' "$default_ref"
+            fi
+          }
+
+          {
+            echo "coordination_context=${INPUT_COORDINATION_CONTEXT}"
+            echo "data_ref=$(requested_ref "$INPUT_DATA_REF")"
+            echo "eval_ref=$(requested_ref "$INPUT_EVAL_REF")"
+            echo "forecast_ref=$(requested_ref "$INPUT_FORECAST_REF")"
+            echo "train_ref=$(requested_ref "$INPUT_TRAIN_REF")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout workspace siblings
+        id: workspace-siblings
+        shell: bash
+        run: |
+          checkout_repo() {
+            local repo="$1"
+            local ref="$2"
+            git init -q "$repo"
+            git -C "$repo" remote add origin "https://github.com/xrtm-org/${repo}.git"
+            git -C "$repo" fetch --depth 1 --quiet origin "$ref"
+            git -C "$repo" checkout --detach --quiet FETCH_HEAD
+            git -C "$repo" rev-parse HEAD
+          }
+
+          data_sha="$(checkout_repo data "${{ steps.workspace-refs.outputs.data_ref }}")"
+          eval_sha="$(checkout_repo eval "${{ steps.workspace-refs.outputs.eval_ref }}")"
+          forecast_sha="$(checkout_repo forecast "${{ steps.workspace-refs.outputs.forecast_ref }}")"
+          train_sha="$(checkout_repo train "${{ steps.workspace-refs.outputs.train_ref }}")"
+
+          {
+            echo "data_sha=$data_sha"
+            echo "eval_sha=$eval_sha"
+            echo "forecast_sha=$forecast_sha"
+            echo "train_sha=$train_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summarize release-validation refs
+        shell: bash
+        run: |
+          {
+            echo "### Provider-free clean-room validation refs"
+            echo
+            echo "| Repo | Requested ref | Resolved commit |"
+            echo "| --- | --- | --- |"
+            echo "| data | \`${{ steps.workspace-refs.outputs.data_ref }}\` | \`${{ steps.workspace-siblings.outputs.data_sha }}\` |"
+            echo "| eval | \`${{ steps.workspace-refs.outputs.eval_ref }}\` | \`${{ steps.workspace-siblings.outputs.eval_sha }}\` |"
+            echo "| forecast | \`${{ steps.workspace-refs.outputs.forecast_ref }}\` | \`${{ steps.workspace-siblings.outputs.forecast_sha }}\` |"
+            echo "| train | \`${{ steps.workspace-refs.outputs.train_ref }}\` | \`${{ steps.workspace-siblings.outputs.train_sha }}\` |"
+            echo
+            echo "Artifact source: \`${{ github.event.inputs.cleanroom_artifact_source }}\`"
+            echo
+            if [ -n "${{ steps.workspace-refs.outputs.coordination_context }}" ]; then
+              echo "Coordination context: ${{ steps.workspace-refs.outputs.coordination_context }}"
+              echo
+            fi
+            echo "Use \`wheelhouse\` before publishing a coordinated release candidate. Re-run this workflow with \`pypi\` after publication so the release record includes published-artifact clean-room evidence."
+            echo
+            echo "Local-LLM clean-room acceptance stays conditional/manual until a compatible runner, model directory, and bounded service lane are available."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Run provider-free clean-room acceptance
+        shell: bash
+        env:
+          ARTIFACT_SOURCE: ${{ github.event.inputs.cleanroom_artifact_source }}
+          ARTIFACT_DIR: acceptance-studies/docker-provider-free/ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          python scripts/docker_provider_free_acceptance.py host \
+            --workspace-root . \
+            --xrtm-repo-root . \
+            --artifact-source "$ARTIFACT_SOURCE" \
+            --artifacts-dir "$ARTIFACT_DIR"
+
+      - name: Summarize clean-room evidence
+        if: always()
+        shell: bash
+        env:
+          ARTIFACT_DIR: acceptance-studies/docker-provider-free/ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          summary_path="$ARTIFACT_DIR/summary.json"
+          if [ ! -f "$summary_path" ]; then
+            echo "Provider-free clean-room summary missing: \`$summary_path\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          SUMMARY_PATH="$summary_path" python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import os
+          from pathlib import Path
+
+          summary_path = Path(os.environ["SUMMARY_PATH"])
+          payload = json.loads(summary_path.read_text(encoding="utf-8"))
+          release = payload["xrtm_release"]
+          operator_run_ids = release["operator"]["run_ids"]
+          print("### Provider-free clean-room evidence")
+          print()
+          print(f"- summary path: `{summary_path}`")
+          print(f"- artifact source: `{payload['artifact_source']}`")
+          print(f"- overall status: `{payload['status']}`")
+          print(f"- first-success status: `{release['first_success']['status']}`")
+          print(f"- operator monitor run: `{operator_run_ids[-1]}`")
+          print(f"- research-eval forecast count: `{release['research_eval']['forecast_count']}`")
+          print()
+          print("Attach this uploaded artifact to the release-readiness record. Local-LLM clean-room evidence remains a separate conditional follow-up when provider/local-model behavior changed.")
+          PY
+
+      - name: Upload clean-room evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-free-cleanroom-${{ github.run_id }}-${{ github.run_attempt }}
+          path: acceptance-studies/docker-provider-free/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn

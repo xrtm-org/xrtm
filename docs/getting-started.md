@@ -55,8 +55,10 @@ runs/<run-id>/
   logs/
 ```
 
-`monitor.json` is only written for monitor runs created with `xrtm monitor start`;
-ordinary forecast runs stay visible in run-centric views only.
+`monitor.json` is optional monitor state. Real monitor runs populate it with
+watches and thresholds, while some profile-driven runs may carry an idle
+placeholder. Use `xrtm monitor list` status and watch counts to distinguish
+active monitors from ordinary runs.
 
 ## 4. Browse the results
 

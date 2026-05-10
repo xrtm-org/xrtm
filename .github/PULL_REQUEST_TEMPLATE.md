@@ -17,6 +17,8 @@ Please describe the tests that you ran to verify your changes.
 - [ ] `uv run ruff check .`
 - [ ] `uv run mypy src/xrtm`
 - [ ] `uv run --with build python -m build`
+- [ ] Provider-free clean-room evidence recorded when published-surface or release-readiness behavior changed (CI release-validation artifact or stack `acceptance-studies/docker-provider-free/.../summary.json`)
+- [ ] Local-LLM clean-room evidence recorded for local-model changes, or an explicit defer note explains why that lane stays manual/not applicable
 
 ## Published surface impact
 
@@ -28,6 +30,7 @@ Please describe the tests that you ran to verify your changes.
 Complete this section when the PR changes contracts, packaging/version expectations, CI sibling refs, or release sequencing.
 
 - Coordination record: <!-- issue / PR family / release-train note, or N/A -->
+- Release clean-room evidence: <!-- provider-free workflow artifact / summary.json path, local-LLM note if applicable, or N/A -->
 - Upstream refs validated:
   - `xrtm-data`: <!-- branch / tag / SHA / PR ref, or N/A -->
   - `xrtm-eval`: <!-- branch / tag / SHA / PR ref, or N/A -->

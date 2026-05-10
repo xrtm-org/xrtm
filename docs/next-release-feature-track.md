@@ -26,6 +26,7 @@ Use this together with the governance repo's [Feature Status and Graduation Poli
 
 1. If a convenience is implemented but intentionally unreleased, add or update its row here with the exact governance status label, target train, and blocking validations.
 2. Do **not** move the feature into `README.md`, `docs/getting-started.md`, `docs/operator-runbook.md`, or `xrtm.org` release-pinned pages until the published package and `docs/release-command-contract.json` are updated together.
-3. If a target train slips or the blocking evidence is not ready, keep the feature unreleased or downgrade the status. Do not partially update the release-pinned docs first.
-4. If a feature is promising but still semantically muddy, mark it **`redesign-required`** rather than teasing it in release docs.
-5. Use `xrtm.org/docs/next-release.md` for the public summary and keep this page as the command-level source of truth.
+3. Graduation evidence for released docs must include the command-claim check plus provider-free clean-room acceptance from release artifacts (wheelhouse before publish, PyPI after publish). If the change touches local-model behavior, also require local-LLM clean-room evidence or an explicit defer note.
+4. If a target train slips or the blocking evidence is not ready, keep the feature unreleased or downgrade the status. Do not partially update the release-pinned docs first.
+5. If a feature is promising but still semantically muddy, mark it **`redesign-required`** rather than teasing it in release docs.
+6. Use `xrtm.org/docs/next-release.md` for the public summary and keep this page as the command-level source of truth.
