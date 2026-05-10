@@ -377,7 +377,6 @@ def run_operator(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
     journey_dir = artifacts_dir / "xrtm-release" / "operator"
     prepare_artifacts_dir(journey_dir)
     runs_dir = journey_dir / "runs"
-    profiles_dir = journey_dir / "profiles"
     profile_name = "docker-local-mock"
     before_profile = discover_run_ids(runs_dir)
     run_logged(
@@ -491,7 +490,6 @@ def run_research_eval(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any
     run_logged(["xrtm", "artifacts", "inspect", str(run_dir)], log_path=journey_dir / "artifacts-inspect.log", cwd=journey_dir, env=env)
     run_logged(["xrtm", "report", "html", str(run_dir)], log_path=journey_dir / "report-html.log", cwd=journey_dir, env=env)
     performance_path = journey_dir / "performance.json"
-    perf_runs_dir = journey_dir / "runs-perf"
     run_logged(
         [
             "xrtm",

@@ -23,8 +23,8 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from docker_provider_free_acceptance import (  # noqa: E402
     build_wheelhouse,
-    container_workspace_path,
     command_text,
+    container_workspace_path,
     create_venv,
     default_specs,
     install_specs,

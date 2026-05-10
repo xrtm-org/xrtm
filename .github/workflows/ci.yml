@@ -263,12 +263,13 @@ jobs:
       - name: Smoke release-track stack
         shell: bash
         run: |
-          /tmp/xrtm-release-smoke/bin/xrtm --version
-          /tmp/xrtm-release-smoke/bin/xrtm-data --version
-          /tmp/xrtm-release-smoke/bin/forecast --version
-          /tmp/xrtm-release-smoke/bin/xrtm-forecast --version
-          /tmp/xrtm-release-smoke/bin/xrtm-train --version
-          /tmp/xrtm-release-smoke/bin/python - <<'PY'
+          release_smoke_bin=/tmp/xrtm-release-smoke/bin
+          "$release_smoke_bin"/xrtm --version
+          "$release_smoke_bin"/xrtm-data --version
+          "$release_smoke_bin"/forecast --version
+          "$release_smoke_bin"/xrtm-forecast --version
+          "$release_smoke_bin"/xrtm-train --version
+          "$release_smoke_bin"/python - <<'PY'
           import xrtm
           import xrtm.data
           import xrtm.eval
@@ -276,14 +277,12 @@ jobs:
           import xrtm.train
           print("released stack imports ok")
           PY
-          /tmp/xrtm-release-smoke/bin/xrtm doctor
-          /tmp/xrtm-release-smoke/bin/xrtm start --runs-dir /tmp/xrtm-release-smoke
-          run_dir="$(find /tmp/xrtm-release-smoke -mindepth 1 -maxdepth 1 -type d | sort | head -n 1)"
-          run_id="$(basename "$run_dir")"
-          xrtm runs show "$run_id" --runs-dir /tmp/xrtm-release-smoke
-          xrtm artifacts inspect "$run_dir"
-          xrtm report html "$run_dir"
-          xrtm web --runs-dir /tmp/xrtm-release-smoke --smoke
+          "$release_smoke_bin"/xrtm doctor
+          "$release_smoke_bin"/xrtm start --runs-dir /tmp/xrtm-release-smoke
+          "$release_smoke_bin"/xrtm runs show latest --runs-dir /tmp/xrtm-release-smoke
+          "$release_smoke_bin"/xrtm artifacts inspect --latest --runs-dir /tmp/xrtm-release-smoke
+          "$release_smoke_bin"/xrtm report html --latest --runs-dir /tmp/xrtm-release-smoke
+          "$release_smoke_bin"/xrtm web --runs-dir /tmp/xrtm-release-smoke --smoke
 
   provider-free-cleanroom:
     name: Provider-free clean-room (${{ github.event.inputs.cleanroom_artifact_source }})
