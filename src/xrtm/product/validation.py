@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TypedDict
 from urllib.request import Request, urlopen
 
 from xrtm.data.corpora import (
@@ -143,6 +143,18 @@ class _ValidationSelection:
     question_pool_size: int
     selected_questions: tuple[Any, ...]
     split_signature: str | None
+
+
+class _CohortMetricsBucket(TypedDict):
+    mean_scores: list[float]
+    eces: list[float]
+    sample_size: int
+
+
+class _MergedCohortMetricsBucket(TypedDict):
+    brier: list[float]
+    ece: list[float]
+    sample_size: int
 
 
 @dataclass(frozen=True)
@@ -457,7 +469,7 @@ def _percentile(values: list[float], percentile: float) -> float:
 
 
 def _aggregate_cohort_metrics(iteration_results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    aggregated: dict[str, dict[str, list[float] | int]] = {}
+    aggregated: dict[str, _CohortMetricsBucket] = {}
     for iteration in iteration_results:
         for cohort_name, cohort_report in (iteration.get("eval_slices") or {}).items():
             bucket = aggregated.setdefault(
@@ -1090,7 +1102,7 @@ def _aggregate_stress_scores(
 
 
 def _merge_cohort_metrics(cohort_payloads: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    buckets: dict[str, dict[str, list[float] | int]] = {}
+    buckets: dict[str, _MergedCohortMetricsBucket] = {}
     for payload in cohort_payloads:
         for cohort_name, values in payload.items():
             bucket = buckets.setdefault(cohort_name, {"brier": [], "ece": [], "sample_size": 0})
