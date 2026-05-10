@@ -8,11 +8,11 @@ from xrtm.cli.main import cli
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _PACKAGE_VERSIONS = {
-    "xrtm": "0.3.1",
+    "xrtm": "0.3.2",
     "xrtm-data": "0.2.6",
-    "xrtm-eval": "0.2.5",
-    "xrtm-forecast": "0.6.7",
-    "xrtm-train": "0.2.6",
+    "xrtm-eval": "0.2.6",
+    "xrtm-forecast": "0.6.9",
+    "xrtm-train": "0.2.7",
 }
 
 

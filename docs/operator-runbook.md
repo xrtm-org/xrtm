@@ -40,7 +40,7 @@ unsupported Python versions.
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.3.1
+pip install xrtm==0.3.2
 ```
 
 Verify the installed stack:

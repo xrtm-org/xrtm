@@ -39,7 +39,7 @@ and the released-stack smoke.
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.3.1
+pip install xrtm==0.3.2
 ```
 
 Supported Python versions are `>=3.11,<3.13`.

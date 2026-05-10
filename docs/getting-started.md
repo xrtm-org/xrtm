@@ -16,7 +16,7 @@ mock provider, so you do **not** need API keys or a local model server.
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.3.1
+pip install xrtm==0.3.2
 ```
 
 **Supported Python versions:** `>=3.11,<3.13`
