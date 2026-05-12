@@ -53,6 +53,27 @@ def test_default_specs_support_repo_root_equal_to_workspace_root(tmp_path) -> No
     assert forecast_spec == "xrtm-forecast==0.6.6"
 
 
+def test_repo_source_dir_prefers_repo_root_when_workspace_has_no_xrtm_checkout(tmp_path: Path) -> None:
+    module = _load_module()
+    workspace_root = tmp_path / "workspace"
+    xrtm_repo_root = workspace_root
+    workspace_root.mkdir()
+
+    resolved = module.repo_source_dir("xrtm", workspace_root, xrtm_repo_root)
+
+    assert resolved == xrtm_repo_root
+
+
+def test_repo_source_dir_keeps_sibling_checkout_for_non_xrtm_repo(tmp_path: Path) -> None:
+    module = _load_module()
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+
+    resolved = module.repo_source_dir("forecast", workspace_root, workspace_root)
+
+    assert resolved == workspace_root / "forecast"
+
+
 def test_docker_run_command_is_disposable_and_mounts_persistent_artifacts(monkeypatch) -> None:
     module = _load_module()
     monkeypatch.setattr(module.os, "getuid", lambda: 1000)
