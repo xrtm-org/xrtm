@@ -1,6 +1,6 @@
 {
   "release_version": "0.3.2",
-  "summary": "Release-gated command claims for README/getting-started/operator/site docs.",
+  "summary": "Release-gated command claims for README/getting-started/operator/site docs aligned to the runtime taxonomy.",
   "allowed_claims": [
     ". .venv/bin/activate",
     "export XRTM_LOCAL_LLM_BASE_URL=http://localhost:8080/v1",
@@ -61,6 +61,11 @@
     "xrtm runs show <run-id> --runs-dir runs",
     "xrtm runs show latest --runs-dir runs",
     "xrtm tui --runs-dir runs",
+    "xrtm workflow list",
+    "xrtm workflow run demo-provider-free --runs-dir runs",
+    "xrtm workflow run flagship-benchmark --runs-dir runs-benchmark",
+    "xrtm workflow show demo-provider-free",
+    "xrtm workflow show flagship-benchmark",
     "xrtm web --runs-dir runs",
     "xrtm web --runs-dir runs --smoke",
     "xrtm web --smoke",
