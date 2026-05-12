@@ -25,8 +25,14 @@ services:
       - ${XRTM_LOCAL_LLM_MODEL}
       - --local-llm-api-key
       - ${XRTM_LOCAL_LLM_API_KEY}
+      - --validation-profile
+      - ${XRTM_LOCAL_LLM_VALIDATION_PROFILE}
       - --max-tokens
       - "${XRTM_LOCAL_LLM_MAX_TOKENS}"
+      - --benchmark-limit
+      - "${XRTM_LOCAL_LLM_BENCHMARK_LIMIT}"
+      - --benchmark-repeats
+      - "${XRTM_LOCAL_LLM_STRESS_REPEATS}"
       - --ready-timeout-seconds
       - "${XRTM_LOCAL_LLM_READY_TIMEOUT_SECONDS}"
       - --ready-interval-seconds

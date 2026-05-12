@@ -108,9 +108,18 @@ def run_logged(
         stderr=subprocess.STDOUT,
         check=False,
     )
-    log_path.write_text(f"$ {command_text(command)}\n\n{result.stdout}", encoding="utf-8")
+    log_text = f"$ {command_text(command)}\n\n{result.stdout}"
     if result.returncode != 0:
+        diagnostics = [f"return code: {result.returncode}"]
+        if cwd is not None:
+            core_files = sorted(path for path in Path(cwd).glob("core*") if path.is_file())
+            if core_files:
+                diagnostics.append("core files:")
+                diagnostics.extend(f"- {path.name} ({path.stat().st_size} bytes)" for path in core_files)
+        log_text += "\n\n[diagnostics]\n" + "\n".join(diagnostics)
+        log_path.write_text(log_text, encoding="utf-8")
         raise subprocess.CalledProcessError(result.returncode, command, output=result.stdout)
+    log_path.write_text(log_text, encoding="utf-8")
     return result
 
 
@@ -341,33 +350,59 @@ def run_first_success(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any
     runs_dir = journey_dir / "runs"
     run_logged(["xrtm", "doctor"], log_path=journey_dir / "doctor.log", cwd=journey_dir, env=env)
     run_logged(
-        ["xrtm", "demo", "--provider", "mock", "--limit", "1", "--runs-dir", str(runs_dir)],
-        log_path=journey_dir / "demo.log",
+        ["xrtm", "start", "--runs-dir", str(runs_dir)],
+        log_path=journey_dir / "start.log",
         cwd=journey_dir,
         env=env,
     )
+    run_logged(
+        ["xrtm", "workflow", "list"],
+        log_path=journey_dir / "workflow-list.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        ["xrtm", "workflow", "show", "demo-provider-free"],
+        log_path=journey_dir / "workflow-show.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    before_workflow = discover_run_ids(runs_dir)
+    run_logged(
+        ["xrtm", "workflow", "run", "demo-provider-free", "--runs-dir", str(runs_dir)],
+        log_path=journey_dir / "workflow-run.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    workflow_run_id = new_run_id(before_workflow, runs_dir)
     run_id = latest_run_id(runs_dir)
     run_dir = runs_dir / run_id
-    run_logged(["xrtm", "runs", "list", "--runs-dir", str(runs_dir)], log_path=journey_dir / "runs-list.log", cwd=journey_dir, env=env)
     run_logged(
-        ["xrtm", "runs", "show", run_id, "--runs-dir", str(runs_dir)],
+        ["xrtm", "runs", "show", "latest", "--runs-dir", str(runs_dir)],
         log_path=journey_dir / "runs-show.log",
         cwd=journey_dir,
         env=env,
     )
     run_logged(
-        ["xrtm", "artifacts", "inspect", str(run_dir)],
+        ["xrtm", "artifacts", "inspect", "--latest", "--runs-dir", str(runs_dir)],
         log_path=journey_dir / "artifacts-inspect.log",
         cwd=journey_dir,
         env=env,
     )
-    run_logged(["xrtm", "report", "html", str(run_dir)], log_path=journey_dir / "report-html.log", cwd=journey_dir, env=env)
+    run_logged(
+        ["xrtm", "report", "html", "--latest", "--runs-dir", str(runs_dir)],
+        log_path=journey_dir / "report-html.log",
+        cwd=journey_dir,
+        env=env,
+    )
     run_logged(["xrtm", "web", "--runs-dir", str(runs_dir), "--smoke"], log_path=journey_dir / "web-smoke.log", cwd=journey_dir, env=env)
     summary = {
         "run_id": run_id,
+        "workflow_run_id": workflow_run_id,
         "status": load_json(run_dir / "run.json")["status"],
         "forecast_count": load_json(run_dir / "run_summary.json")["forecast_count"],
         "report_exists": (run_dir / "report.html").exists(),
+        "blueprint_exists": (run_dir / "blueprint.json").exists(),
     }
     write_json(journey_dir / "summary.json", summary)
     return summary
@@ -523,6 +558,126 @@ def run_research_eval(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any
     return summary
 
 
+def run_benchmark_matrix(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
+    journey_dir = artifacts_dir / "xrtm-release" / "benchmark-matrix"
+    prepare_artifacts_dir(journey_dir)
+    benchmark_runs_dir = journey_dir / "runs-benchmark"
+    benchmark_output_dir = journey_dir / "benchmark-output"
+    competition_runs_dir = journey_dir / "runs-competition"
+    run_logged(
+        [
+            "xrtm",
+            "benchmark",
+            "run",
+            "--corpus-id",
+            "xrtm-real-binary-v1",
+            "--split",
+            "eval",
+            "--provider",
+            "mock",
+            "--limit",
+            "5",
+            "--iterations",
+            "2",
+            "--runs-dir",
+            str(benchmark_runs_dir),
+            "--output-dir",
+            str(benchmark_output_dir),
+            "--release-gate-mode",
+        ],
+        log_path=journey_dir / "benchmark-run.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        [
+            "xrtm",
+            "benchmark",
+            "compare",
+            "--corpus-id",
+            "xrtm-real-binary-v1",
+            "--split",
+            "eval",
+            "--limit",
+            "5",
+            "--runs-dir",
+            str(benchmark_runs_dir),
+            "--output-dir",
+            str(benchmark_output_dir),
+            "--release-gate-mode",
+            "--baseline-label",
+            "mock-control",
+            "--baseline-provider",
+            "mock",
+            "--candidate-label",
+            "mock-candidate",
+            "--candidate-provider",
+            "mock",
+        ],
+        log_path=journey_dir / "benchmark-compare.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        [
+            "xrtm",
+            "benchmark",
+            "stress",
+            "--corpus-id",
+            "xrtm-real-binary-v1",
+            "--split",
+            "eval",
+            "--limit",
+            "3",
+            "--repeats",
+            "2",
+            "--runs-dir",
+            str(benchmark_runs_dir),
+            "--output-dir",
+            str(benchmark_output_dir),
+            "--release-gate-mode",
+            "--baseline-label",
+            "mock-control",
+            "--baseline-provider",
+            "mock",
+            "--candidate-label",
+            "mock-candidate",
+            "--candidate-provider",
+            "mock",
+        ],
+        log_path=journey_dir / "benchmark-stress.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        [
+            "xrtm",
+            "competition",
+            "dry-run",
+            "metaculus-cup",
+            "--runs-dir",
+            str(competition_runs_dir),
+            "--provider",
+            "mock",
+            "--limit",
+            "2",
+        ],
+        log_path=journey_dir / "competition-dry-run.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    competition_run_id = latest_run_id(competition_runs_dir)
+    competition_run_dir = competition_runs_dir / competition_run_id
+    summary = {
+        "benchmark_artifacts": sorted(path.name for path in benchmark_output_dir.glob("*.json")),
+        "benchmark_run_ids": discover_run_ids(benchmark_runs_dir),
+        "competition_bundle_exists": (competition_run_dir / "competition_submission.json").exists(),
+        "competition_run_id": competition_run_id,
+    }
+    write_json(journey_dir / "summary.json", summary)
+    return summary
+
+
 def run_developer_package(
     *,
     workspace_root_path: Path,
@@ -601,6 +756,7 @@ def run_product_shell(
         "first_success": run_first_success(env, artifacts_dir),
         "operator": run_operator(env, artifacts_dir),
         "research_eval": run_research_eval(env, artifacts_dir),
+        "benchmark_matrix": run_benchmark_matrix(env, artifacts_dir),
     }
     write_json(output_dir / "summary.json", summary)
     return summary
@@ -677,6 +833,7 @@ def run_inside(args: argparse.Namespace) -> int:
     base_env["HOME"] = str(home_dir)
     base_env["PIP_CACHE_DIR"] = str(cache_dir)
     base_env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+    base_env["PYTHONFAULTHANDLER"] = "1"
     wheelhouse_dir = Path(args.wheelhouse_dir) if args.wheelhouse_dir else None
     write_json(
         artifacts_dir / "metadata" / "container-request.json",

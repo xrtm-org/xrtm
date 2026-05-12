@@ -42,6 +42,42 @@ on:
           - skip
           - wheelhouse
           - pypi
+      commercial_openai_profile:
+        description: "Run Commercial OpenAI-compatible Gate 2 validation (skip or openai)"
+        required: false
+        default: skip
+        type: choice
+        options:
+          - skip
+          - openai
+      commercial_openai_base_url:
+        description: "Commercial OpenAI-compatible base URL for Gate 2 validation"
+        required: false
+        default: ""
+        type: string
+      commercial_openai_model:
+        description: "Commercial OpenAI-compatible model for Gate 2 validation"
+        required: false
+        default: ""
+        type: string
+      local_llm_profile:
+        description: "Run local Qwen clean-room validation (skip or qwen3.6)"
+        required: false
+        default: skip
+        type: choice
+        options:
+          - skip
+          - qwen3.6
+      local_llm_runner_label:
+        description: "Self-hosted GPU runner label for local Qwen validation"
+        required: false
+        default: ""
+        type: string
+      local_llm_model_file:
+        description: "llama.cpp model file for local Qwen validation"
+        required: false
+        default: "Qwen3.6-32B-Q4_K_M.gguf"
+        type: string
 
 jobs:
   test:
@@ -432,4 +468,320 @@ jobs:
         with:
           name: provider-free-cleanroom-${{ github.run_id }}-${{ github.run_attempt }}
           path: acceptance-studies/docker-provider-free/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+
+  local-llm-cleanroom:
+    name: Local-LLM clean-room (${{ github.event.inputs.local_llm_profile }})
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.local_llm_profile != 'skip' && github.event.inputs.local_llm_runner_label != ''
+    runs-on: ${{ github.event.inputs.local_llm_runner_label }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve workspace refs
+        id: workspace-refs
+        shell: bash
+        env:
+          INPUT_COORDINATION_CONTEXT: ${{ github.event.inputs.coordination_context || '' }}
+          INPUT_DATA_REF: ${{ github.event.inputs.data_ref || '' }}
+          INPUT_EVAL_REF: ${{ github.event.inputs.eval_ref || '' }}
+          INPUT_FORECAST_REF: ${{ github.event.inputs.forecast_ref || '' }}
+          INPUT_TRAIN_REF: ${{ github.event.inputs.train_ref || '' }}
+        run: |
+          default_ref="main"
+
+          requested_ref() {
+            local value="$1"
+            if [ -n "$value" ]; then
+              printf '%s' "$value"
+            else
+              printf '%s' "$default_ref"
+            fi
+          }
+
+          {
+            echo "coordination_context=${INPUT_COORDINATION_CONTEXT}"
+            echo "data_ref=$(requested_ref "$INPUT_DATA_REF")"
+            echo "eval_ref=$(requested_ref "$INPUT_EVAL_REF")"
+            echo "forecast_ref=$(requested_ref "$INPUT_FORECAST_REF")"
+            echo "train_ref=$(requested_ref "$INPUT_TRAIN_REF")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout workspace siblings
+        id: workspace-siblings
+        shell: bash
+        run: |
+          checkout_repo() {
+            local repo="$1"
+            local ref="$2"
+            git init -q "$repo"
+            git -C "$repo" remote add origin "https://github.com/xrtm-org/${repo}.git"
+            git -C "$repo" fetch --depth 1 --quiet origin "$ref"
+            git -C "$repo" checkout --detach --quiet FETCH_HEAD
+            git -C "$repo" rev-parse HEAD
+          }
+
+          data_sha="$(checkout_repo data "${{ steps.workspace-refs.outputs.data_ref }}")"
+          eval_sha="$(checkout_repo eval "${{ steps.workspace-refs.outputs.eval_ref }}")"
+          forecast_sha="$(checkout_repo forecast "${{ steps.workspace-refs.outputs.forecast_ref }}")"
+          train_sha="$(checkout_repo train "${{ steps.workspace-refs.outputs.train_ref }}")"
+
+          {
+            echo "data_sha=$data_sha"
+            echo "eval_sha=$eval_sha"
+            echo "forecast_sha=$forecast_sha"
+            echo "train_sha=$train_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summarize local Qwen validation refs
+        shell: bash
+        run: |
+          {
+            echo "### Local Qwen clean-room validation refs"
+            echo
+            echo "| Repo | Requested ref | Resolved commit |"
+            echo "| --- | --- | --- |"
+            echo "| data | \`${{ steps.workspace-refs.outputs.data_ref }}\` | \`${{ steps.workspace-siblings.outputs.data_sha }}\` |"
+            echo "| eval | \`${{ steps.workspace-refs.outputs.eval_ref }}\` | \`${{ steps.workspace-siblings.outputs.eval_sha }}\` |"
+            echo "| forecast | \`${{ steps.workspace-refs.outputs.forecast_ref }}\` | \`${{ steps.workspace-siblings.outputs.forecast_sha }}\` |"
+            echo "| train | \`${{ steps.workspace-refs.outputs.train_ref }}\` | \`${{ steps.workspace-siblings.outputs.train_sha }}\` |"
+            echo
+            echo "Profile: \`${{ github.event.inputs.local_llm_profile }}\`"
+            echo "Model file: \`${{ github.event.inputs.local_llm_model_file }}\`"
+            echo "Runner: \`${{ github.event.inputs.local_llm_runner_label }}\`"
+            echo
+            echo "This lane is manual/self-hosted because it requires a GPU-capable runner and a locally mounted llama.cpp model."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Run local Qwen clean-room validation
+        shell: bash
+        env:
+          ARTIFACT_DIR: ${{ github.workspace }}/acceptance-studies/local-llm-qwen/ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          python scripts/docker_local_llm_acceptance.py host \
+            --workspace-root "$GITHUB_WORKSPACE" \
+            --xrtm-repo-root "$GITHUB_WORKSPACE" \
+            --artifact-source wheelhouse \
+            --artifacts-dir "$ARTIFACT_DIR" \
+            --llama-model-file "${{ github.event.inputs.local_llm_model_file }}" \
+            --validation-profile release \
+            --min-gpu-benchmark-seconds 1800 \
+            --min-gpu-active-samples 60 \
+            --min-gpu-memory-mib 4096
+
+      - name: Summarize local Qwen evidence
+        if: always()
+        shell: bash
+        env:
+          ARTIFACT_DIR: ${{ github.workspace }}/acceptance-studies/local-llm-qwen/ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          summary_path="$ARTIFACT_DIR/summary.json"
+          if [ ! -f "$summary_path" ]; then
+            echo "Local Qwen summary missing: \`$summary_path\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          SUMMARY_PATH="$summary_path" python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import os
+          from pathlib import Path
+
+          summary_path = Path(os.environ["SUMMARY_PATH"])
+          payload = json.loads(summary_path.read_text(encoding="utf-8"))
+          gpu = payload.get("gpu_telemetry", {})
+          release = payload.get("xrtm_release_local_llm", {})
+          print("### Local Qwen clean-room evidence")
+          print()
+          print(f"- summary path: `{summary_path}`")
+          print(f"- status: `{payload.get('status')}`")
+          print(f"- model: `{release.get('models')}`")
+          print(f"- flagship benchmark run: `{release.get('flagship_benchmark_run_id')}`")
+          print(f"- competition dry-run: `{release.get('competition_run_id')}`")
+          print(f"- GPU duration seconds: `{gpu.get('duration_seconds')}`")
+          print(f"- GPU active samples: `{gpu.get('active_sample_count')}`")
+          print(f"- GPU peak memory MiB: `{gpu.get('peak_memory_used_mib')}`")
+          PY
+
+      - name: Upload local Qwen evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-llm-qwen-${{ github.run_id }}-${{ github.run_attempt }}
+          path: acceptance-studies/local-llm-qwen/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+
+  commercial-openai-compatible-cleanroom:
+    name: Commercial OpenAI-compatible clean-room (${{ github.event.inputs.commercial_openai_profile }})
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.commercial_openai_profile != 'skip'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve workspace refs
+        id: workspace-refs
+        shell: bash
+        env:
+          INPUT_COORDINATION_CONTEXT: ${{ github.event.inputs.coordination_context || '' }}
+          INPUT_DATA_REF: ${{ github.event.inputs.data_ref || '' }}
+          INPUT_EVAL_REF: ${{ github.event.inputs.eval_ref || '' }}
+          INPUT_FORECAST_REF: ${{ github.event.inputs.forecast_ref || '' }}
+          INPUT_TRAIN_REF: ${{ github.event.inputs.train_ref || '' }}
+        run: |
+          default_ref="main"
+
+          requested_ref() {
+            local value="$1"
+            if [ -n "$value" ]; then
+              printf '%s' "$value"
+            else
+              printf '%s' "$default_ref"
+            fi
+          }
+
+          {
+            echo "coordination_context=${INPUT_COORDINATION_CONTEXT}"
+            echo "data_ref=$(requested_ref "$INPUT_DATA_REF")"
+            echo "eval_ref=$(requested_ref "$INPUT_EVAL_REF")"
+            echo "forecast_ref=$(requested_ref "$INPUT_FORECAST_REF")"
+            echo "train_ref=$(requested_ref "$INPUT_TRAIN_REF")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout workspace siblings
+        id: workspace-siblings
+        shell: bash
+        run: |
+          checkout_repo() {
+            local repo="$1"
+            local ref="$2"
+            git init -q "$repo"
+            git -C "$repo" remote add origin "https://github.com/xrtm-org/${repo}.git"
+            git -C "$repo" fetch --depth 1 --quiet origin "$ref"
+            git -C "$repo" checkout --detach --quiet FETCH_HEAD
+            git -C "$repo" rev-parse HEAD
+          }
+
+          data_sha="$(checkout_repo data "${{ steps.workspace-refs.outputs.data_ref }}")"
+          eval_sha="$(checkout_repo eval "${{ steps.workspace-refs.outputs.eval_ref }}")"
+          forecast_sha="$(checkout_repo forecast "${{ steps.workspace-refs.outputs.forecast_ref }}")"
+          train_sha="$(checkout_repo train "${{ steps.workspace-refs.outputs.train_ref }}")"
+
+          {
+            echo "data_sha=$data_sha"
+            echo "eval_sha=$eval_sha"
+            echo "forecast_sha=$forecast_sha"
+            echo "train_sha=$train_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install build tool
+        run: uv pip install --system build
+
+      - name: Build package
+        run: python -m build
+
+      - name: Validate Commercial OpenAI-compatible clean-room
+        shell: bash
+        env:
+          BASE_URL: ${{ github.event.inputs.commercial_openai_base_url }}
+          MODEL: ${{ github.event.inputs.commercial_openai_model }}
+          PROFILE: ${{ github.event.inputs.commercial_openai_profile }}
+          OPENAI_API_KEY: ${{ secrets.XRTM_OPENAI_COMPATIBLE_API_KEY }}
+          ARTIFACT_DIR: acceptance-studies/commercial-openai-compatible/ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$MODEL" ]; then
+            echo "commercial_openai_base_url and commercial_openai_model are required" >&2
+            exit 1
+          fi
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "XRTM_OPENAI_COMPATIBLE_API_KEY secret is required for commercial OpenAI-compatible validation" >&2
+            exit 1
+          fi
+
+          mkdir -p "$ARTIFACT_DIR"
+          uv venv "$ARTIFACT_DIR/venv"
+          uv pip install --python "$ARTIFACT_DIR/venv/bin/python" -e ./data -e ./eval -e ./forecast -e ./train dist/xrtm-*.whl
+          "$ARTIFACT_DIR/venv/bin/python" scripts/check_release_claims.py --repo-root . --contract docs/release-command-contract.json --scope xrtm
+          "$ARTIFACT_DIR/venv/bin/xrtm" doctor
+          "$ARTIFACT_DIR/venv/bin/xrtm" demo --provider local-llm --base-url "$BASE_URL" --model "$MODEL" --api-key "$OPENAI_API_KEY" --limit 1 --max-tokens 768 --runs-dir "$ARTIFACT_DIR/runs"
+          "$ARTIFACT_DIR/venv/bin/xrtm" runs show latest --runs-dir "$ARTIFACT_DIR/runs"
+          "$ARTIFACT_DIR/venv/bin/xrtm" artifacts inspect --latest --runs-dir "$ARTIFACT_DIR/runs"
+          "$ARTIFACT_DIR/venv/bin/xrtm" report html --latest --runs-dir "$ARTIFACT_DIR/runs"
+          "$ARTIFACT_DIR/venv/bin/xrtm" web --runs-dir "$ARTIFACT_DIR/runs" --smoke
+          PROFILE="$PROFILE" ARTIFACT_DIR="$ARTIFACT_DIR" "$ARTIFACT_DIR/venv/bin/python" - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          artifact_dir = Path(os.environ["ARTIFACT_DIR"])
+          runs_dir = artifact_dir / "runs"
+          run_ids = sorted(path.name for path in runs_dir.iterdir() if path.is_dir())
+          if not run_ids:
+            raise SystemExit("no commercial OpenAI-compatible run artifacts were produced")
+          run_dir = runs_dir / run_ids[-1]
+          report_path = run_dir / "report.html"
+          payload = {
+              "profile": os.environ["PROFILE"],
+              "run_id": run_dir.name,
+              "report_exists": report_path.exists(),
+              "run_dir": str(run_dir),
+          }
+          if not report_path.exists():
+              raise SystemExit(f"expected report at {report_path}")
+          (artifact_dir / "summary.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Summarize commercial OpenAI-compatible evidence
+        if: always()
+        shell: bash
+        env:
+          ARTIFACT_DIR: acceptance-studies/commercial-openai-compatible/ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          summary_path="$ARTIFACT_DIR/summary.json"
+          if [ ! -f "$summary_path" ]; then
+            echo "Commercial OpenAI-compatible summary missing: \`$summary_path\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          SUMMARY_PATH="$summary_path" python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import os
+          from pathlib import Path
+
+          summary_path = Path(os.environ["SUMMARY_PATH"])
+          payload = json.loads(summary_path.read_text(encoding="utf-8"))
+          print("### Commercial OpenAI-compatible clean-room evidence")
+          print()
+          print(f"- summary path: `{summary_path}`")
+          print(f"- profile: `{payload['profile']}`")
+          print(f"- run id: `{payload['run_id']}`")
+          print(f"- report exists: `{payload['report_exists']}`")
+          print(f"- artifact dir: `{payload['run_dir']}`")
+          PY
+
+      - name: Upload commercial OpenAI-compatible evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: commercial-openai-compatible-${{ github.run_id }}-${{ github.run_attempt }}
+          path: acceptance-studies/commercial-openai-compatible/ci-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: warn
