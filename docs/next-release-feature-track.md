@@ -1,6 +1,6 @@
 # Next-release feature track
 
-> This page tracks conveniences that are intentionally **not** part of the published `xrtm==0.3.2` surface. Guided onboarding helpers, latest-run shortcuts, and CSV export graduated in `0.3.2`; this page now tracks what remains unreleased.
+> This page tracks conveniences that are intentionally **not** part of the published `xrtm==0.3.3` surface. Guided onboarding helpers, latest-run shortcuts, and CSV export graduated in `0.3.2`; this page now tracks what remains unreleased.
 
 Use this together with the governance repo's [Feature Status and Graduation Policy](https://github.com/xrtm-org/governance/blob/main/policies/feature-status-and-graduation-policy.md) and [Release Readiness Policy](https://github.com/xrtm-org/governance/blob/main/policies/release-readiness-policy.md).
 
