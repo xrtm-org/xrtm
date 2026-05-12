@@ -88,5 +88,24 @@
         "src/pages/index.tsx"
       ]
     }
+  },
+  "runtime_validation": {
+    "xrtm": {
+      "baseline_mode": "provider-free",
+      "first_class_categories": [
+        "openai-compatible-endpoint",
+        "coding-agent-cli-contract"
+      ],
+      "openai_compatible_profiles": {
+        "local": [
+          "local-llm"
+        ],
+        "commercial": [
+          "openai"
+        ]
+      },
+      "coding_agent_cli_profiles": [],
+      "cloud_api_support_claimed": false
+    }
   }
 }
