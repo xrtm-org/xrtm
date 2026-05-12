@@ -19,7 +19,7 @@ SUPPORTED_PYTHON = ">=3.11,<3.13"
 SUPPORTED_PYTHON_MIN = (3, 11)
 SUPPORTED_PYTHON_MAX_EXCLUSIVE = (3, 13)
 DEFAULT_RUNS_DIR = Path("runs")
-RELEASED_DEMO_COMMAND = "xrtm demo --provider mock --limit 1 --runs-dir runs"
+RELEASED_START_COMMAND = "xrtm start --runs-dir runs"
 _PACKAGE_IMPORTS = {
     "xrtm": "xrtm.product.pipeline",
     "xrtm-data": "xrtm.data.corpora",
@@ -100,13 +100,13 @@ def _import_check() -> DoctorCheck:
         return DoctorCheck(
             name="Core imports",
             ok=True,
-            detail="Provider-free runtime imports loaded successfully.",
+            detail="Provider-free smoke/baseline runtime imports loaded successfully.",
         )
     return DoctorCheck(
         name="Core imports",
         ok=False,
         detail="Import failures: " + "; ".join(failures),
-        fix="Reinstall or repair the failing package imports before running the default demo.",
+        fix="Reinstall or repair the failing package imports before running the default provider-free smoke/baseline demo.",
     )
 
 
@@ -145,7 +145,7 @@ def _runs_dir_check(runs_dir: Path) -> DoctorCheck:
         name="Default runs dir",
         ok=False,
         detail=f"{display} cannot be created because {parent} is not writable.",
-        fix="Choose a writable working directory before running the provider-free demo path.",
+        fix="Choose a writable working directory before running the provider-free smoke/baseline path.",
     )
 
 
@@ -166,7 +166,7 @@ def _print_package_versions(console: Console, versions: dict[str, str]) -> None:
 
 
 def _print_readiness_checks(console: Console, checks: list[DoctorCheck]) -> None:
-    table = Table(title="Provider-Free Readiness Checks")
+    table = Table(title="Provider-Free Smoke/Baseline Checks")
     table.add_column("Check", style="cyan")
     table.add_column("Status")
     table.add_column("Details")
@@ -180,10 +180,10 @@ def _print_readiness_summary(console: Console, ready: bool) -> None:
     status = "READY" if ready else "NOT READY"
     color = "green" if ready else "red"
     lines = [
-        f"Default provider-free first run: {status}",
-        f"Released next command: {RELEASED_DEMO_COMMAND}",
-        "xrtm doctor verifies package health; the released demo writes the first scored run and report.",
-        "No API keys, cloud provider, or local model server are required for this path.",
+        f"Default provider-free smoke/baseline first run: {status}",
+        f"Released next command: {RELEASED_START_COMMAND}",
+        "xrtm doctor verifies package health; the released guided quickstart writes the first scored run and report.",
+        "No API keys, commercial endpoint, or local model server are required for this path.",
     ]
     console.print(Panel("\n".join(lines), title="Readiness Summary", border_style=color))
 
@@ -191,22 +191,24 @@ def _print_readiness_summary(console: Console, ready: bool) -> None:
 def _print_next_steps(console: Console, ready: bool, checks: list[DoctorCheck]) -> None:
     if ready:
         lines = [
-            f"1. Run {RELEASED_DEMO_COMMAND}",
-            "2. Review run history with xrtm runs list --runs-dir runs",
-            "3. Copy the run id from the demo output or runs list, then inspect it with xrtm runs show <run-id> --runs-dir runs",
-            "4. Confirm artifacts with xrtm artifacts inspect runs/<run-id>",
-            "5. Open/regenerate the report with xrtm report html runs/<run-id>",
-            "6. Browse the same run with xrtm web --runs-dir runs or xrtm tui --runs-dir runs",
-            "7. Only after that, treat local-llm as the optional advanced path.",
+            f"1. Run {RELEASED_START_COMMAND}",
+            "2. Review the newest run with xrtm runs show latest --runs-dir runs",
+            "3. Confirm artifacts with xrtm artifacts inspect --latest --runs-dir runs",
+            "4. Open/regenerate the report with xrtm report html --latest --runs-dir runs",
+            "5. Browse shipped workflows with xrtm workflow list",
+            "6. Inspect the demo workflow with xrtm workflow show demo-provider-free",
+            "7. Browse the same run with xrtm web --runs-dir runs or xrtm tui --runs-dir runs",
+            "8. Make the same workflow repeatable with xrtm profile starter my-local --runs-dir runs",
+            "9. Only after that, treat local-llm as the optional local OpenAI-compatible endpoint path.",
         ]
     else:
         failed_checks = [check for check in checks if not check.ok]
-        lines = ["1. Fix the blocking provider-free checks above."]
+        lines = ["1. Fix the blocking provider-free smoke/baseline checks above."]
         for index, check in enumerate(failed_checks, start=2):
             action = check.fix or check.detail
             lines.append(f"{index}. {check.name}: {action}")
         lines.append(f"{len(failed_checks) + 2}. Rerun xrtm doctor")
-        lines.append(f"{len(failed_checks) + 3}. When doctor shows READY, run {RELEASED_DEMO_COMMAND}")
+        lines.append(f"{len(failed_checks) + 3}. When doctor shows READY, run {RELEASED_START_COMMAND}")
     console.print(Panel("\n".join(lines), title="What to do next", border_style="blue"))
 
 
@@ -215,7 +217,7 @@ def _print_local_llm_panel(console: Console, status: dict) -> None:
     color = "green" if healthy else "yellow"
     readiness = "ready" if healthy else "not ready (optional)"
     lines = [
-        "local-llm is optional and does not affect provider-free readiness.",
+        "local-llm is the released local OpenAI-compatible endpoint profile and does not affect provider-free readiness.",
         f"Status: {readiness}",
         f"Base URL: {status['base_url']}",
         f"Health URL: {status['health_url']}",
@@ -226,8 +228,12 @@ def _print_local_llm_panel(console: Console, status: dict) -> None:
     error = status.get("error")
     if error:
         lines.append(f"Health check error: {error}")
+    lines.append("Coding-agent CLI contracts are a separate integration category and are not checked by xrtm doctor.")
+    lines.append(
+        "If released docs ever claim cloud/API support, Gate 2 release validation must add at least one commercial OpenAI-compatible profile."
+    )
     lines.append("Use xrtm providers doctor or xrtm local-llm status when you are ready for the advanced path.")
-    console.print(Panel("\n".join(lines), title="Optional advanced path: local-llm", border_style=color))
+    console.print(Panel("\n".join(lines), title="Optional advanced path: local OpenAI-compatible endpoint", border_style=color))
 
 
 __all__ = ["DEFAULT_RUNS_DIR", "DoctorCheck", "run_doctor"]

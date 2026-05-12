@@ -29,6 +29,7 @@ from xrtm.cli.presenters import (
     runs_dir_command_arg,
 )
 from xrtm.product.artifacts import ArtifactStore
+from xrtm.product.competition import CompetitionPackRegistry
 from xrtm.product.doctor import run_doctor
 from xrtm.product.history import (
     compare_runs,
@@ -75,6 +76,8 @@ from xrtm.product.validation import (
     run_validation,
 )
 from xrtm.product.web import create_web_server, web_snapshot
+from xrtm.product.workflow_runner import build_demo_workflow_blueprint, run_workflow_blueprint
+from xrtm.product.workflows import DEFAULT_LOCAL_WORKFLOWS_DIR, WorkflowBlueprint, WorkflowRegistry
 from xrtm.version import __version__
 
 console = Console()
@@ -207,6 +210,152 @@ def _prepare_registered_corpus(
     print_prepared_corpus_report(console, report, title=title)
 
 
+def _profile_write_permission_message(profiles_dir: Path, exc: PermissionError) -> str:
+    target = profiles_dir.resolve()
+    return (
+        f"Cannot write profiles under {target}: {exc}. "
+        "Rerun from a writable workspace or pass --profiles-dir /writable/path."
+    )
+
+
+def _workflow_registry(workflows_dir: Path | None = None) -> WorkflowRegistry:
+    if workflows_dir is None:
+        return WorkflowRegistry()
+    root = workflows_dir if workflows_dir.is_absolute() else Path.cwd() / workflows_dir
+    return WorkflowRegistry(local_roots=(root,))
+
+
+def _load_workflow(name: str, *, workflows_dir: Path | None = None) -> WorkflowBlueprint:
+    try:
+        return _workflow_registry(workflows_dir).load(name)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _load_competition_pack(name: str):
+    try:
+        return CompetitionPackRegistry().load(name)
+    except FileNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _execute_workflow(
+    blueprint: WorkflowBlueprint,
+    *,
+    command: str,
+    runs_dir: Path,
+    user: str | None,
+    limit: int | None = None,
+    provider: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    max_tokens: int | None = None,
+    write_report: bool | None = None,
+) -> PipelineResult:
+    try:
+        return run_workflow_blueprint(
+            blueprint,
+            command=command,
+            runs_dir=runs_dir,
+            user=user,
+            limit=limit,
+            provider=provider,
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            max_tokens=max_tokens,
+            write_report=write_report,
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _print_workflow_list() -> None:
+    workflows = _workflow_registry().list_workflows()
+    if not workflows:
+        console.print("[yellow]No workflows found.[/yellow]")
+        return
+    table = Table(title="XRTM Workflows")
+    table.add_column("Workflow", style="cyan")
+    table.add_column("Kind", style="green")
+    table.add_column("Source")
+    table.add_column("Runtime")
+    table.add_column("Questions", justify="right")
+    for workflow in workflows:
+        table.add_row(
+            workflow.name,
+            workflow.workflow_kind,
+            workflow.source,
+            workflow.runtime_provider,
+            str(workflow.question_limit),
+        )
+    console.print(table)
+
+
+def _print_workflow_show(blueprint: WorkflowBlueprint, *, source_path: str | None = None) -> None:
+    summary = Table(title=f"Workflow: {blueprint.name}")
+    summary.add_column("Field", style="cyan")
+    summary.add_column("Value", style="green")
+    summary.add_row("Title", blueprint.title)
+    summary.add_row("Kind", blueprint.workflow_kind)
+    summary.add_row("Description", blueprint.description)
+    summary.add_row("Question source", blueprint.questions.source)
+    summary.add_row("Corpus", blueprint.questions.corpus_id)
+    summary.add_row("Default question limit", str(blueprint.questions.limit))
+    summary.add_row("Runtime provider", blueprint.runtime.provider)
+    summary.add_row("Default max tokens", str(blueprint.runtime.max_tokens))
+    summary.add_row("Graph entry", blueprint.graph.entry)
+    if source_path:
+        summary.add_row("Source", source_path)
+    console.print(summary)
+
+    nodes = Table(title="Workflow graph nodes")
+    nodes.add_column("Node", style="cyan")
+    nodes.add_column("Kind", style="green")
+    nodes.add_column("Runtime")
+    nodes.add_column("Description")
+    for name, node in blueprint.graph.nodes.items():
+        nodes.add_row(name, node.kind, node.runtime or blueprint.runtime.provider, node.description or "")
+    console.print(nodes)
+
+    if blueprint.graph.edges:
+        edges = Table(title="Workflow graph edges")
+        edges.add_column("From", style="cyan")
+        edges.add_column("To", style="green")
+        for edge in blueprint.graph.edges:
+            edges.add_row(edge.from_node, edge.to_node)
+        console.print(edges)
+
+    if blueprint.graph.parallel_groups:
+        groups = Table(title="Parallel groups")
+        groups.add_column("Group", style="cyan")
+        groups.add_column("Members", style="green")
+        for group_name, group in blueprint.graph.parallel_groups.items():
+            groups.add_row(group_name, ", ".join(group.nodes))
+        console.print(groups)
+
+
+def _print_workflow_explain(name: str, *, workflows_dir: Path | None = None) -> None:
+    try:
+        explanation = _workflow_registry(workflows_dir).explain(name)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    console.print(Panel(explanation["summary"], title=f"Workflow explanation: {name}", border_style="green"))
+    console.print(Panel("\n".join(explanation["runtime_requirements"]), title="Runtime requirements", border_style="blue"))
+    console.print(Panel("\n".join(explanation["expected_artifacts"]), title="Expected artifacts", border_style="magenta"))
+
+    nodes = Table(title="Plain-language node roles")
+    nodes.add_column("Node", style="cyan")
+    nodes.add_column("Kind", style="green")
+    nodes.add_column("Runtime")
+    nodes.add_column("Role")
+    for node in explanation["nodes"]:
+        nodes.add_row(node["name"], node["kind"], node["runtime"], node["summary"])
+    console.print(nodes)
+
+
 def _benchmark_arm_options(
     *,
     label: str,
@@ -299,23 +448,22 @@ def start(limit: int, runs_dir: Path, user: str | None) -> None:
             "\n".join(
                 [
                     "Readiness checks passed.",
-                    "Running the deterministic mock-provider demo now.",
+                    "Running the released install/demo workflow now.",
                     "This first run stays fully local and offline by default.",
+                    "Use xrtm workflow list after this run to browse shipped workflows.",
                 ]
             ),
             title="Guided quickstart",
             border_style="blue",
         )
     )
-    result = _execute_pipeline(
-        PipelineOptions(
-            provider="mock",
-            limit=limit,
-            runs_dir=runs_dir,
-            write_report=True,
-            command="xrtm start",
-            user=user,
-        )
+    result = _execute_workflow(
+        _load_workflow("demo-provider-free"),
+        command="xrtm start",
+        runs_dir=runs_dir,
+        user=user,
+        limit=limit,
+        write_report=True,
     )
     print_pipeline_result(console, result, title="XRTM Quickstart")
     print_quickstart_summary(console, result, runs_dir=runs_dir)
@@ -344,20 +492,295 @@ def demo(
 ) -> None:
     """Run a bounded local product demo over the real binary corpus."""
 
-    _run_pipeline_command(
-        PipelineOptions(
+    result = _execute_workflow(
+        build_demo_workflow_blueprint(
+            name="demo-provider-free" if provider == "mock" else "demo-local-llm",
+            title="XRTM Demo",
+            description="Bounded product demo over the released real-binary corpus.",
             provider=provider,
             limit=limit,
-            runs_dir=runs_dir,
-            base_url=base_url,
-            model=model,
-            api_key=api_key,
             max_tokens=max_tokens,
-            write_report=not no_report,
-            command="xrtm demo",
-            user=user,
-        )
+        ),
+        command="xrtm demo",
+        runs_dir=runs_dir,
+        user=user,
+        limit=limit,
+        provider=provider,
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        write_report=not no_report,
     )
+    print_pipeline_result(console, result, title="XRTM Demo")
+    print_post_run_summary(
+        console,
+        result,
+        runs_dir=runs_dir,
+        success_title="Run complete",
+        success_label="xrtm demo completed",
+        what_succeeded=pipeline_success_details(write_report=not no_report),
+        write_report=not no_report,
+    )
+
+
+@cli.group("workflow")
+def workflow_group() -> None:
+    """List, inspect, validate, and run named workflow blueprints."""
+
+
+@workflow_group.command("list")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_list(workflows_dir: Path) -> None:
+    """List shipped and local workflows."""
+
+    workflows = _workflow_registry(workflows_dir).list_workflows()
+    if not workflows:
+        console.print("[yellow]No workflows found.[/yellow]")
+        return
+    table = Table(title="XRTM Workflows")
+    table.add_column("Workflow", style="cyan")
+    table.add_column("Kind", style="green")
+    table.add_column("Source")
+    table.add_column("Runtime")
+    table.add_column("Questions", justify="right")
+    for workflow in workflows:
+        table.add_row(
+            workflow.name,
+            workflow.workflow_kind,
+            workflow.source,
+            workflow.runtime_provider,
+            str(workflow.question_limit),
+        )
+    console.print(table)
+
+
+@workflow_group.command("show")
+@click.argument("name")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_show(name: str, workflows_dir: Path) -> None:
+    """Show one workflow blueprint in product terms."""
+
+    blueprint = _load_workflow(name, workflows_dir=workflows_dir)
+    summary = next((item for item in _workflow_registry(workflows_dir).list_workflows() if item.name == name), None)
+    _print_workflow_show(blueprint, source_path=summary.path if summary is not None else None)
+
+
+@workflow_group.command("validate")
+@click.argument("name")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_validate(name: str, workflows_dir: Path) -> None:
+    """Validate one workflow blueprint."""
+
+    try:
+        blueprint = _workflow_registry(workflows_dir).validate(name)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print(f"[green]Workflow valid:[/green] {blueprint.name} ({blueprint.schema_version})")
+
+
+@workflow_group.command("clone")
+@click.argument("source_name")
+@click.argument("target_name")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+@click.option("--overwrite", is_flag=True, help="Replace an existing cloned workflow with the same name.")
+def workflow_clone(source_name: str, target_name: str, workflows_dir: Path, overwrite: bool) -> None:
+    """Clone a workflow into a local editable blueprint."""
+
+    destination_root = workflows_dir if workflows_dir.is_absolute() else Path.cwd() / workflows_dir
+    try:
+        path = _workflow_registry(workflows_dir).clone(
+            source_name,
+            target_name,
+            destination_root=destination_root,
+            overwrite=overwrite,
+        )
+    except (FileExistsError, FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print(f"[green]Workflow cloned:[/green] {source_name} -> {path}")
+    console.print(f"[blue]Next:[/blue] xrtm workflow explain {target_name} --workflows-dir {shell_quote(workflows_dir.as_posix())}")
+
+
+@workflow_group.command("explain")
+@click.argument("name")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_explain(name: str, workflows_dir: Path) -> None:
+    """Explain one workflow in plain product terms."""
+
+    _print_workflow_explain(name, workflows_dir=workflows_dir)
+
+
+@workflow_group.command("run")
+@click.argument("name")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+@click.option("--limit", type=int, default=None, help="Override the workflow's default question limit.")
+@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default=None, help="Override the workflow runtime provider.")
+@click.option("--base-url", default=None, help="Override the workflow's OpenAI-compatible endpoint URL.")
+@click.option("--model", default=None, help="Override the workflow model id.")
+@click.option("--api-key", default=None, help="Override the workflow API key.")
+@click.option("--max-tokens", type=int, default=None, help="Override the workflow max token budget.")
+@click.option("--no-report", is_flag=True, help="Skip static report.html generation.")
+@click.option("--user", default=None, help="User or analyst attribution for this run.")
+def workflow_run(
+    name: str,
+    workflows_dir: Path,
+    runs_dir: Path,
+    limit: int | None,
+    provider: str | None,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    max_tokens: int | None,
+    no_report: bool,
+    user: str | None,
+) -> None:
+    """Run a named workflow blueprint."""
+
+    blueprint = _load_workflow(name, workflows_dir=workflows_dir)
+    result = _execute_workflow(
+        blueprint,
+        command=f"xrtm workflow run {name}",
+        runs_dir=runs_dir,
+        user=user,
+        limit=limit,
+        provider=provider,
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        write_report=not no_report,
+    )
+    print_pipeline_result(console, result, title=f"Workflow: {blueprint.title}")
+    print_post_run_summary(
+        console,
+        result,
+        runs_dir=runs_dir,
+        success_title="Workflow run complete",
+        success_label=f"xrtm workflow run {name} completed",
+        what_succeeded=pipeline_success_details(write_report=not no_report),
+        write_report=not no_report,
+    )
+
+
+@cli.group("competition")
+def competition_group() -> None:
+    """List and dry-run live competition packs."""
+
+
+@competition_group.command("list")
+def competition_list() -> None:
+    """List builtin competition dry-run packs."""
+
+    packs = CompetitionPackRegistry().list_packs()
+    if not packs:
+        console.print("[yellow]No competition packs found.[/yellow]")
+        return
+    table = Table(title="XRTM Competition Packs")
+    table.add_column("Pack", style="cyan")
+    table.add_column("Workflow", style="green")
+    table.add_column("Mode")
+    table.add_column("Artifact")
+    for pack in packs:
+        table.add_row(pack.name, pack.workflow_name, "dry-run" if pack.dry_run_only else "submit-ready", pack.submission_artifact)
+    console.print(table)
+
+
+@competition_group.command("dry-run")
+@click.argument("name")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+@click.option("--limit", type=int, default=None, help="Override the workflow's default question limit.")
+@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default=None, help="Override the workflow runtime provider.")
+@click.option("--base-url", default=None, help="Override the workflow's OpenAI-compatible endpoint URL.")
+@click.option("--model", default=None, help="Override the workflow model id.")
+@click.option("--api-key", default=None, help="Override the workflow API key.")
+@click.option("--max-tokens", type=int, default=None, help="Override the workflow max token budget.")
+@click.option("--no-report", is_flag=True, help="Skip static report.html generation.")
+@click.option("--user", default=None, help="User or analyst attribution for this run.")
+def competition_dry_run(
+    name: str,
+    workflows_dir: Path,
+    runs_dir: Path,
+    limit: int | None,
+    provider: str | None,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    max_tokens: int | None,
+    no_report: bool,
+    user: str | None,
+) -> None:
+    """Run a competition workflow in dry-run mode and export a review bundle."""
+
+    pack = _load_competition_pack(name)
+    blueprint = _load_workflow(pack.workflow_name, workflows_dir=workflows_dir)
+    result = _execute_workflow(
+        blueprint,
+        command=f"xrtm competition dry-run {name}",
+        runs_dir=runs_dir,
+        user=user,
+        limit=limit,
+        provider=provider,
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        write_report=not no_report,
+    )
+    print_pipeline_result(console, result, title=f"Competition dry-run: {pack.title}")
+    print_post_run_summary(
+        console,
+        result,
+        runs_dir=runs_dir,
+        success_title="Competition dry-run complete",
+        success_label=f"xrtm competition dry-run {name} completed",
+        what_succeeded=pipeline_success_details(write_report=not no_report),
+        write_report=not no_report,
+    )
+    bundle_path = result.run.artifacts.get(pack.submission_artifact)
+    lines = [
+        f"Competition pack: {pack.title}",
+        f"Workflow: {pack.workflow_name}",
+        f"Dry-run bundle: {bundle_path or 'not written'}",
+        "Review the bundle manually; no network submission was attempted.",
+    ]
+    console.print(Panel("\n".join(lines), title="Competition dry-run bundle", border_style="blue"))
 
 
 @cli.group("profile")
@@ -405,6 +828,8 @@ def profile_create(
             user=user,
         )
         path = ProfileStore(profiles_dir).create(profile, overwrite=overwrite)
+    except PermissionError as exc:
+        raise click.ClickException(_profile_write_permission_message(profiles_dir, exc)) from exc
     except (FileExistsError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     profiles_dir_arg = profiles_dir_command_arg(profiles_dir)
@@ -430,6 +855,8 @@ def profile_starter(name: str, profiles_dir: Path, runs_dir: Path, user: str | N
     try:
         runs_dir.mkdir(parents=True, exist_ok=True)
         path = ProfileStore(profiles_dir).create(starter_profile(name, runs_dir=runs_dir, user=user), overwrite=overwrite)
+    except PermissionError as exc:
+        raise click.ClickException(_profile_write_permission_message(profiles_dir, exc)) from exc
     except (FileExistsError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 

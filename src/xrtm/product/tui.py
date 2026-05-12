@@ -50,6 +50,7 @@ def build_tui_view(*, runs_dir: Path) -> Layout:
 def _runs_panel(runs_dir: Path) -> Panel:
     table = Table(title="Runs")
     table.add_column("Run", style="cyan")
+    table.add_column("Workflow", style="magenta")
     table.add_column("Status", style="green")
     table.add_column("Provider")
     table.add_column("Forecasts", justify="right")
@@ -60,6 +61,7 @@ def _runs_panel(runs_dir: Path) -> Panel:
         summary = run.get("summary", {})
         table.add_row(
             str(run.get("run_id")),
+            _workflow_summary(run),
             str(run.get("status")),
             str(run.get("provider")),
             str(summary.get("forecast_count", "")),
@@ -75,6 +77,20 @@ def _run_command_summary(run: dict[str, Any]) -> str:
     if isinstance(summary, dict) and summary:
         return f"{run.get('command')} ({summary.get('forecast_count', 0)} forecasts)"
     return str(run.get("command"))
+
+
+def _workflow_summary(run: dict[str, Any]) -> str:
+    workflow = run.get("workflow", {})
+    if not isinstance(workflow, dict) or not workflow:
+        return "n/a"
+    name = workflow.get("name") or workflow.get("title") or "workflow"
+    kind = workflow.get("kind")
+    steps = workflow.get("graph_step_count")
+    if kind and steps:
+        return f"{name} [{kind}, {steps} steps]"
+    if kind:
+        return f"{name} [{kind}]"
+    return str(name)
 
 
 def _side_panel(runs_dir: Path) -> Panel:
@@ -94,6 +110,7 @@ def _side_panel(runs_dir: Path) -> Panel:
             border_style="green" if local_status["healthy"] else "red",
         ),
         Panel(latest_monitor, title="Monitoring"),
+        Panel(_latest_workflow_summary(runs_dir), title="Latest workflow"),
     )
     return Panel(body, title="Status")
 
@@ -116,6 +133,25 @@ def _latest_monitor_summary(runs_dir: Path, monitors: list[dict[str, Any]]) -> s
             f"Watches: {len(monitor.get('watches', []))}",
             f"Updates: {updated}",
             f"Warnings: {latest.get('warning_count', 0) or 0}",
+        ]
+    )
+
+
+def _latest_workflow_summary(runs_dir: Path) -> str:
+    runs = list_run_records(runs_dir)
+    if not runs:
+        return "No workflow runs yet."
+    latest = runs[0]
+    workflow = latest.get("workflow", {})
+    if not isinstance(workflow, dict) or not workflow:
+        return "Latest run has no blueprint metadata."
+    return "\n".join(
+        [
+            f"Name: {workflow.get('name')}",
+            f"Kind: {workflow.get('kind')}",
+            f"Entry: {workflow.get('entry')}",
+            f"Nodes: {workflow.get('node_count')}",
+            f"Graph steps: {workflow.get('graph_step_count')}",
         ]
     )
 
