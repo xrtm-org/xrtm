@@ -1,7 +1,7 @@
 # XRTM Operator Runbook
 
 This runbook covers the supported operating path for the published top-level
-`xrtm` product shell once the first provider-free demo from
+`xrtm` product shell once the first provider-free smoke/baseline demo from
 `getting-started.md` is already working.
 
 For merge, cross-repo coordination, and release publication gates, see the
@@ -23,9 +23,15 @@ aliases, and CSV export are now part of the published surface.
 
 Maintainer note: when this page graduates new published behavior, release
 readiness also requires provider-free clean-room acceptance from release
-artifacts. Local-LLM-related promotions additionally need local-LLM clean-room
-evidence when the change touches local-model execution and compatible runner
-infrastructure is available.
+artifacts. If this page advertises cloud/API support, release validation must
+also include at least one commercial OpenAI-compatible profile. Local-LLM-related
+promotions additionally need local-LLM clean-room evidence when the change
+touches local-model execution and compatible runner infrastructure is available.
+
+XRTM's first-class integration categories are **OpenAI-compatible endpoints**
+and **coding-agent CLI contracts**. Local and commercial deployments are
+profiles inside those categories. The built-in mock path in this runbook is a
+provider-free smoke/baseline mode, not a third shipped provider family.
 
 ## Supported environment
 
@@ -59,12 +65,43 @@ xrtm doctor
 After the first proof from `getting-started.md`, XRTM expands through four
 published workflows:
 
-1. **Provider-free first success** via `xrtm start`
-2. **Benchmark and performance workflow** via `xrtm perf run`
+1. **Provider-free smoke/baseline first success** via `xrtm start` or `xrtm workflow run demo-provider-free`
+2. **Benchmark and performance workflow** via `xrtm perf run` plus the named benchmark workflow surface via `xrtm workflow show flagship-benchmark`
 3. **Monitoring, history, and export workflow** via profiles, monitor commands, compare/export, and HTML reports
-4. **Local-LLM advanced workflow** via `xrtm local-llm status` and the bounded local-LLM demo command
+4. **OpenAI-compatible endpoint advanced workflow (released local profile)** via `xrtm local-llm status` and the bounded local-LLM demo command
 
 This runbook primarily sharpens workflows 2-4.
+
+Use [glossary.md](glossary.md) as the source of truth for workflow, profile,
+run, runtime, blueprint, graph, node, and agent/tool terminology.
+
+## Release validation gates and evidence
+
+Treat release readiness as three explicit layers:
+
+1. **Gate 1:** repo checks on every PR and release (`ruff`, `mypy`, `pytest`, build, release-claim check, wheel smoke)
+2. **Gate 2A:** provider-free disposable clean-room proof for the released newcomer path
+3. **Gate 2B:** local OpenAI-compatible clean-room proof for the released local profile when the change touches local-model execution, onboarding, Docker, provider wiring, benchmarks, or release docs
+
+For the current released local profile, Gate 2B means a local Qwen 3.6-style
+endpoint behind llama.cpp plus evidence that the benchmark window actually used
+the GPU.
+
+The canonical evidence bundle is the acceptance-study directory produced by the
+clean-room scripts. For local-LLM validation, expect at least:
+
+- `summary.json`
+- `metadata/gpu-telemetry.jsonl`
+- `metadata/gpu-telemetry-summary.json`
+- `metadata/benchmark-window-start.json`
+- `metadata/benchmark-window-end.json`
+- benchmark output JSON files
+- canonical run artifacts and `report.html`
+- competition dry-run bundle
+
+Release-profile local-LLM validation currently requires at least a 30-minute
+benchmark window plus repeated non-zero GPU activity and non-trivial VRAM
+residency.
 
 ## Workflow profiles
 
@@ -78,19 +115,22 @@ xrtm profile show local-mock
 xrtm run profile local-mock
 ```
 
-Profiles are stored under `.xrtm/profiles` by default. Use `--profiles-dir`
-when you want project-specific or test-specific profile storage.
+Profiles are stored under `.xrtm/profiles` by default. Run profile commands
+from a writable workspace, or pass `--profiles-dir /writable/path` when you
+want project-specific or test-specific profile storage.
 
 ## Provider-free smoke
 
-Use provider-free mode for deterministic validation and CI-safe smoke tests:
+Use provider-free mode as the deterministic smoke/baseline lane for validation
+and CI-safe smoke tests:
 
 ```bash
 xrtm start --runs-dir runs
 xrtm web --runs-dir runs --smoke
 ```
 
-Provider-free mode does not call hosted APIs.
+Provider-free mode does not call hosted APIs and should be treated as testing
+mode, not as a separate runtime category.
 
 ## Canonical artifacts
 
@@ -184,19 +224,31 @@ run ids, durations, forecast counts, Brier scores, and budget status.
 
 That makes the performance harness the honest default baseline for later
 experiments. Stronger "improved over time" claims belong to deeper paths where
-you actually change provider/model/runtime behavior, such as local-LLM or the
+you actually change endpoint/model/runtime behavior, such as local-LLM or the
 calibration/replay tooling in the wider package stack.
 
 ## Optional later: local-LLM mode
 
 ⚠️ **Prerequisites**: Run this workflow only after completing local-LLM server
-setup and health verification.
+setup and health verification for the released local OpenAI-compatible endpoint
+profile.
 
 ```bash
 export XRTM_LOCAL_LLM_BASE_URL=http://localhost:8080/v1
 xrtm local-llm status
 xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local
 ```
+
+Maintainer clean-room lane:
+
+```bash
+python scripts/docker_local_llm_acceptance.py host --validation-profile release --llama-model-file Qwen3.6-32B-Q4_K_M.gguf
+```
+
+That disposable Docker lane now expands beyond the bounded demo to include the
+flagship benchmark workflow, benchmark compare/stress outputs, a competition
+dry-run bundle, and host-side `nvidia-smi` telemetry summarized back into the
+acceptance evidence.
 
 ## Still intentionally unreleased
 
