@@ -202,7 +202,7 @@ jobs:
         run: |
           python -m venv /tmp/xrtm-wheel-smoke
           uv pip install --python /tmp/xrtm-wheel-smoke/bin/python -e ./data -e ./eval -e ./forecast -e ./train dist/xrtm-*.whl
-          /tmp/xrtm-wheel-smoke/bin/xrtm --help
+          /tmp/xrtm-wheel-smoke/bin/python scripts/check_installed_cli_surface.py --xrtm-bin /tmp/xrtm-wheel-smoke/bin/xrtm
           /tmp/xrtm-wheel-smoke/bin/xrtm doctor
           /tmp/xrtm-wheel-smoke/bin/xrtm web --smoke
 
@@ -313,6 +313,7 @@ jobs:
           import xrtm.train
           print("released stack imports ok")
           PY
+          "$release_smoke_bin"/python scripts/check_installed_cli_surface.py --xrtm-bin "$release_smoke_bin"/xrtm
           "$release_smoke_bin"/xrtm doctor
           "$release_smoke_bin"/xrtm start --runs-dir /tmp/xrtm-release-smoke
           "$release_smoke_bin"/xrtm runs show latest --runs-dir /tmp/xrtm-release-smoke

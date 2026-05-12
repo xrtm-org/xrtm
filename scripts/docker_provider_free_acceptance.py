@@ -339,6 +339,20 @@ def run_release_claims(repo_root: Path, env: dict[str, str], output_dir: Path) -
     )
 
 
+def run_cli_surface_check(repo_root: Path, env: dict[str, str], output_dir: Path) -> None:
+    venv_python = venv_python_from_env(env)
+    run_logged(
+        [
+            str(venv_python),
+            str(repo_root / "scripts" / "check_installed_cli_surface.py"),
+            "--xrtm-bin",
+            str(venv_python.parent / "xrtm"),
+        ],
+        log_path=output_dir / "cli-surface.log",
+        env=env,
+    )
+
+
 def venv_python_from_env(env: dict[str, str]) -> Path:
     first = env["PATH"].split(":", 1)[0]
     return Path(first) / "python"
@@ -751,6 +765,7 @@ def run_product_shell(
         env=base_env,
     )
     write_versions(venv_python, output_dir / "installed-versions.txt", env)
+    run_cli_surface_check(xrtm_repo_root_path, env, output_dir)
     run_release_claims(xrtm_repo_root_path, env, output_dir)
     summary = {
         "first_success": run_first_success(env, artifacts_dir),
