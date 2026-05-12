@@ -1,0 +1,79 @@
+{
+  "schema_version": "xrtm.workflow.v1",
+  "name": "demo-provider-free",
+  "title": "XRTM install and provider-free demo",
+  "description": "Zero-setup workflow for installation proof, clean-room smoke, and deterministic baseline runs.",
+  "workflow_kind": "demo",
+  "questions": {
+    "source": "real-binary-corpus",
+    "corpus_id": "xrtm-real-binary-v1",
+    "limit": 2
+  },
+  "runtime": {
+    "provider": "mock",
+    "max_tokens": 768
+  },
+  "graph": {
+    "entry": "load_questions",
+    "nodes": {
+      "load_questions": {
+        "kind": "tool",
+        "implementation": "xrtm.product.workflow_nodes.load_questions_node",
+        "description": "Load the released real-binary question subset."
+      },
+      "forecast": {
+        "kind": "model",
+        "implementation": "xrtm.product.workflow_nodes.forecast_node",
+        "runtime": "provider-free-demo",
+        "description": "Run the deterministic provider-free forecasting compatibility path."
+      },
+      "score": {
+        "kind": "scorer",
+        "implementation": "xrtm.product.workflow_nodes.score_node",
+        "description": "Score the resulting forecasts."
+      },
+      "backtest": {
+        "kind": "model",
+        "implementation": "xrtm.product.workflow_nodes.backtest_node",
+        "description": "Write the backtest and training summary."
+      },
+      "report": {
+        "kind": "tool",
+        "implementation": "xrtm.product.workflow_nodes.report_node",
+        "description": "Render the HTML report."
+      }
+    },
+    "edges": [
+      {
+        "from_node": "load_questions",
+        "to_node": "forecast"
+      },
+      {
+        "from_node": "forecast",
+        "to_node": "score"
+      },
+      {
+        "from_node": "score",
+        "to_node": "backtest"
+      },
+      {
+        "from_node": "backtest",
+        "to_node": "report"
+      }
+    ]
+  },
+  "artifacts": {
+    "write_report": true,
+    "write_blueprint_copy": true,
+    "write_graph_trace": true
+  },
+  "scoring": {
+    "write_eval": true,
+    "write_train_backtest": true
+  },
+  "tags": [
+    "released",
+    "provider-free",
+    "demo"
+  ]
+}
