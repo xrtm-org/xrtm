@@ -44,7 +44,7 @@ GPU-backed local OpenAI-compatible proof for the released local profile. See
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.3.2
+pip install xrtm==0.3.3
 ```
 
 This install brings in the full released forecasting stack, so the first
