@@ -74,6 +74,8 @@ def list_monitor_records(runs_dir: Path) -> list[dict[str, Any]]:
 def read_run_detail(run_dir: Path) -> dict[str, Any]:
     """Read the shared run-detail payload used across product surfaces."""
 
+    blueprint = _read_optional_json(run_dir / "blueprint.json")
+    graph_trace = _read_optional_jsonl(run_dir / "graph_trace.jsonl")
     detail: dict[str, Any] = {
         "run": ArtifactStore.read_run(run_dir),
         "summary": _read_optional_json(run_dir / "run_summary.json"),
@@ -83,12 +85,20 @@ def read_run_detail(run_dir: Path) -> dict[str, Any]:
         "eval": _read_optional_json(run_dir / "eval.json"),
         "train": _read_optional_json(run_dir / "train.json"),
         "provider": _read_optional_json(run_dir / "provider.json"),
+        "blueprint": blueprint,
+        "graph_trace": graph_trace,
     }
+    workflow = _workflow_summary(blueprint, graph_trace)
+    if workflow:
+        detail["workflow"] = workflow
     monitor_path = run_dir / "monitor.json"
     if monitor_path.exists():
         monitor = _read_optional_json(monitor_path)
         if is_monitor_record(detail["run"], monitor):
             detail["monitor"] = monitor
+    competition_submission_path = run_dir / "competition_submission.json"
+    if competition_submission_path.exists():
+        detail["competition_submission"] = _read_optional_json(competition_submission_path)
     return detail
 
 
@@ -104,6 +114,12 @@ def _read_run_record(run_dir: Path) -> dict[str, Any] | None:
     summary = _read_optional_json(run_dir / "run_summary.json")
     run["summary"] = summary or run.get("summary", {})
     run["run_dir"] = str(run_dir)
+    workflow = _workflow_summary(
+        _read_optional_json(run_dir / "blueprint.json"),
+        _read_optional_jsonl(run_dir / "graph_trace.jsonl"),
+    )
+    if workflow:
+        run["workflow"] = workflow
     return run
 
 
@@ -120,6 +136,7 @@ def _read_optional_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _search_text(run: dict[str, Any]) -> str:
+    workflow = run.get("workflow", {})
     values = [
         run.get("run_id"),
         run.get("status"),
@@ -127,8 +144,28 @@ def _search_text(run: dict[str, Any]) -> str:
         run.get("command"),
         run.get("run_dir"),
         run.get("user"),
+        workflow.get("name") if isinstance(workflow, dict) else None,
+        workflow.get("title") if isinstance(workflow, dict) else None,
+        workflow.get("kind") if isinstance(workflow, dict) else None,
     ]
     return " ".join(str(value) for value in values if value is not None)
+
+
+def _workflow_summary(blueprint: dict[str, Any], graph_trace: list[dict[str, Any]]) -> dict[str, Any]:
+    if not blueprint:
+        return {}
+    graph = blueprint.get("graph", {})
+    nodes = graph.get("nodes", {})
+    parallel_groups = graph.get("parallel_groups", {})
+    return {
+        "name": blueprint.get("name"),
+        "title": blueprint.get("title"),
+        "kind": blueprint.get("workflow_kind"),
+        "entry": graph.get("entry"),
+        "node_count": len(nodes) if isinstance(nodes, dict) else 0,
+        "parallel_group_count": len(parallel_groups) if isinstance(parallel_groups, dict) else 0,
+        "graph_step_count": len(graph_trace),
+    }
 
 
 def is_monitor_record(run: dict[str, Any], monitor: dict[str, Any]) -> bool:

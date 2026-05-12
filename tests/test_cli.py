@@ -19,11 +19,11 @@ from xrtm.product.web import create_web_server, web_snapshot
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _PACKAGE_VERSIONS = {
-    "xrtm": "0.3.2",
+    "xrtm": "0.3.1",
     "xrtm-data": "0.2.6",
-    "xrtm-eval": "0.2.6",
-    "xrtm-forecast": "0.6.9",
-    "xrtm-train": "0.2.7",
+    "xrtm-eval": "0.2.5",
+    "xrtm-forecast": "0.6.7",
+    "xrtm-train": "0.2.6",
 }
 
 
@@ -108,6 +108,7 @@ def test_help_exposes_product_commands() -> None:
     assert "artifacts" in result.output
     assert "benchmark" in result.output
     assert "profile" in result.output
+    assert "workflow" in result.output
     assert "runs" in result.output
     assert "perf" in result.output
     assert "validate" in result.output
@@ -137,6 +138,8 @@ def test_provider_free_demo_writes_canonical_artifacts() -> None:
             "events.jsonl",
             "run_summary.json",
             "report.html",
+            "blueprint.json",
+            "graph_trace.jsonl",
         ]:
             assert (run_dir / name).exists(), name
         assert not (run_dir / "monitor.json").exists()
@@ -178,9 +181,11 @@ def test_start_guides_newcomers_through_provider_free_first_run() -> None:
         assert result.exit_code == 0, output
         run_dir = next(Path("runs").iterdir())
         run_metadata = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+        blueprint = json.loads((run_dir / "blueprint.json").read_text(encoding="utf-8"))
         assert run_metadata["command"] == "xrtm start"
         assert "Readiness checks passed." in output
-        assert "Running the deterministic mock-provider demo now." in output
+        assert "Running the released install/demo workflow now." in output
+        assert "Use xrtm workflow list after this run to browse shipped workflows." in output
         assert "Succeeded: guided provider-free quickstart completed." in output
         assert "What just succeeded:" in output
         for phrase in ["readiness checks", "deterministic forecasts", "scoring", "backtest", "HTML report write"]:
@@ -200,10 +205,14 @@ def test_start_guides_newcomers_through_provider_free_first_run() -> None:
         assert "xrtm web --runs-dir runs" in output
         assert "xrtm tui --runs-dir runs" in output
         assert "Official proof-point workflows" in output
-        assert "Provider-free first success" in output
+        assert "Install/demo proof" in output
+        assert "xrtm workflow list" in output
+        assert "xrtm workflow show demo-provider-free" in output
+        assert "xrtm workflow run demo-provider-free" in output
         assert "Benchmark and performance workflow" in output
+        assert "Shipped benchmark workflow" in output
         assert "Monitoring, history, and report workflow" in output
-        assert "Local-LLM advanced workflow" in output
+        assert "OpenAI-compatible endpoint advanced workflow" in output
         for phrase in ["provider-free-smoke", "performance.json", "xrtm runs show", "xrtm artifacts inspect"]:
             assert phrase in output
         for phrase in ["xrtm profile starter my-local", "xrtm run profile my-local"]:
@@ -219,6 +228,7 @@ def test_start_guides_newcomers_through_provider_free_first_run() -> None:
             assert phrase in output
         assert "xrtm local-llm status" in output
         assert "docs/python-api-reference.md" in output
+        assert blueprint["name"] == "demo-provider-free"
 
 
 def test_demo_prints_run_success_proof_and_next_commands() -> None:
@@ -247,6 +257,168 @@ def test_demo_prints_run_success_proof_and_next_commands() -> None:
         assert f"Open/regenerate the report: xrtm report html {run_dir}" in output
         assert "xrtm web --runs-dir runs" in output
         assert "xrtm tui --runs-dir runs" in output
+
+
+def test_workflow_list_show_and_run_demo_provider_free() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        listed = runner.invoke(cli, ["workflow", "list"])
+        shown = runner.invoke(cli, ["workflow", "show", "demo-provider-free"])
+        validated = runner.invoke(cli, ["workflow", "validate", "demo-provider-free"])
+        run = runner.invoke(cli, ["workflow", "run", "demo-provider-free", "--runs-dir", "runs"])
+
+        assert listed.exit_code == 0, listed.output
+        assert "demo-provider-free" in _strip_ansi(listed.output)
+        assert "flagship-benchmark" in _strip_ansi(listed.output)
+
+        shown_output = _strip_ansi(shown.output)
+        assert shown.exit_code == 0, shown_output
+        assert "Workflow: demo-provider-free" in shown_output
+        assert "Workflow graph nodes" in shown_output
+        assert "forecast" in shown_output
+
+        assert validated.exit_code == 0, validated.output
+        assert "Workflow valid: demo-provider-free (xrtm.workflow.v1)" in _strip_ansi(validated.output)
+
+        run_output = _strip_ansi(run.output)
+        assert run.exit_code == 0, run_output
+        run_dir = next(Path("runs").iterdir())
+        assert "Workflow: XRTM install and provider-free demo" in run_output
+        assert "Succeeded: xrtm workflow run demo-provider-free completed." in run_output
+        assert (run_dir / "blueprint.json").exists()
+        assert (run_dir / "graph_trace.jsonl").exists()
+        blueprint = json.loads((run_dir / "blueprint.json").read_text(encoding="utf-8"))
+        trace_lines = (run_dir / "graph_trace.jsonl").read_text(encoding="utf-8").splitlines()
+        assert blueprint["name"] == "demo-provider-free"
+        assert any('"node": "forecast"' in line for line in trace_lines)
+
+
+def test_flagship_benchmark_workflow_runs_in_provider_free_fallback_mode() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        shown = runner.invoke(cli, ["workflow", "show", "flagship-benchmark"])
+        run = runner.invoke(cli, ["workflow", "run", "flagship-benchmark", "--runs-dir", "runs-benchmark", "--provider", "mock"])
+
+        shown_output = _strip_ansi(shown.output)
+        assert shown.exit_code == 0, shown_output
+        assert "Workflow: flagship-benchmark" in shown_output
+        assert "aggregate_candidates" in shown_output
+        assert "runtime_router" in shown_output
+
+        run_output = _strip_ansi(run.output)
+        assert run.exit_code == 0, run_output
+        assert "Workflow: XRTM flagship offline benchmark workflow" in run_output
+        run_dir = next(Path("runs-benchmark").iterdir())
+        blueprint = json.loads((run_dir / "blueprint.json").read_text(encoding="utf-8"))
+        trace_lines = (run_dir / "graph_trace.jsonl").read_text(encoding="utf-8").splitlines()
+        assert blueprint["name"] == "flagship-benchmark"
+        assert "fallback_fanout" in json.dumps(blueprint["graph"])
+        assert any('"node": "aggregate_candidates"' in line for line in trace_lines)
+        assert any('"node": "provider_free_control"' in line for line in trace_lines)
+        assert any('"node": "time_series_baseline"' in line for line in trace_lines)
+
+
+def test_workflow_clone_explain_validate_and_compare_customized_runs() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        cloned = runner.invoke(
+            cli,
+            ["workflow", "clone", "flagship-benchmark", "my-workflow", "--workflows-dir", "workflows"],
+        )
+        assert cloned.exit_code == 0, cloned.output
+        workflow_path = Path("workflows/my-workflow.json")
+        assert workflow_path.exists()
+
+        explain = runner.invoke(cli, ["workflow", "explain", "my-workflow", "--workflows-dir", "workflows"])
+        explain_output = _strip_ansi(explain.output)
+        assert explain.exit_code == 0, explain_output
+        assert "Runtime requirements" in explain_output
+        assert "Expected artifacts" in explain_output
+
+        payload = json.loads(workflow_path.read_text(encoding="utf-8"))
+        payload["questions"]["limit"] = 1
+        payload["graph"]["nodes"]["aggregate_candidates"]["config"]["weights"] = {
+            "provider_free_control": 1.0,
+            "time_series_baseline": 0.0,
+        }
+        workflow_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        first_validate = runner.invoke(cli, ["workflow", "validate", "my-workflow", "--workflows-dir", "workflows"])
+        assert first_validate.exit_code == 0, first_validate.output
+        first_run = runner.invoke(
+            cli,
+            ["workflow", "run", "my-workflow", "--workflows-dir", "workflows", "--runs-dir", "runs", "--provider", "mock"],
+        )
+        assert first_run.exit_code == 0, first_run.output
+
+        payload["graph"]["nodes"]["aggregate_candidates"]["config"]["weights"] = {
+            "provider_free_control": 0.0,
+            "time_series_baseline": 1.0,
+        }
+        workflow_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        second_validate = runner.invoke(cli, ["workflow", "validate", "my-workflow", "--workflows-dir", "workflows"])
+        assert second_validate.exit_code == 0, second_validate.output
+        second_run = runner.invoke(
+            cli,
+            ["workflow", "run", "my-workflow", "--workflows-dir", "workflows", "--runs-dir", "runs", "--provider", "mock"],
+        )
+        assert second_run.exit_code == 0, second_run.output
+
+        run_ids = sorted(path.name for path in Path("runs").iterdir())
+        compare = runner.invoke(cli, ["runs", "compare", run_ids[0], run_ids[1], "--runs-dir", "runs"])
+        compare_output = _strip_ansi(compare.output)
+        assert compare.exit_code == 0, compare_output
+        assert "XRTM Run Compare" in compare_output
+
+
+def test_workflow_validate_rejects_unsafe_custom_implementation() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        cloned = runner.invoke(
+            cli,
+            ["workflow", "clone", "flagship-benchmark", "unsafe-workflow", "--workflows-dir", "workflows"],
+        )
+        assert cloned.exit_code == 0, cloned.output
+
+        workflow_path = Path("workflows/unsafe-workflow.json")
+        payload = json.loads(workflow_path.read_text(encoding="utf-8"))
+        payload["graph"]["nodes"]["question_context"]["implementation"] = "unsafe.custom.search_node"
+        workflow_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        invalid = runner.invoke(cli, ["workflow", "validate", "unsafe-workflow", "--workflows-dir", "workflows"])
+        invalid_output = _strip_ansi(invalid.output)
+        assert invalid.exit_code != 0
+        assert "safe product node library" in invalid_output
+
+
+def test_competition_dry_run_lists_packs_and_writes_bundle() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        listed = runner.invoke(cli, ["competition", "list"])
+        listed_output = _strip_ansi(listed.output)
+        assert listed.exit_code == 0, listed_output
+        assert "metaculus-cup" in listed_output
+
+        dry_run = runner.invoke(
+            cli,
+            ["competition", "dry-run", "metaculus-cup", "--runs-dir", "runs", "--provider", "mock", "--limit", "1"],
+        )
+        dry_run_output = _strip_ansi(dry_run.output)
+        assert dry_run.exit_code == 0, dry_run_output
+        assert "Competition dry-run bundle" in dry_run_output
+
+        run_dirs = list(Path("runs").iterdir())
+        assert len(run_dirs) == 1
+        bundle = json.loads((run_dirs[0] / "competition_submission.json").read_text(encoding="utf-8"))
+        assert bundle["competition"]["name"] == "metaculus-cup"
+        assert bundle["submission"]["transport"]["auth_env_var"] == "METACULUS_TOKEN"
+        assert bundle["submission"]["transport"]["token"] == "[redacted]"
 
 
 def test_profile_starter_scaffolds_repeatable_local_workspace() -> None:
@@ -282,6 +454,28 @@ def test_profile_starter_scaffolds_repeatable_local_workspace() -> None:
         assert "xrtm runs list --runs-dir starter-runs" in cleaned
         assert run.exit_code == 0, run.output
         assert next(Path("starter-runs").iterdir()).is_dir()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["profile", "create", "local-mock"],
+        ["profile", "starter", "my-local"],
+    ],
+)
+def test_profile_commands_suggest_writable_workspace_on_permission_error(command: list[str]) -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        with patch("xrtm.cli.main.ProfileStore.create", side_effect=PermissionError("permission denied")):
+            result = runner.invoke(cli, command)
+
+    cleaned = _ANSI_RE.sub("", result.output)
+    assert result.exit_code != 0
+    assert "Cannot write profiles under" in cleaned
+    assert "permission denied" in cleaned
+    assert "writable workspace" in cleaned
+    assert "--profiles-dir /writable/path" in cleaned
 
 
 def test_user_attribution_appears_in_run_artifact_and_csv_export() -> None:
@@ -891,6 +1085,7 @@ def test_runs_compare_and_web_filters() -> None:
         assert "bob" in compare.output
         assert len(snapshot["runs"]) == 1
         assert snapshot["runs"][0]["run_id"] == run_ids[0]
+        assert snapshot["runs"][0]["workflow"]["name"] == "demo-provider-free"
 
 
 def test_runs_compare_surfaces_shared_question_quality_rows() -> None:
@@ -1133,10 +1328,12 @@ def test_tui_and_web_smoke_over_run_artifacts() -> None:
 
         assert tui.exit_code == 0, tui.output
         assert "XRTM local product cockpit" in tui_output
+        assert "demo-provider-free" in tui_output
         assert "No monitor runs" in tui_output
         assert web.exit_code == 0, web.output
         assert len(snapshot["runs"]) == 1
         assert snapshot["monitors"] == []
+        assert snapshot["runs"][0]["workflow"]["name"] == "demo-provider-free"
 
 
 def test_webui_serves_api_routes() -> None:
@@ -1155,6 +1352,7 @@ def test_webui_serves_api_routes() -> None:
                 body = response.read().decode("utf-8")
             assert "runs" in body
             assert "local_llm" in body
+            assert "demo-provider-free" in body
         finally:
             server.shutdown()
             server.server_close()

@@ -119,9 +119,11 @@ def render_index_html(runs_dir: Path, *, query_string: str = "") -> str:
     for run in snapshot["runs"]:
         run_id = str(run.get("run_id"))
         summary = run.get("summary", {})
+        workflow = run.get("workflow", {})
         rows.append(
             "<tr>"
             f"<td><a href='/runs/{_escape(run_id)}'>{_escape(run_id)}</a></td>"
+            f"<td>{_escape(_workflow_label(workflow))}</td>"
             f"<td>{_escape(run.get('status'))}</td>"
             f"<td>{_escape(run.get('provider'))}</td>"
             f"<td>{_escape(summary.get('forecast_count'))}</td>"
@@ -147,7 +149,7 @@ def render_index_html(runs_dir: Path, *, query_string: str = "") -> str:
             <button type='submit'>Filter</button>
           </form>
           <table>
-            <thead><tr><th>Run</th><th>Status</th><th>Provider</th><th>Forecasts</th><th>Warnings</th><th>Command</th><th>Updated</th></tr></thead>
+            <thead><tr><th>Run</th><th>Workflow</th><th>Status</th><th>Provider</th><th>Forecasts</th><th>Warnings</th><th>Command</th><th>Updated</th></tr></thead>
             <tbody>{''.join(rows)}</tbody>
           </table>
         </section>
@@ -160,6 +162,7 @@ def render_run_html(runs_dir: Path, run_id: str) -> str:
 
     detail = run_detail(runs_dir, run_id)
     run = detail["run"]
+    workflow = detail.get("workflow", {})
     forecast_rows = []
     for record in detail["forecasts"]:
         output = record.get("output", record)
@@ -171,6 +174,23 @@ def render_run_html(runs_dir: Path, run_id: str) -> str:
             "</tr>"
         )
     report_link = f"<p><a href='/runs/{_escape(run_id)}/report'>Open report.html</a></p>"
+    workflow_block = ""
+    if workflow:
+        workflow_block = f"<h2>Workflow</h2><pre>{_escape(json.dumps(workflow, indent=2, sort_keys=True))}</pre>"
+    graph_trace_block = ""
+    if detail.get("graph_trace"):
+        graph_trace_block = (
+            "<h2>Graph trace</h2><pre>"
+            f"{_escape(json.dumps(detail['graph_trace'][:12], indent=2, sort_keys=True))}"
+            "</pre>"
+        )
+    competition_block = ""
+    if detail.get("competition_submission"):
+        competition_block = (
+            "<h2>Competition dry-run bundle</h2><pre>"
+            f"{_escape(json.dumps(detail['competition_submission'], indent=2, sort_keys=True))}"
+            "</pre>"
+        )
     return _page(
         f"XRTM Run {run_id}",
         f"""
@@ -178,6 +198,7 @@ def render_run_html(runs_dir: Path, run_id: str) -> str:
         <h2>{_escape(run.get('run_id'))}</h2>
         <p>Status: <strong>{_escape(run.get('status'))}</strong> | Provider: {_escape(run.get('provider'))}</p>
         {report_link}
+        {workflow_block}
         <h2>Summary</h2><pre>{_escape(json.dumps(detail['summary'], indent=2, sort_keys=True))}</pre>
         <h2>Forecasts</h2>
         <table>
@@ -186,6 +207,8 @@ def render_run_html(runs_dir: Path, run_id: str) -> str:
         </table>
         <h2>Eval</h2><pre>{_escape(json.dumps(detail['eval'], indent=2, sort_keys=True))}</pre>
         <h2>Train/backtest</h2><pre>{_escape(json.dumps(detail['train'], indent=2, sort_keys=True))}</pre>
+        {graph_trace_block}
+        {competition_block}
         """,
     )
 
@@ -240,6 +263,16 @@ def _page(title: str, body: str) -> str:
 
 def _escape(value: Any) -> str:
     return html.escape("" if value is None else str(value))
+
+
+def _workflow_label(workflow: dict[str, Any]) -> str:
+    if not workflow:
+        return "n/a"
+    name = workflow.get("name") or workflow.get("title") or "workflow"
+    kind = workflow.get("kind")
+    if kind:
+        return f"{name} [{kind}]"
+    return str(name)
 
 
 __all__ = [

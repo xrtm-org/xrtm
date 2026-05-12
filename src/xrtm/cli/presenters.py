@@ -47,7 +47,10 @@ def print_quickstart_summary(console: Console, result: PipelineResult, *, runs_d
 
     runs_dir_arg = runs_dir_command_arg(runs_dir)
     proof_point_lines = [
-        "1. Provider-free first success: xrtm start (already proved above).",
+        "1. Install/demo proof: xrtm start (already proved above).",
+        "   Named demo workflow: xrtm workflow run demo-provider-free",
+        "   Browse workflows: xrtm workflow list",
+        "   Inspect the demo workflow: xrtm workflow show demo-provider-free",
         (
             "2. Benchmark and performance workflow: "
             "xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 "
@@ -55,7 +58,9 @@ def print_quickstart_summary(console: Console, result: PipelineResult, *, runs_d
         ),
         f"   Review the run above: xrtm runs show latest {runs_dir_arg}",
         f"   Inspect artifacts/report: xrtm artifacts inspect --latest {runs_dir_arg} && xrtm report html --latest {runs_dir_arg}",
-        f"3. Monitoring, history, and report workflow: xrtm profile starter my-local {runs_dir_arg}",
+        "3. Shipped benchmark workflow: xrtm workflow show flagship-benchmark",
+        "   Run it when a real endpoint is ready: xrtm workflow run flagship-benchmark --runs-dir runs-benchmark",
+        f"4. Monitoring, history, and report workflow: xrtm profile starter my-local {runs_dir_arg}",
         "   Then: xrtm run profile my-local",
         f"   Monitor/history: xrtm monitor start --provider mock --limit 2 {runs_dir_arg} && xrtm monitor list {runs_dir_arg}",
         (
@@ -64,7 +69,7 @@ def print_quickstart_summary(console: Console, result: PipelineResult, *, runs_d
             f"xrtm runs export latest {runs_dir_arg} --output export.json && "
             f"xrtm runs export latest {runs_dir_arg} --output export.csv --format csv"
         ),
-        "4. Local-LLM advanced workflow: xrtm local-llm status",
+        "5. OpenAI-compatible endpoint advanced workflow: xrtm local-llm status",
         "   Then: xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local",
         "Developer / integrator path: docs/python-api-reference.md and examples/integration/.",
     ]
@@ -141,6 +146,8 @@ def print_post_run_summary(
 def pipeline_result_title(command: str) -> str:
     if command == "xrtm demo":
         return "XRTM Demo"
+    if command.startswith("xrtm workflow run "):
+        return "XRTM Workflow"
     if command.startswith("xrtm run profile "):
         return "XRTM Profile Run"
     return "XRTM Pipeline"
@@ -495,6 +502,8 @@ def canonical_artifact_inventory(run_dir: Path) -> list[tuple[str, str, str]]:
         "run_summary.json",
         "monitor.json",
         "report.html",
+        "blueprint.json",
+        "graph_trace.jsonl",
     ]:
         path = run_dir / name
         if path.exists():
