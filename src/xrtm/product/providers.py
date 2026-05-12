@@ -18,7 +18,8 @@ from xrtm.forecast.providers.inference.base import InferenceProvider, ModelRespo
 from xrtm.forecast.providers.inference.factory import ModelFactory
 
 DEFAULT_LOCAL_LLM_BASE_URL = "http://localhost:8080/v1"
-DEFAULT_LOCAL_LLM_MODEL = "Qwen3.5-27B-Q4_K_M.gguf"
+DEFAULT_LOCAL_LLM_MODEL = "Qwen3.5-9B-UD-Q4_K_XL.gguf"
+DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS = 180
 OPENAI_COMPATIBLE_CATEGORY = "openai-compatible-endpoint"
 CODING_AGENT_CLI_CATEGORY = "coding-agent-cli-contract"
 PROVIDER_FREE_VALIDATION_MODE = "provider-free"
@@ -138,6 +139,7 @@ def _build_local_llm_provider(*, base_url: str | None, model: str | None, api_ke
             model_id=_resolved_local_llm_model(model),
             api_key=SecretStr(_resolved_local_llm_api_key(api_key)),
             base_url=base_url_value,
+            timeout=_resolved_local_llm_timeout_seconds(),
         )
     )
 
@@ -217,6 +219,17 @@ def _resolved_local_llm_model(model: str | None) -> str:
 
 def _resolved_local_llm_api_key(api_key: str | None) -> str:
     return api_key or os.getenv("XRTM_LOCAL_LLM_API_KEY") or "test"
+
+
+def _resolved_local_llm_timeout_seconds() -> int:
+    raw = os.getenv("XRTM_LOCAL_LLM_TIMEOUT_SECONDS")
+    if raw is None:
+        return DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS
 
 
 def _local_llm_connection_error(*, base_url_value: str, status: dict[str, Any]) -> str:

@@ -61,22 +61,22 @@ on:
         default: ""
         type: string
       local_llm_profile:
-        description: "Run local Qwen clean-room validation (skip or qwen3.6)"
+        description: "Run local Qwen 9B clean-room validation (skip or qwen3.5-9b)"
         required: false
         default: skip
         type: choice
         options:
           - skip
-          - qwen3.6
+          - qwen3.5-9b
       local_llm_runner_label:
         description: "Self-hosted GPU runner label for local Qwen validation"
         required: false
         default: ""
         type: string
       local_llm_model_file:
-        description: "llama.cpp model file for local Qwen validation"
+        description: "llama.cpp model file for local Qwen 9B validation"
         required: false
-        default: "Qwen3.6-32B-Q4_K_M.gguf"
+        default: "Qwen3.5-9B-UD-Q4_K_XL.gguf"
         type: string
 
 jobs:
@@ -534,11 +534,11 @@ jobs:
             echo "train_sha=$train_sha"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Summarize local Qwen validation refs
+      - name: Summarize local Qwen 9B validation refs
         shell: bash
         run: |
           {
-            echo "### Local Qwen clean-room validation refs"
+            echo "### Local Qwen 9B clean-room validation refs"
             echo
             echo "| Repo | Requested ref | Resolved commit |"
             echo "| --- | --- | --- |"
@@ -564,10 +564,10 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Run local Qwen clean-room validation
+      - name: Run local Qwen 9B clean-room validation
         shell: bash
         env:
-          ARTIFACT_DIR: ${{ github.workspace }}/acceptance-studies/local-llm-qwen/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          ARTIFACT_DIR: ${{ github.workspace }}/acceptance-studies/local-llm-qwen-9b/ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           python scripts/docker_local_llm_acceptance.py host \
             --workspace-root "$GITHUB_WORKSPACE" \
@@ -580,15 +580,15 @@ jobs:
             --min-gpu-active-samples 60 \
             --min-gpu-memory-mib 4096
 
-      - name: Summarize local Qwen evidence
+      - name: Summarize local Qwen 9B evidence
         if: always()
         shell: bash
         env:
-          ARTIFACT_DIR: ${{ github.workspace }}/acceptance-studies/local-llm-qwen/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          ARTIFACT_DIR: ${{ github.workspace }}/acceptance-studies/local-llm-qwen-9b/ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           summary_path="$ARTIFACT_DIR/summary.json"
           if [ ! -f "$summary_path" ]; then
-            echo "Local Qwen summary missing: \`$summary_path\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "Local Qwen 9B summary missing: \`$summary_path\`" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           SUMMARY_PATH="$summary_path" python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
@@ -600,7 +600,7 @@ jobs:
           payload = json.loads(summary_path.read_text(encoding="utf-8"))
           gpu = payload.get("gpu_telemetry", {})
           release = payload.get("xrtm_release_local_llm", {})
-          print("### Local Qwen clean-room evidence")
+          print("### Local Qwen 9B clean-room evidence")
           print()
           print(f"- summary path: `{summary_path}`")
           print(f"- status: `{payload.get('status')}`")
@@ -612,12 +612,12 @@ jobs:
           print(f"- GPU peak memory MiB: `{gpu.get('peak_memory_used_mib')}`")
           PY
 
-      - name: Upload local Qwen evidence
+      - name: Upload local Qwen 9B evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: local-llm-qwen-${{ github.run_id }}-${{ github.run_attempt }}
-          path: acceptance-studies/local-llm-qwen/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          name: local-llm-qwen-9b-${{ github.run_id }}-${{ github.run_attempt }}
+          path: acceptance-studies/local-llm-qwen-9b/ci-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: warn
 
   commercial-openai-compatible-cleanroom:

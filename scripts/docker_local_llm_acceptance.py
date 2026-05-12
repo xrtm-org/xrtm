@@ -42,11 +42,13 @@ from docker_provider_free_acceptance import (  # noqa: E402
 DEFAULT_IMAGE_TAG = "xrtm-local-llm-acceptance:py311"
 DEFAULT_PYTHON_IMAGE = "python:3.11-slim"
 DEFAULT_LLAMA_CPP_IMAGE = "ghcr.io/ggml-org/llama.cpp:server-cuda"
-DEFAULT_LLAMA_CPP_MODEL = "Qwen3.6-32B-Q4_K_M.gguf"
+DEFAULT_LLAMA_CPP_MODEL = "Qwen3.5-9B-UD-Q4_K_XL.gguf"
 DEFAULT_LOCAL_LLM_API_KEY = "test"
 DEFAULT_LOCAL_LLM_MAX_TOKENS = 768
+DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS = 180
 DEFAULT_LLAMA_CPP_PORT = 8080
-DEFAULT_LLAMA_CPP_CTX_SIZE = 65536
+DEFAULT_LLAMA_CPP_CTX_SIZE = 8192
+DEFAULT_LLAMA_CPP_PARALLEL = 1
 DEFAULT_READY_TIMEOUT_SECONDS = 600
 DEFAULT_READY_INTERVAL_SECONDS = 5
 DEFAULT_PERF_ITERATIONS = 1
@@ -77,8 +79,10 @@ class HostConfig:
     local_llm_model: str
     local_llm_api_key: str
     local_llm_max_tokens: int
+    local_llm_timeout_seconds: int
     llama_port: int
     llama_ctx_size: int
+    llama_parallel: int
     ready_timeout_seconds: int
     ready_interval_seconds: int
     perf_iterations: int
@@ -113,7 +117,7 @@ VALIDATION_PROFILES = {
     "release": ValidationProfileConfig(
         perf_iterations=10,
         benchmark_limit=25,
-        benchmark_repeats=3,
+        benchmark_repeats=4,
         min_gpu_benchmark_seconds=DEFAULT_RELEASE_MIN_GPU_BENCHMARK_SECONDS,
         min_gpu_active_samples=DEFAULT_RELEASE_MIN_GPU_ACTIVE_SAMPLES,
         min_gpu_memory_mib=DEFAULT_RELEASE_MIN_GPU_MEMORY_MIB,
@@ -201,12 +205,14 @@ def compose_environment(config: HostConfig) -> dict[str, str]:
         "XRTM_LLAMA_CPP_IMAGE": config.llama_image,
         "XRTM_LLAMA_CPP_MODEL_DIR": str(config.llama_model_dir),
         "XRTM_LLAMA_CPP_MODEL_FILE": config.llama_model_file,
+        "XRTM_LLAMA_CPP_PARALLEL": str(config.llama_parallel),
         "XRTM_LLAMA_CPP_PORT": str(config.llama_port),
         "XRTM_LOCAL_LLM_API_KEY": config.local_llm_api_key,
         "XRTM_LOCAL_LLM_BASE_URL": config.local_llm_base_url,
         "XRTM_LOCAL_LLM_BENCHMARK_LIMIT": str(config.benchmark_limit),
         "XRTM_LOCAL_LLM_MAX_TOKENS": str(config.local_llm_max_tokens),
         "XRTM_LOCAL_LLM_MODEL": config.local_llm_model,
+        "XRTM_LOCAL_LLM_TIMEOUT_SECONDS": str(config.local_llm_timeout_seconds),
         "XRTM_LOCAL_LLM_PERF_ITERATIONS": str(config.perf_iterations),
         "XRTM_LOCAL_LLM_READY_INTERVAL_SECONDS": str(config.ready_interval_seconds),
         "XRTM_LOCAL_LLM_READY_TIMEOUT_SECONDS": str(config.ready_timeout_seconds),
@@ -451,6 +457,22 @@ def _read_json_url(url: str, *, timeout: int) -> Any:
     return json.loads(body) if body else {}
 
 
+def _post_json_url(url: str, *, payload: dict[str, Any], timeout: int, api_key: str) -> Any:
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urlopen(request, timeout=timeout) as response:
+        body = response.read().decode("utf-8")
+    return json.loads(body) if body else {}
+
+
 def wait_for_local_llm(
     *,
     base_url: str,
@@ -506,6 +528,40 @@ def wait_for_local_llm(
             time.sleep(interval_seconds)
 
 
+def warm_up_local_llm(
+    *,
+    base_url: str,
+    model: str,
+    api_key: str,
+    timeout_seconds: int,
+    log_path: Path,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    response = _post_json_url(
+        f"{base_url}/chat/completions",
+        payload={
+            "model": model,
+            "messages": [{"role": "user", "content": "Reply with exactly XRTM_WARMUP_OK and no other text."}],
+            "max_tokens": 32,
+            "temperature": 0,
+        },
+        timeout=timeout_seconds,
+        api_key=api_key,
+    )
+    choices = response.get("choices", []) if isinstance(response, dict) else []
+    message = choices[0].get("message", {}) if choices and isinstance(choices[0], dict) else {}
+    content = message.get("content", "") if isinstance(message, dict) else ""
+    result = {
+        "base_url": base_url,
+        "elapsed_seconds": round(time.monotonic() - started, 3),
+        "model": model,
+        "response_preview": content[:200],
+        "usage": response.get("usage", {}) if isinstance(response, dict) else {},
+    }
+    write_json(log_path, result)
+    return result
+
+
 def run_local_llm_release_smoke(
     *,
     env: dict[str, str],
@@ -514,6 +570,7 @@ def run_local_llm_release_smoke(
     model: str,
     api_key: str,
     max_tokens: int,
+    timeout_seconds: int,
     perf_iterations: int,
     benchmark_limit: int,
     benchmark_repeats: int,
@@ -528,6 +585,13 @@ def run_local_llm_release_smoke(
     benchmark_output_dir = journey_dir / "benchmark-output"
     metadata_dir = artifacts_dir / "metadata"
     run_logged(["xrtm", "local-llm", "status", "--base-url", base_url], log_path=journey_dir / "local-llm-status.log", cwd=journey_dir, env=env)
+    warm_up_local_llm(
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        timeout_seconds=timeout_seconds,
+        log_path=journey_dir / "warmup.json",
+    )
     run_logged(
         [
             "xrtm",
@@ -822,8 +886,10 @@ def run_host(args: argparse.Namespace) -> int:
         local_llm_model=local_model,
         local_llm_api_key=args.local_llm_api_key,
         local_llm_max_tokens=args.max_tokens,
+        local_llm_timeout_seconds=args.local_llm_timeout_seconds,
         llama_port=args.llama_port,
         llama_ctx_size=args.llama_ctx_size,
+        llama_parallel=args.llama_parallel,
         ready_timeout_seconds=args.ready_timeout_seconds,
         ready_interval_seconds=args.ready_interval_seconds,
         perf_iterations=max(args.perf_iterations, profile.perf_iterations),
@@ -848,6 +914,8 @@ def run_host(args: argparse.Namespace) -> int:
             "local_llm_base_url": config.local_llm_base_url,
             "local_llm_max_tokens": config.local_llm_max_tokens,
             "local_llm_model": config.local_llm_model,
+            "local_llm_timeout_seconds": config.local_llm_timeout_seconds,
+            "llama_parallel": config.llama_parallel,
             "perf_iterations": config.perf_iterations,
             "benchmark_limit": config.benchmark_limit,
             "benchmark_repeats": config.benchmark_repeats,
@@ -960,6 +1028,7 @@ def run_inside(args: argparse.Namespace) -> int:
             "local_llm_base_url": args.local_llm_base_url,
             "local_llm_model": args.local_llm_model,
             "max_tokens": args.max_tokens,
+            "local_llm_timeout_seconds": args.local_llm_timeout_seconds,
             "perf_iterations": args.perf_iterations,
             "benchmark_limit": args.benchmark_limit,
             "benchmark_repeats": args.benchmark_repeats,
@@ -984,6 +1053,7 @@ def run_inside(args: argparse.Namespace) -> int:
                 "XRTM_LOCAL_LLM_BASE_URL": args.local_llm_base_url,
                 "XRTM_LOCAL_LLM_MAX_TOKENS": str(args.max_tokens),
                 "XRTM_LOCAL_LLM_MODEL": args.local_llm_model,
+                "XRTM_LOCAL_LLM_TIMEOUT_SECONDS": str(args.local_llm_timeout_seconds),
             }
         )
         install_specs(
@@ -1010,6 +1080,7 @@ def run_inside(args: argparse.Namespace) -> int:
             model=args.local_llm_model,
             api_key=args.local_llm_api_key,
             max_tokens=args.max_tokens,
+            timeout_seconds=args.local_llm_timeout_seconds,
             perf_iterations=args.perf_iterations,
             benchmark_limit=args.benchmark_limit,
             benchmark_repeats=args.benchmark_repeats,
@@ -1048,8 +1119,10 @@ def build_parser() -> argparse.ArgumentParser:
     host_parser.add_argument("--local-llm-model", default=None)
     host_parser.add_argument("--local-llm-api-key", default=DEFAULT_LOCAL_LLM_API_KEY)
     host_parser.add_argument("--max-tokens", type=int, default=DEFAULT_LOCAL_LLM_MAX_TOKENS)
+    host_parser.add_argument("--local-llm-timeout-seconds", type=int, default=DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS)
     host_parser.add_argument("--llama-port", type=int, default=DEFAULT_LLAMA_CPP_PORT)
     host_parser.add_argument("--llama-ctx-size", type=int, default=DEFAULT_LLAMA_CPP_CTX_SIZE)
+    host_parser.add_argument("--llama-parallel", type=int, default=DEFAULT_LLAMA_CPP_PARALLEL)
     host_parser.add_argument("--ready-timeout-seconds", type=int, default=DEFAULT_READY_TIMEOUT_SECONDS)
     host_parser.add_argument("--ready-interval-seconds", type=int, default=DEFAULT_READY_INTERVAL_SECONDS)
     host_parser.add_argument("--perf-iterations", type=int, default=DEFAULT_PERF_ITERATIONS)
@@ -1072,6 +1145,7 @@ def build_parser() -> argparse.ArgumentParser:
     inside_parser.add_argument("--local-llm-model", required=True)
     inside_parser.add_argument("--local-llm-api-key", required=True)
     inside_parser.add_argument("--max-tokens", type=int, required=True)
+    inside_parser.add_argument("--local-llm-timeout-seconds", type=int, required=True)
     inside_parser.add_argument("--ready-timeout-seconds", type=int, required=True)
     inside_parser.add_argument("--ready-interval-seconds", type=int, required=True)
     inside_parser.add_argument("--perf-iterations", type=int, required=True)
@@ -1111,8 +1185,10 @@ def main(argv: list[str] | None = None) -> int:
         args.local_llm_model = None
         args.local_llm_api_key = DEFAULT_LOCAL_LLM_API_KEY
         args.max_tokens = DEFAULT_LOCAL_LLM_MAX_TOKENS
+        args.local_llm_timeout_seconds = DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS
         args.llama_port = DEFAULT_LLAMA_CPP_PORT
         args.llama_ctx_size = DEFAULT_LLAMA_CPP_CTX_SIZE
+        args.llama_parallel = DEFAULT_LLAMA_CPP_PARALLEL
         args.ready_timeout_seconds = DEFAULT_READY_TIMEOUT_SECONDS
         args.ready_interval_seconds = DEFAULT_READY_INTERVAL_SECONDS
         args.perf_iterations = DEFAULT_PERF_ITERATIONS

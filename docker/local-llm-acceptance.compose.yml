@@ -25,6 +25,8 @@ services:
       - ${XRTM_LOCAL_LLM_MODEL}
       - --local-llm-api-key
       - ${XRTM_LOCAL_LLM_API_KEY}
+      - --local-llm-timeout-seconds
+      - "${XRTM_LOCAL_LLM_TIMEOUT_SECONDS}"
       - --validation-profile
       - ${XRTM_LOCAL_LLM_VALIDATION_PROFILE}
       - --max-tokens
@@ -60,6 +62,8 @@ services:
       - "${XRTM_LLAMA_CPP_PORT}"
       - --ctx-size
       - "${XRTM_LLAMA_CPP_CTX_SIZE}"
+      - --parallel
+      - "${XRTM_LLAMA_CPP_PARALLEL}"
       - -ngl
       - "99"
       - --flash-attn
