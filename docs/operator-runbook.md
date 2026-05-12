@@ -83,7 +83,7 @@ Treat release readiness as three explicit layers:
 2. **Gate 2A:** provider-free disposable clean-room proof for the released newcomer path
 3. **Gate 2B:** local OpenAI-compatible clean-room proof for the released local profile when the change touches local-model execution, onboarding, Docker, provider wiring, benchmarks, or release docs
 
-For the current released local profile, Gate 2B means a local Qwen 3.6-style
+For the current released local profile, Gate 2B means a local Qwen 9B-style
 endpoint behind llama.cpp plus evidence that the benchmark window actually used
 the GPU.
 
@@ -242,7 +242,7 @@ xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local
 Maintainer clean-room lane:
 
 ```bash
-python scripts/docker_local_llm_acceptance.py host --validation-profile release --llama-model-file Qwen3.6-32B-Q4_K_M.gguf
+python scripts/docker_local_llm_acceptance.py host --validation-profile release --llama-model-file Qwen3.5-9B-UD-Q4_K_XL.gguf
 ```
 
 That disposable Docker lane now expands beyond the bounded demo to include the

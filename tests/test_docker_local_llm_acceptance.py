@@ -46,8 +46,10 @@ def test_compose_environment_keeps_acceptance_runner_and_llama_service_separate(
         local_llm_model="Qwen.gguf",
         local_llm_api_key="test",
         local_llm_max_tokens=768,
+        local_llm_timeout_seconds=180,
         llama_port=8080,
         llama_ctx_size=4096,
+        llama_parallel=1,
         ready_timeout_seconds=600,
         ready_interval_seconds=5,
         perf_iterations=1,
@@ -94,8 +96,10 @@ def test_compose_environment_supports_repo_root_equal_to_workspace_root(monkeypa
         local_llm_model="Qwen.gguf",
         local_llm_api_key="test",
         local_llm_max_tokens=768,
+        local_llm_timeout_seconds=180,
         llama_port=8080,
         llama_ctx_size=4096,
+        llama_parallel=1,
         ready_timeout_seconds=600,
         ready_interval_seconds=5,
         perf_iterations=1,
@@ -137,6 +141,20 @@ def test_docker_compose_command_uses_compose_lane() -> None:
         "/workspace/compose.env",
     ]
     assert command[-4:] == ["up", "--abort-on-container-exit", "--exit-code-from", "acceptance"]
+
+
+def test_compose_file_passes_local_llm_timeout_to_acceptance_container() -> None:
+    compose_path = Path(__file__).resolve().parents[1] / "docker" / "local-llm-acceptance.compose.yml"
+    compose_text = compose_path.read_text(encoding="utf-8")
+
+    assert "--local-llm-timeout-seconds" in compose_text
+    assert '"${XRTM_LOCAL_LLM_TIMEOUT_SECONDS}"' in compose_text
+
+
+def test_release_profile_uses_four_stress_repeats_for_gpu_window() -> None:
+    module = _load_module()
+
+    assert module.VALIDATION_PROFILES["release"].benchmark_repeats == 4
 
 
 def test_wait_for_local_llm_accepts_matching_model(tmp_path, monkeypatch) -> None:
@@ -211,7 +229,7 @@ def test_run_host_requires_nvidia_smi_for_release_profile(tmp_path, monkeypatch)
     repo_root = tmp_path / "workspace" / "xrtm"
     model_dir = tmp_path / "models"
     model_dir.mkdir(parents=True)
-    (model_dir / "Qwen3.6-32B-Q4_K_M.gguf").write_text("model", encoding="utf-8")
+    (model_dir / "Qwen3.5-9B-UD-Q4_K_XL.gguf").write_text("model", encoding="utf-8")
     repo_root.mkdir(parents=True)
 
     monkeypatch.setattr(module, "workspace_root", lambda: tmp_path / "workspace")

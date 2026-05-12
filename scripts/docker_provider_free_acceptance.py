@@ -72,10 +72,15 @@ def load_project_version(repo_dir: Path) -> str:
     return payload["project"]["version"]
 
 
+def repo_source_dir(repo: str, root: Path, xrtm_repo_root_path: Path | None = None) -> Path:
+    candidate = root / repo
+    if repo == "xrtm" and xrtm_repo_root_path is not None and not candidate.is_dir():
+        return xrtm_repo_root_path
+    return candidate
+
+
 def default_specs(root: Path, xrtm_repo_root_path: Path | None = None) -> tuple[str, str]:
-    xrtm_project_root = root / "xrtm"
-    if xrtm_repo_root_path is not None and not xrtm_project_root.is_dir():
-        xrtm_project_root = xrtm_repo_root_path
+    xrtm_project_root = repo_source_dir("xrtm", root, xrtm_repo_root_path)
     return (
         f"xrtm=={load_project_version(xrtm_project_root)}",
         f"xrtm-forecast=={load_project_version(root / 'forecast')}",
@@ -237,12 +242,12 @@ def total_forecast_count(runs_dir: Path) -> int:
     return total
 
 
-def build_wheelhouse(root: Path, wheelhouse_dir: Path, logs_dir: Path) -> None:
+def build_wheelhouse(root: Path, wheelhouse_dir: Path, logs_dir: Path, xrtm_repo_root_path: Path | None = None) -> None:
     prepare_empty_dir(wheelhouse_dir)
     for repo in WORKSPACE_REPOS:
         run_logged(
             ["uv", "build", "--wheel", "--python", "3.11", "--out-dir", str(wheelhouse_dir)],
-            cwd=root / repo,
+            cwd=repo_source_dir(repo, root, xrtm_repo_root_path),
             log_path=logs_dir / f"build-{repo}.log",
         )
     local_wheels = [
@@ -335,6 +340,20 @@ def run_release_claims(repo_root: Path, env: dict[str, str], output_dir: Path) -
             "xrtm",
         ],
         log_path=output_dir / "release-claims.log",
+        env=env,
+    )
+
+
+def run_cli_surface_check(repo_root: Path, env: dict[str, str], output_dir: Path) -> None:
+    venv_python = venv_python_from_env(env)
+    run_logged(
+        [
+            str(venv_python),
+            str(repo_root / "scripts" / "check_installed_cli_surface.py"),
+            "--xrtm-bin",
+            str(venv_python.parent / "xrtm"),
+        ],
+        log_path=output_dir / "cli-surface.log",
         env=env,
     )
 
@@ -751,6 +770,7 @@ def run_product_shell(
         env=base_env,
     )
     write_versions(venv_python, output_dir / "installed-versions.txt", env)
+    run_cli_surface_check(xrtm_repo_root_path, env, output_dir)
     run_release_claims(xrtm_repo_root_path, env, output_dir)
     summary = {
         "first_success": run_first_success(env, artifacts_dir),
@@ -776,7 +796,7 @@ def run_host(args: argparse.Namespace) -> int:
     wheelhouse_dir = None
     if args.artifact_source == "wheelhouse":
         wheelhouse_dir = Path(args.wheelhouse_dir).resolve() if args.wheelhouse_dir else artifacts_dir / "wheelhouse"
-        build_wheelhouse(workspace_root_path, wheelhouse_dir, metadata_dir / "wheelhouse")
+        build_wheelhouse(workspace_root_path, wheelhouse_dir, metadata_dir / "wheelhouse", xrtm_repo_root_path)
     config = HostConfig(
         workspace_root=workspace_root_path,
         xrtm_repo_root=xrtm_repo_root_path,

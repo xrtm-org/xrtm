@@ -18,6 +18,7 @@ def test_build_provider_uses_local_llm_env_defaults(monkeypatch) -> None:
     monkeypatch.setenv("XRTM_LOCAL_LLM_BASE_URL", "http://127.0.0.1:9000/v1/")
     monkeypatch.setenv("XRTM_LOCAL_LLM_MODEL", "demo-model")
     monkeypatch.setenv("XRTM_LOCAL_LLM_API_KEY", "secret-token")
+    monkeypatch.setenv("XRTM_LOCAL_LLM_TIMEOUT_SECONDS", "120")
 
     resolved_config = None
 
@@ -47,6 +48,7 @@ def test_build_provider_uses_local_llm_env_defaults(monkeypatch) -> None:
     assert resolved_config.base_url == "http://127.0.0.1:9000/v1"
     assert resolved_config.model_id == "demo-model"
     assert resolved_config.api_key.get_secret_value() == "secret-token"
+    assert resolved_config.timeout == 120
 
 
 def test_build_provider_surfaces_local_llm_status_failure() -> None:
