@@ -21,6 +21,8 @@ EVENT_TYPES = frozenset(
         "forecast_written",
         "eval_completed",
         "train_completed",
+        "competition_submission_prepared",
+        "workflow_blueprint_attached",
         "monitor_started",
         "monitor_cycle_started",
         "monitor_cycle_completed",

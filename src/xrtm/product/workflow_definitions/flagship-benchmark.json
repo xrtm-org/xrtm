@@ -1,0 +1,158 @@
+{
+  "schema_version": "xrtm.workflow.v1",
+  "name": "flagship-benchmark",
+  "title": "XRTM flagship offline benchmark workflow",
+  "description": "Named benchmark workflow surface for the best shipped real-runtime path, currently compiled through the released product pipeline compatibility runner.",
+  "workflow_kind": "benchmark",
+  "questions": {
+    "source": "real-binary-corpus",
+    "corpus_id": "xrtm-real-binary-v1",
+    "limit": 5
+  },
+  "runtime": {
+    "provider": "mock",
+    "max_tokens": 768
+  },
+  "graph": {
+    "entry": "load_questions",
+    "nodes": {
+      "load_questions": {
+        "kind": "tool",
+        "implementation": "xrtm.product.workflow_nodes.load_questions_node",
+        "description": "Load released benchmark questions."
+      },
+      "question_context": {
+        "kind": "tool",
+        "implementation": "xrtm.product.workflow_nodes.question_context_node",
+        "description": "Extract question context for downstream nodes."
+      },
+      "runtime_router": {
+        "kind": "router",
+        "implementation": "xrtm.product.workflow_nodes.runtime_router_node",
+        "description": "Choose the real-runtime or provider-free benchmark branch.",
+        "config": {
+          "preferred_route": "real",
+          "fallback_route": "fallback",
+          "require_healthy": true
+        }
+      },
+      "primary_candidate": {
+        "kind": "model",
+        "implementation": "xrtm.product.workflow_nodes.candidate_forecast_node",
+        "runtime": "local-openai-compatible",
+        "description": "Run the primary model-backed benchmark candidate.",
+        "config": {
+          "provider": "local-llm"
+        }
+      },
+      "provider_free_control": {
+        "kind": "model",
+        "implementation": "xrtm.product.workflow_nodes.provider_free_candidate_node",
+        "runtime": "provider-free-demo",
+        "description": "Run the deterministic provider-free benchmark control."
+      },
+      "time_series_baseline": {
+        "kind": "model",
+        "implementation": "xrtm.product.workflow_nodes.time_series_baseline_node",
+        "runtime": "time-series-baseline",
+        "description": "Run the deterministic non-LLM baseline candidate."
+      },
+      "aggregate_candidates": {
+        "kind": "aggregator",
+        "implementation": "xrtm.product.workflow_nodes.aggregate_candidate_forecasts_node",
+        "description": "Combine the heterogeneous candidate forecasts into the official benchmark records.",
+        "config": {
+          "strategy": "weighted-mean",
+          "weights": {
+            "primary_candidate": 0.6,
+            "provider_free_control": 0.25,
+            "time_series_baseline": 0.15
+          }
+        }
+      },
+      "score": {
+        "kind": "scorer",
+        "implementation": "xrtm.product.workflow_nodes.score_node",
+        "description": "Score the benchmark outputs."
+      },
+      "backtest": {
+        "kind": "scorer",
+        "implementation": "xrtm.product.workflow_nodes.backtest_node",
+        "description": "Write backtest evidence."
+      },
+      "report": {
+        "kind": "tool",
+        "implementation": "xrtm.product.workflow_nodes.report_node",
+        "description": "Render the benchmark report."
+      }
+    },
+    "edges": [
+      {
+        "from_node": "load_questions",
+        "to_node": "question_context"
+      },
+      {
+        "from_node": "question_context",
+        "to_node": "runtime_router"
+      },
+      {
+        "from_node": "real_fanout",
+        "to_node": "aggregate_candidates"
+      },
+      {
+        "from_node": "fallback_fanout",
+        "to_node": "aggregate_candidates"
+      },
+      {
+        "from_node": "aggregate_candidates",
+        "to_node": "score"
+      },
+      {
+        "from_node": "score",
+        "to_node": "backtest"
+      },
+      {
+        "from_node": "backtest",
+        "to_node": "report"
+      }
+    ],
+    "parallel_groups": {
+      "real_fanout": {
+        "nodes": [
+          "primary_candidate",
+          "provider_free_control",
+          "time_series_baseline"
+        ]
+      },
+      "fallback_fanout": {
+        "nodes": [
+          "provider_free_control",
+          "time_series_baseline"
+        ]
+      }
+    },
+    "conditional_routes": {
+      "runtime_router": {
+        "route_field": "route",
+        "routes": {
+          "real": "real_fanout",
+          "fallback": "fallback_fanout"
+        }
+      }
+    }
+  },
+  "artifacts": {
+    "write_report": true,
+    "write_blueprint_copy": true,
+    "write_graph_trace": true
+  },
+  "scoring": {
+    "write_eval": true,
+    "write_train_backtest": true
+  },
+  "tags": [
+    "released-surface",
+    "benchmark",
+    "real-runtime"
+  ]
+}

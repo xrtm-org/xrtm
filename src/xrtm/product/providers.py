@@ -1,4 +1,4 @@
-"""Provider discovery and deterministic provider-free execution."""
+"""Runtime profile resolution and deterministic provider-free smoke execution."""
 
 from __future__ import annotations
 
@@ -19,10 +19,13 @@ from xrtm.forecast.providers.inference.factory import ModelFactory
 
 DEFAULT_LOCAL_LLM_BASE_URL = "http://localhost:8080/v1"
 DEFAULT_LOCAL_LLM_MODEL = "Qwen3.5-27B-Q4_K_M.gguf"
+OPENAI_COMPATIBLE_CATEGORY = "openai-compatible-endpoint"
+CODING_AGENT_CLI_CATEGORY = "coding-agent-cli-contract"
+PROVIDER_FREE_VALIDATION_MODE = "provider-free"
 
 
 class DeterministicProvider(InferenceProvider):
-    """Provider-free forecast double with deterministic structured responses."""
+    """Deterministic smoke/baseline double for provider-free product-shell runs."""
 
     model_id = "xrtm-deterministic-product"
     base_url = "provider-free://deterministic"
@@ -57,7 +60,7 @@ class DeterministicProvider(InferenceProvider):
             "node_id": f"{question_id}:llm:0",
             "event": "deterministic_real_corpus_prior",
             "probability": probability,
-            "description": "Stable hash-derived probability for product smoke validation.",
+            "description": "Stable hash-derived probability for product smoke/baseline validation.",
         }
         payload = {
             "probability": probability,
@@ -110,10 +113,13 @@ def build_provider(provider: str, *, base_url: str | None, model: str | None, ap
     raise ValueError(
         f"Unsupported provider: '{provider}'\n\n"
         f"What happened: Provider '{provider}' is not recognized\n"
-        f"Why: XRTM only supports specific provider types\n\n"
-        f"Available providers:\n"
-        f"  • mock       - Provider-free deterministic testing (no API calls)\n"
-        f"  • local-llm  - Local OpenAI-compatible endpoint (e.g., llama.cpp)\n\n"
+        f"Why: The released product shell only wires these runtime options today\n\n"
+        f"Available runtime options:\n"
+        f"  • mock       - Provider-free deterministic smoke/baseline mode (no API calls)\n"
+        f"  • local-llm  - Local OpenAI-compatible endpoint profile (e.g., llama.cpp)\n\n"
+        f"Runtime taxonomy note:\n"
+        f"  • OpenAI-compatible endpoints and coding-agent CLI contracts are the two first-class integration categories\n"
+        f"  • provider-free smoke is a testing/baseline mode, not a third runtime category\n\n"
         f"Example: xrtm demo --provider mock --limit 2"
     )
 
@@ -166,6 +172,7 @@ def provider_snapshot(provider: InferenceProvider, provider_name: str, *, base_u
         "base_url": str(getattr(provider, "base_url", base_url)),
         "cache": cache_snapshot(provider),
     }
+    snapshot.update(provider_runtime_metadata(provider_name))
     if provider_name == "local-llm":
         snapshot["local_llm"] = local_llm_status(base_url=base_url)
     return snapshot
@@ -176,6 +183,32 @@ def cache_snapshot(provider: InferenceProvider) -> dict[str, Any]:
     if isinstance(snapshot, dict):
         return snapshot
     return {"enabled": False}
+
+
+def provider_runtime_metadata(provider_name: str) -> dict[str, Any]:
+    if provider_name == "mock":
+        return {
+            "category": None,
+            "profile": None,
+            "deployment": None,
+            "validation_mode": PROVIDER_FREE_VALIDATION_MODE,
+            "is_provider_free_baseline": True,
+        }
+    if provider_name == "local-llm":
+        return {
+            "category": OPENAI_COMPATIBLE_CATEGORY,
+            "profile": "local-llm",
+            "deployment": "local",
+            "validation_mode": None,
+            "is_provider_free_baseline": False,
+        }
+    return {
+        "category": None,
+        "profile": provider_name,
+        "deployment": None,
+        "validation_mode": None,
+        "is_provider_free_baseline": False,
+    }
 
 
 def _resolved_local_llm_model(model: str | None) -> str:
@@ -196,7 +229,7 @@ def _local_llm_connection_error(*, base_url_value: str, status: dict[str, Any]) 
         f"2. Verify it's running: curl {status['health_url']}\n"
         f"3. Check the base URL is correct: {base_url_value}\n"
         f"4. Set XRTM_LOCAL_LLM_BASE_URL if using a different endpoint\n\n"
-        f"To test without a local LLM, use: --provider mock"
+        f"To test without an OpenAI-compatible endpoint, use the provider-free smoke mode: --provider mock"
     )
 
 
@@ -253,10 +286,14 @@ def _coerce_int(value: str) -> int | None:
 
 
 __all__ = [
+    "CODING_AGENT_CLI_CATEGORY",
     "DEFAULT_LOCAL_LLM_BASE_URL",
     "DEFAULT_LOCAL_LLM_MODEL",
     "DeterministicProvider",
+    "OPENAI_COMPATIBLE_CATEGORY",
+    "PROVIDER_FREE_VALIDATION_MODE",
     "build_provider",
     "local_llm_status",
+    "provider_runtime_metadata",
     "provider_snapshot",
 ]
