@@ -57,7 +57,7 @@ Each analyst works in the same Python environment or uses identical virtual envi
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install xrtm==0.3.1
+pip install xrtm==0.3.3
 xrtm doctor
 ```
 
@@ -159,7 +159,7 @@ This shows differences in:
 
 ### Individual Run Export
 
-Released `xrtm runs export` supports both JSON and CSV in `0.3.1`:
+Released `xrtm runs export` supports both JSON and CSV in `0.3.3`:
 
 ```bash
 xrtm runs export runs/20260501T101710Z-d8967e54 --output exports/jane-2026-05-01.json
@@ -825,7 +825,7 @@ xrtm runs export runs/20260501T101710Z-d8967e54 --output full-data.json
 - Cross-run audit queries
 - Cost tracking per user
 
-**Current status:** User attribution and built-in multi-user control-plane features are still not in XRTM v0.3.1. Teams must use the patterns documented above.
+**Current status:** User attribution and built-in multi-user control-plane features are still not in XRTM v0.3.3. Teams must use the patterns documented above.
 
 ---
 
