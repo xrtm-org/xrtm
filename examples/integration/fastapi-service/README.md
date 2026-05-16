@@ -142,7 +142,7 @@ Health check endpoint.
 {
   "status": "healthy",
   "provider": "mock",
-  "version": "0.3.3"
+  "version": "0.7.0"
 }
 ```
 
