@@ -4,23 +4,23 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 
 **XRTM** is the product-first shell for running event-forecasting workflows,
-inspecting the scored artifacts, and reviewing the latest run in the local
-WebUI app shell (Overview, Runs, Workbench) or TUI.
+inspecting the scored artifacts, and choosing CLI or WebUI for the same
+released local product tasks.
 
 ## Start here
 
 If you arrived from xrtm.org, PyPI, or this repository, use the authoritative
 first-success guide: [docs/getting-started.md](docs/getting-started.md).
 
-That guide walks the released `xrtm==0.7.1` journey in one place:
+That guide walks the released `xrtm==0.8.0` journey in one place:
 
 1. install XRTM
-2. run `xrtm start`
-3. inspect the latest run
-4. open the local WebUI shell
-5. use the guided workbench draft flow to clone, safely edit, validate, run,
-   and compare a workflow
-6. choose your next path
+2. choose a CLI-led or WebUI-led first-success path
+3. inspect the latest run, report, and exports
+4. run a named workflow from the Start or Workflow detail surface
+5. use Operations for profiles, monitors, and cleanup
+6. use Workbench to clone, safely edit, validate, run, and compare a workflow
+7. choose your next path
 
 This README intentionally stays short so the first-run commands live in one
 place.
@@ -37,7 +37,8 @@ place.
 - [Operator Runbook](docs/operator-runbook.md)
 - [Python API Reference](docs/python-api-reference.md)
 - [Integration Examples](examples/integration/)
-- [Next-release Feature Track](docs/next-release-feature-track.md) for source-only work that is not part of the published `xrtm==0.7.1` package
+- [Interface Parity Matrix](docs/interface-parity.md) for the current CLI/WebUI capability map and next parity targets
+- [Next-release Feature Track](docs/next-release-feature-track.md) for source-only work that is not part of the published `xrtm==0.8.0` package
 - [Stack Versioning Policy](https://github.com/xrtm-org/governance/blob/main/policies/stack-versioning-policy.md) for `xrtm` as the product-anchor release and cross-repo version ownership
 - Full documentation: [xrtm.org](https://xrtm.org)
 

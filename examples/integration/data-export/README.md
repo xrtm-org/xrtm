@@ -15,7 +15,7 @@ If you only need a single run export from the CLI, the current source tree also 
 xrtm runs export <run-id> --output export.csv --format csv
 ```
 
-That CSV flag is now part of the published `xrtm==0.7.1` surface. Use this example when you want a **custom data pipeline** or a reusable Python integration surface beyond the built-in one-off CLI export from the [Operator Runbook](../../../docs/operator-runbook.md).
+That CSV flag is now part of the published `xrtm==0.8.0` surface. Use this example when you want a **custom data pipeline** or a reusable Python integration surface beyond the built-in one-off CLI export from the [Operator Runbook](../../../docs/operator-runbook.md).
 
 Use exports honestly:
 

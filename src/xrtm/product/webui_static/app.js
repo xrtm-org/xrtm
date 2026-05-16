@@ -79,13 +79,21 @@
     let page;
     if (route.path === "/") {
       page = /* @__PURE__ */ React.createElement(OverviewPage, { shell: shell.data, navigate });
+    } else if (route.path === "/start") {
+      page = /* @__PURE__ */ React.createElement(StartPage, { shell: shell.data, navigate, onMutate: refreshShell });
     } else if (route.path === "/runs") {
       page = /* @__PURE__ */ React.createElement(RunsPage, { route, navigate });
+    } else if (route.path === "/operations") {
+      page = /* @__PURE__ */ React.createElement(OperationsPage, { navigate, onMutate: refreshShell });
+    } else if (route.path === "/advanced") {
+      page = /* @__PURE__ */ React.createElement(AdvancedPage, null);
     } else if (/^\/runs\/[^/]+\/compare\/[^/]+$/.test(route.path)) {
       const match = route.path.match(/^\/runs\/([^/]+)\/compare\/([^/]+)$/);
       page = /* @__PURE__ */ React.createElement(ComparePage, { candidateRunId: match[1], baselineRunId: match[2], navigate });
+    } else if (/^\/workflows\/[^/]+$/.test(route.path)) {
+      page = /* @__PURE__ */ React.createElement(WorkflowDetailPage, { workflowName: decodeURIComponent(route.path.split("/")[2]), navigate, onMutate: refreshShell });
     } else if (/^\/runs\/[^/]+$/.test(route.path)) {
-      page = /* @__PURE__ */ React.createElement(RunDetailPage, { runId: route.path.split("/")[2], navigate });
+      page = /* @__PURE__ */ React.createElement(RunDetailPage, { runId: route.path.split("/")[2], navigate, onMutate: refreshShell });
     } else {
       page = /* @__PURE__ */ React.createElement(WorkbenchPage, { route, shell: shell.data, navigate, onMutate: refreshShell });
     }
@@ -108,7 +116,320 @@
     if (!overview) {
       return /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading overview" });
     }
-    return /* @__PURE__ */ React.createElement("main", { className: "page-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Overview"), /* @__PURE__ */ React.createElement("h2", null, overview.hero?.title), /* @__PURE__ */ React.createElement("p", null, overview.hero?.summary), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => navigate(overview.resume_target?.href || "/workbench") }, overview.resume_target?.label || "Resume"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate("/workbench") }, "Open workbench"))), /* @__PURE__ */ React.createElement("section", { className: "stats-grid" }, /* @__PURE__ */ React.createElement(MetricCard, { label: "Indexed runs", value: overview.counts?.runs ?? 0 }), /* @__PURE__ */ React.createElement(MetricCard, { label: "Indexed workflows", value: overview.counts?.workflows ?? 0 }), /* @__PURE__ */ React.createElement(MetricCard, { label: "Latest action", value: overview.resume_target?.kind || "workbench" })), overview.latest_run ? /* @__PURE__ */ React.createElement(RunCard, { run: overview.latest_run, onOpen: () => navigate(`/runs/${overview.latest_run.run_id}`) }) : null, overview.empty_state ? /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("h3", null, overview.empty_state.title), /* @__PURE__ */ React.createElement("p", null, overview.empty_state.summary), /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => navigate(overview.empty_state.primary_cta?.href || "/workbench") }, overview.empty_state.primary_cta?.label || "Open workbench")) : null);
+    return /* @__PURE__ */ React.createElement("main", { className: "page-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Overview"), /* @__PURE__ */ React.createElement("h2", null, overview.hero?.title), /* @__PURE__ */ React.createElement("p", null, overview.hero?.summary), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => navigate(overview.resume_target?.href || "/start") }, overview.resume_target?.label || "Resume"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate("/start") }, "Open start"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate("/workbench") }, "Open workbench"))), /* @__PURE__ */ React.createElement("section", { className: "stats-grid" }, /* @__PURE__ */ React.createElement(MetricCard, { label: "Indexed runs", value: overview.counts?.runs ?? 0 }), /* @__PURE__ */ React.createElement(MetricCard, { label: "Indexed workflows", value: overview.counts?.workflows ?? 0 }), /* @__PURE__ */ React.createElement(MetricCard, { label: "Latest action", value: overview.resume_target?.kind || "workbench" })), overview.latest_run ? /* @__PURE__ */ React.createElement(RunCard, { run: overview.latest_run, onOpen: () => navigate(`/runs/${overview.latest_run.run_id}`) }) : null, overview.empty_state ? /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("h3", null, overview.empty_state.title), /* @__PURE__ */ React.createElement("p", null, overview.empty_state.summary), /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => navigate(overview.empty_state.primary_cta?.href || "/start") }, overview.empty_state.primary_cta?.label || "Open workbench")) : null);
+  }
+  function StartPage({
+    shell,
+    navigate,
+    onMutate
+  }) {
+    const health = useJsonResource(`${bootstrap.api_root}/health`, []);
+    const providers = useJsonResource(`${bootstrap.api_root}/providers/status`, []);
+    const workflows = useJsonResource(`${bootstrap.api_root}/workflows`, []);
+    const runs = useJsonResource(`${bootstrap.api_root}/runs`, []);
+    const [mode, setMode] = useState("start");
+    const [provider, setProvider] = useState("mock");
+    const [limit, setLimit] = useState("2");
+    const [user, setUser] = useState("");
+    const [baseUrl, setBaseUrl] = useState("");
+    const [model, setModel] = useState("");
+    const [maxTokens, setMaxTokens] = useState("768");
+    const [baselineRunId, setBaselineRunId] = useState("");
+    const [selectedWorkflow, setSelectedWorkflow] = useState("");
+    const [busy, setBusy] = useState(null);
+    const [notice, setNotice] = useState(null);
+    const [result, setResult] = useState(null);
+    const workflowDetail = useJsonResource(
+      selectedWorkflow ? `${bootstrap.api_root}/workflows/${encodeURIComponent(selectedWorkflow)}` : null,
+      [selectedWorkflow]
+    );
+    const workflowExplain = useJsonResource(
+      selectedWorkflow ? `${bootstrap.api_root}/workflows/${encodeURIComponent(selectedWorkflow)}/explain` : null,
+      [selectedWorkflow]
+    );
+    useEffect(() => {
+      if (!selectedWorkflow && (workflows.data?.items || []).length) {
+        setSelectedWorkflow(workflows.data.items[0].name);
+      }
+    }, [selectedWorkflow, workflows.data]);
+    async function launchRun() {
+      setBusy("Running");
+      setNotice(null);
+      try {
+        const payload = { limit: Number(limit), user: user || void 0 };
+        if (baselineRunId) {
+          payload.baseline_run_id = baselineRunId;
+        }
+        let response;
+        if (mode === "start") {
+          response = await requestJson(`${bootstrap.api_root}/start`, { method: "POST", body: JSON.stringify(payload) });
+        } else {
+          payload.provider = provider;
+          payload.write_report = true;
+          if (baseUrl) payload.base_url = baseUrl;
+          if (model) payload.model = model;
+          if (maxTokens) payload.max_tokens = Number(maxTokens);
+          if (mode === "workflow" && selectedWorkflow) {
+            payload.workflow_name = selectedWorkflow;
+          }
+          response = await requestJson(`${bootstrap.api_root}/runs`, { method: "POST", body: JSON.stringify(payload) });
+        }
+        setResult(response);
+        onMutate();
+        runs.reload();
+        setNotice({
+          tone: "success",
+          title: "Run created",
+          body: response.compare?.href ? "The candidate is ready with a baseline comparison link." : "Inspect the new run now, then export or compare it from the run detail page."
+        });
+      } catch (error) {
+        setNotice(buildActionErrorNotice("run", error));
+      } finally {
+        setBusy(null);
+      }
+    }
+    return /* @__PURE__ */ React.createElement("main", { className: "page-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Start"), /* @__PURE__ */ React.createElement("h2", null, "Run first success without leaving the WebUI"), /* @__PURE__ */ React.createElement("p", null, "Use the provider-free quickstart, launch a bounded demo, or run a named workflow with the same product services used by the CLI."), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: launchRun, disabled: Boolean(busy) || mode === "workflow" && !selectedWorkflow }, busy || (mode === "start" ? "Run quickstart" : mode === "demo" ? "Run demo" : "Run workflow")), selectedWorkflow ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/workflows/${encodeURIComponent(selectedWorkflow)}`) }, "Open workflow detail") : null, shell?.overview?.latest_run?.run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${shell.overview.latest_run.run_id}`) }, "Inspect latest run") : null)), notice ? /* @__PURE__ */ React.createElement(Message, { tone: notice.tone, title: notice.title, body: notice.body }) : null, result ? /* @__PURE__ */ React.createElement(RunLaunchResultCard, { result, navigate }) : null, /* @__PURE__ */ React.createElement("div", { className: "split-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Run controls"), /* @__PURE__ */ React.createElement("p", null, "Start small with the released baseline, then move to demo or named workflow execution."))), /* @__PURE__ */ React.createElement(
+      "form",
+      {
+        className: "form-grid",
+        onSubmit: (event) => {
+          event.preventDefault();
+          void launchRun();
+        }
+      },
+      /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Mode"), /* @__PURE__ */ React.createElement("select", { value: mode, onChange: (event) => setMode(event.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "start" }, "First-success quickstart"), /* @__PURE__ */ React.createElement("option", { value: "demo" }, "Bounded demo run"), /* @__PURE__ */ React.createElement("option", { value: "workflow" }, "Named workflow run"))),
+      mode === "workflow" ? /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Workflow"), /* @__PURE__ */ React.createElement("select", { value: selectedWorkflow, onChange: (event) => setSelectedWorkflow(event.target.value) }, (workflows.data?.items || []).map((item) => /* @__PURE__ */ React.createElement("option", { key: item.name, value: item.name }, item.title || item.name)))) : null,
+      mode !== "start" ? /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Provider"), /* @__PURE__ */ React.createElement("select", { value: provider, onChange: (event) => setProvider(event.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "mock" }, "Provider-free baseline"), /* @__PURE__ */ React.createElement("option", { value: "local-llm" }, "Local OpenAI-compatible endpoint"))) : null,
+      /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Question limit"), /* @__PURE__ */ React.createElement("input", { value: limit, onChange: (event) => setLimit(event.target.value) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Baseline run"), /* @__PURE__ */ React.createElement("select", { value: baselineRunId, onChange: (event) => setBaselineRunId(event.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "None"), (runs.data?.items || []).map((run) => /* @__PURE__ */ React.createElement("option", { key: run.run_id, value: run.run_id }, run.run_id))))),
+      mode !== "start" && provider === "local-llm" ? /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Base URL"), /* @__PURE__ */ React.createElement("input", { value: baseUrl, placeholder: "http://localhost:8000/v1", onChange: (event) => setBaseUrl(event.target.value) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Model"), /* @__PURE__ */ React.createElement("input", { value: model, placeholder: "your-model-id", onChange: (event) => setModel(event.target.value) }))) : null,
+      mode !== "start" ? /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Max tokens"), /* @__PURE__ */ React.createElement("input", { value: maxTokens, onChange: (event) => setMaxTokens(event.target.value) })) : null,
+      /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "User attribution"), /* @__PURE__ */ React.createElement("input", { value: user, placeholder: "Optional analyst or operator name", onChange: (event) => setUser(event.target.value) }))
+    )), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Environment health"), /* @__PURE__ */ React.createElement("p", null, "Readiness, provider status, and the currently selected workflow stay visible before you launch anything."))), /* @__PURE__ */ React.createElement("div", { className: "stats-grid" }, /* @__PURE__ */ React.createElement(MetricCard, { label: "Ready checks passing", value: (health.data?.checks || []).filter((item) => item.ok).length }), /* @__PURE__ */ React.createElement(MetricCard, { label: "Checks total", value: (health.data?.checks || []).length }), /* @__PURE__ */ React.createElement(MetricCard, { label: "Local LLM healthy", value: String(Boolean(providers.data?.local_llm?.healthy)) })), health.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Health unavailable", body: health.error }) : null, (health.data?.checks || []).length ? /* @__PURE__ */ React.createElement("div", { className: "card-grid" }, (health.data?.checks || []).map((item) => /* @__PURE__ */ React.createElement("article", { key: item.name, className: "info-card" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("strong", null, item.name), /* @__PURE__ */ React.createElement(StatusPill, { value: item.ok ? "ready" : "failed" })), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, item.detail)))) : null, /* @__PURE__ */ React.createElement("div", { className: "provider-status-grid" }, /* @__PURE__ */ React.createElement("article", { className: "info-card" }, /* @__PURE__ */ React.createElement("h4", null, "Provider-free baseline"), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, "Works out of the box for first success and deterministic smoke validation.")), /* @__PURE__ */ React.createElement("article", { className: "info-card" }, /* @__PURE__ */ React.createElement("h4", null, "Local OpenAI-compatible"), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, providers.data?.local_llm?.healthy ? `Healthy at ${providers.data?.local_llm?.base_url || "configured endpoint"}.` : providers.data?.local_llm?.status || "Currently unavailable."))))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Workflow guide"), /* @__PURE__ */ React.createElement("p", null, "Inspect the selected workflow before running it so the graph and expected artifacts stay explicit."))), workflowDetail.loading && !workflowDetail.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading workflow detail" }) : null, workflowDetail.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Workflow detail unavailable", body: workflowDetail.error }) : null, workflowDetail.data ? /* @__PURE__ */ React.createElement("div", { className: "split-grid" }, /* @__PURE__ */ React.createElement("section", { className: "section-stack" }, /* @__PURE__ */ React.createElement("article", { className: "info-card" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, workflowDetail.data.workflow?.title || workflowDetail.data.workflow?.name), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, workflowDetail.data.workflow?.description || "No description available.")), /* @__PURE__ */ React.createElement("span", { className: `source-pill ${workflowDetail.data.workflow?.source || "builtin"}` }, workflowDetail.data.workflow?.source || "builtin")), /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Runtime provider"), /* @__PURE__ */ React.createElement("dd", null, workflowDetail.data.workflow?.runtime_provider || "mock")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Question limit"), /* @__PURE__ */ React.createElement("dd", null, workflowDetail.data.workflow?.question_limit || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Kind"), /* @__PURE__ */ React.createElement("dd", null, workflowDetail.data.workflow?.workflow_kind || "workflow")))), /* @__PURE__ */ React.createElement("article", { className: "info-card" }, /* @__PURE__ */ React.createElement("h4", null, "Explain"), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, workflowExplain.data?.explanation?.summary || "Choose a workflow to load its explanation."), (workflowExplain.data?.explanation?.runtime_requirements || []).length ? /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, (workflowExplain.data?.explanation?.runtime_requirements || []).map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item))) : null)), /* @__PURE__ */ React.createElement("section", { className: "section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "canvas-grid" }, (workflowDetail.data.canvas?.nodes || []).map((node) => /* @__PURE__ */ React.createElement("article", { key: node.name, className: "canvas-node" }, /* @__PURE__ */ React.createElement("strong", null, node.name), /* @__PURE__ */ React.createElement("span", null, node.kind), /* @__PURE__ */ React.createElement("span", null, node.description || node.implementation || "No description"), /* @__PURE__ */ React.createElement(StatusPill, { value: node.status || "ready" })))))) : null));
+  }
+  function WorkflowDetailPage({
+    workflowName,
+    navigate,
+    onMutate
+  }) {
+    const detail = useJsonResource(`${bootstrap.api_root}/workflows/${encodeURIComponent(workflowName)}`, [workflowName]);
+    const explain = useJsonResource(`${bootstrap.api_root}/workflows/${encodeURIComponent(workflowName)}/explain`, [workflowName]);
+    const runs = useJsonResource(`${bootstrap.api_root}/runs`, [workflowName]);
+    const [provider, setProvider] = useState("");
+    const [limit, setLimit] = useState("");
+    const [baselineRunId, setBaselineRunId] = useState("");
+    const [busy, setBusy] = useState(null);
+    const [notice, setNotice] = useState(null);
+    useEffect(() => {
+      if (detail.data?.workflow && !provider) {
+        setProvider(detail.data.workflow.runtime_provider || "");
+        setLimit(String(detail.data.workflow.question_limit || ""));
+      }
+    }, [detail.data, provider]);
+    async function validateWorkflow() {
+      setBusy("Validating workflow");
+      setNotice(null);
+      try {
+        const response = await requestJson(`${bootstrap.api_root}/workflows/${encodeURIComponent(workflowName)}/validate`, {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        setNotice({ tone: "success", title: "Workflow valid", body: `${response.workflow_name} is ready to run.` });
+      } catch (error) {
+        setNotice(buildActionErrorNotice("validate", error));
+      } finally {
+        setBusy(null);
+      }
+    }
+    async function runWorkflow() {
+      setBusy("Running workflow");
+      setNotice(null);
+      try {
+        const payload = {
+          workflow_name: workflowName,
+          write_report: true
+        };
+        if (provider) payload.provider = provider;
+        if (limit) payload.limit = Number(limit);
+        if (baselineRunId) payload.baseline_run_id = baselineRunId;
+        const response = await requestJson(`${bootstrap.api_root}/runs`, { method: "POST", body: JSON.stringify(payload) });
+        onMutate();
+        setNotice({
+          tone: "success",
+          title: "Workflow launched",
+          body: response.compare?.href ? "The candidate run is ready with a comparison link." : "Inspect the run detail to review report and exports."
+        });
+        navigate(response.compare?.href || response.href);
+      } catch (error) {
+        setNotice(buildActionErrorNotice("run", error));
+      } finally {
+        setBusy(null);
+      }
+    }
+    if (detail.error) {
+      return /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Workflow unavailable", body: detail.error });
+    }
+    if (detail.loading || !detail.data) {
+      return /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading workflow detail" });
+    }
+    return /* @__PURE__ */ React.createElement("main", { className: "page-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Workflow"), /* @__PURE__ */ React.createElement("h2", null, detail.data.workflow?.title || detail.data.workflow?.name), /* @__PURE__ */ React.createElement("p", null, detail.data.workflow?.description || explain.data?.explanation?.summary || "Inspect, validate, and run this workflow from the WebUI."), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: runWorkflow, disabled: Boolean(busy) }, busy === "Running workflow" ? busy : "Run workflow"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: validateWorkflow, disabled: Boolean(busy) }, busy === "Validating workflow" ? busy : "Validate"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate("/start") }, "Back to start"))), notice ? /* @__PURE__ */ React.createElement(Message, { tone: notice.tone, title: notice.title, body: notice.body }) : null, /* @__PURE__ */ React.createElement("div", { className: "split-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Execution settings"), /* @__PURE__ */ React.createElement("p", null, "Override the released provider or question limit when you want a bounded comparison run."))), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Provider"), /* @__PURE__ */ React.createElement("select", { value: provider, onChange: (event) => setProvider(event.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "mock" }, "Provider-free baseline"), /* @__PURE__ */ React.createElement("option", { value: "local-llm" }, "Local OpenAI-compatible endpoint"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Question limit"), /* @__PURE__ */ React.createElement("input", { value: limit, onChange: (event) => setLimit(event.target.value) }))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Baseline run for compare"), /* @__PURE__ */ React.createElement("select", { value: baselineRunId, onChange: (event) => setBaselineRunId(event.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "None"), (runs.data?.items || []).map((run) => /* @__PURE__ */ React.createElement("option", { key: run.run_id, value: run.run_id }, run.run_id)))), /* @__PURE__ */ React.createElement("article", { className: "info-card" }, /* @__PURE__ */ React.createElement("h4", null, "Explain"), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, explain.data?.explanation?.summary || "Workflow explanation unavailable."), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, (explain.data?.explanation?.expected_artifacts || []).map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item))))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Canvas"), /* @__PURE__ */ React.createElement("p", null, "Graph nodes stay visible so you can inspect the release-safe workflow shape before running it."))), /* @__PURE__ */ React.createElement("div", { className: "canvas-grid" }, (detail.data.canvas?.nodes || []).map((node) => /* @__PURE__ */ React.createElement("article", { key: node.name, className: "canvas-node" }, /* @__PURE__ */ React.createElement("strong", null, node.name), /* @__PURE__ */ React.createElement("span", null, node.kind), /* @__PURE__ */ React.createElement("span", null, node.description || node.implementation || "No description"), /* @__PURE__ */ React.createElement(StatusPill, { value: node.status || "ready" })))))));
+  }
+  function OperationsPage({ navigate, onMutate }) {
+    const profiles = useJsonResource(`${bootstrap.api_root}/profiles`, []);
+    const monitors = useJsonResource(`${bootstrap.api_root}/monitors`, []);
+    const runs = useJsonResource(`${bootstrap.api_root}/runs`, []);
+    const [profileName, setProfileName] = useState("local-default");
+    const [profileProvider, setProfileProvider] = useState("mock");
+    const [profileLimit, setProfileLimit] = useState("5");
+    const [selectedProfile, setSelectedProfile] = useState("");
+    const [selectedMonitor, setSelectedMonitor] = useState("");
+    const [selectedArtifactRun, setSelectedArtifactRun] = useState("");
+    const [cleanupKeep, setCleanupKeep] = useState("5");
+    const [cleanupPreview, setCleanupPreview] = useState(null);
+    const [busy, setBusy] = useState(null);
+    const [notice, setNotice] = useState(null);
+    const profileDetail = useJsonResource(
+      selectedProfile ? `${bootstrap.api_root}/profiles/${encodeURIComponent(selectedProfile)}` : null,
+      [selectedProfile]
+    );
+    const monitorDetail = useJsonResource(selectedMonitor ? `${bootstrap.api_root}/monitors/${selectedMonitor}` : null, [selectedMonitor]);
+    const artifactDetail = useJsonResource(
+      selectedArtifactRun ? `${bootstrap.api_root}/artifacts/${selectedArtifactRun}` : null,
+      [selectedArtifactRun]
+    );
+    useEffect(() => {
+      if (!selectedArtifactRun && (runs.data?.items || []).length) {
+        setSelectedArtifactRun(runs.data.items[0].run_id);
+      }
+    }, [selectedArtifactRun, runs.data]);
+    async function createProfile(template) {
+      setBusy("Saving profile");
+      setNotice(null);
+      try {
+        await requestJson(`${bootstrap.api_root}/profiles`, {
+          method: "POST",
+          body: JSON.stringify({
+            name: profileName,
+            template: template === "starter" ? "starter" : void 0,
+            provider: template === "starter" ? void 0 : profileProvider,
+            limit: template === "starter" ? void 0 : Number(profileLimit),
+            write_report: true
+          })
+        });
+        profiles.reload();
+        setSelectedProfile(profileName);
+        setNotice({ tone: "success", title: "Profile saved", body: "Run it from the list when you want a repeatable local configuration." });
+      } catch (error) {
+        setNotice(buildActionErrorNotice("profile", error));
+      } finally {
+        setBusy(null);
+      }
+    }
+    async function runProfile(name) {
+      setBusy(`Running ${name}`);
+      setNotice(null);
+      try {
+        const result = await requestJson(`${bootstrap.api_root}/profiles/${encodeURIComponent(name)}/run`, {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        onMutate();
+        runs.reload();
+        setNotice({ tone: "success", title: "Profile run started", body: `Inspect ${result.run_id} to review the new run.` });
+        navigate(result.href);
+      } catch (error) {
+        setNotice(buildActionErrorNotice("run", error));
+      } finally {
+        setBusy(null);
+      }
+    }
+    async function createMonitor() {
+      setBusy("Starting monitor");
+      setNotice(null);
+      try {
+        const result = await requestJson(`${bootstrap.api_root}/monitors`, {
+          method: "POST",
+          body: JSON.stringify({ limit: Number(profileLimit), provider: profileProvider })
+        });
+        monitors.reload();
+        setSelectedMonitor(result.run_id);
+        setNotice({ tone: "success", title: "Monitor started", body: "Run a cycle, pause, resume, or halt it from this page." });
+      } catch (error) {
+        setNotice(buildActionErrorNotice("monitor", error));
+      } finally {
+        setBusy(null);
+      }
+    }
+    async function mutateMonitor(runId, action) {
+      setBusy(action);
+      setNotice(null);
+      try {
+        await requestJson(`${bootstrap.api_root}/monitors/${runId}/${action}`, {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        monitors.reload();
+        monitorDetail.reload();
+        setNotice({ tone: "success", title: "Monitor updated", body: `Monitor ${action} completed.` });
+      } catch (error) {
+        setNotice(buildActionErrorNotice(action, error));
+      } finally {
+        setBusy(null);
+      }
+    }
+    async function previewCleanup() {
+      setBusy("Previewing cleanup");
+      setNotice(null);
+      try {
+        const preview = await requestJson(`${bootstrap.api_root}/artifacts/cleanup-preview`, {
+          method: "POST",
+          body: JSON.stringify({ keep: Number(cleanupKeep) })
+        });
+        setCleanupPreview(preview);
+      } catch (error) {
+        setNotice(buildActionErrorNotice("cleanup-preview", error));
+      } finally {
+        setBusy(null);
+      }
+    }
+    async function runCleanup() {
+      setBusy("Cleaning artifacts");
+      setNotice(null);
+      try {
+        const result = await requestJson(`${bootstrap.api_root}/artifacts/cleanup`, {
+          method: "POST",
+          body: JSON.stringify({ keep: Number(cleanupKeep), confirm: "delete" })
+        });
+        setCleanupPreview(result);
+        runs.reload();
+        onMutate();
+        setNotice({ tone: "success", title: "Artifacts cleaned", body: `${result.count || 0} run directories were removed.` });
+      } catch (error) {
+        setNotice(buildActionErrorNotice("cleanup", error));
+      } finally {
+        setBusy(null);
+      }
+    }
+    return /* @__PURE__ */ React.createElement("main", { className: "page-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Operations"), /* @__PURE__ */ React.createElement("h2", null, "Operate profiles, monitors, and artifact retention locally"), /* @__PURE__ */ React.createElement("p", null, "These controls cover the day-to-day operator loop without asking you to remember CLI flags.")), notice ? /* @__PURE__ */ React.createElement(Message, { tone: notice.tone, title: notice.title, body: notice.body }) : null, /* @__PURE__ */ React.createElement("div", { className: "split-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Profiles"), /* @__PURE__ */ React.createElement("p", null, "Create repeatable local run presets, then launch them from the same page."))), /* @__PURE__ */ React.createElement("div", { className: "form-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Name"), /* @__PURE__ */ React.createElement("input", { value: profileName, onChange: (event) => setProfileName(event.target.value) })), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Provider"), /* @__PURE__ */ React.createElement("select", { value: profileProvider, onChange: (event) => setProfileProvider(event.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "mock" }, "Provider-free baseline"), /* @__PURE__ */ React.createElement("option", { value: "local-llm" }, "Local OpenAI-compatible endpoint"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Question limit"), /* @__PURE__ */ React.createElement("input", { value: profileLimit, onChange: (event) => setProfileLimit(event.target.value) }))), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => void createProfile("custom"), disabled: Boolean(busy) }, "Save profile"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => void createProfile("starter"), disabled: Boolean(busy) }, "Save starter profile"))), /* @__PURE__ */ React.createElement("div", { className: "action-list" }, (profiles.data?.items || []).map((profile) => /* @__PURE__ */ React.createElement("div", { key: profile.name, className: "inline-action-card" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, profile.name), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, profile.provider, " \xB7 ", profile.limit, " questions")), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => setSelectedProfile(profile.name) }, "Show"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => void runProfile(profile.name) }, "Run"))))), profileDetail.data?.profile ? /* @__PURE__ */ React.createElement("article", { className: "info-card" }, /* @__PURE__ */ React.createElement("h4", null, "Selected profile"), /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Provider"), /* @__PURE__ */ React.createElement("dd", null, profileDetail.data.profile.provider)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Limit"), /* @__PURE__ */ React.createElement("dd", null, profileDetail.data.profile.limit)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Runs dir"), /* @__PURE__ */ React.createElement("dd", null, profileDetail.data.profile.runs_dir)))) : null), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Monitors"), /* @__PURE__ */ React.createElement("p", null, "Start a monitor, run a cycle, and manage its lifecycle from one place."))), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => void createMonitor(), disabled: Boolean(busy) }, "Start monitor")), /* @__PURE__ */ React.createElement("div", { className: "action-list" }, (monitors.data?.items || []).map((monitor) => /* @__PURE__ */ React.createElement("div", { key: monitor.run_id, className: "inline-action-card" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, monitor.run_id), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, monitor.status, " \xB7 ", monitor.provider || "provider-free")), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => setSelectedMonitor(monitor.run_id) }, "Show"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => void mutateMonitor(monitor.run_id, "run-once") }, "Run once"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => void mutateMonitor(monitor.run_id, "pause") }, "Pause"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => void mutateMonitor(monitor.run_id, "resume") }, "Resume"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => void mutateMonitor(monitor.run_id, "halt") }, "Halt"))))), monitorDetail.data?.monitor ? /* @__PURE__ */ React.createElement("article", { className: "info-card" }, /* @__PURE__ */ React.createElement("h4", null, "Selected monitor"), /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Status"), /* @__PURE__ */ React.createElement("dd", null, monitorDetail.data.monitor.status)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Cycles"), /* @__PURE__ */ React.createElement("dd", null, monitorDetail.data.monitor.cycles)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Watches"), /* @__PURE__ */ React.createElement("dd", null, (monitorDetail.data.monitor.watches || []).length)))) : null)), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Artifacts and retention"), /* @__PURE__ */ React.createElement("p", null, "Inspect artifact inventory for any run, preview cleanup, then confirm deletion explicitly."))), /* @__PURE__ */ React.createElement("div", { className: "three-column-grid" }, /* @__PURE__ */ React.createElement("section", { className: "section-stack" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Run"), /* @__PURE__ */ React.createElement("select", { value: selectedArtifactRun, onChange: (event) => setSelectedArtifactRun(event.target.value) }, (runs.data?.items || []).map((run) => /* @__PURE__ */ React.createElement("option", { key: run.run_id, value: run.run_id }, run.run_id)))), artifactDetail.data ? /* @__PURE__ */ React.createElement("ul", { className: "artifact-list" }, (artifactDetail.data.artifacts || []).map((item) => /* @__PURE__ */ React.createElement("li", { key: item.name }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, item.name), /* @__PURE__ */ React.createElement("span", null, item.path)), /* @__PURE__ */ React.createElement("span", { className: `availability-pill ${item.exists ? "available" : "missing"}` }, item.exists ? "Present" : "Missing")))) : null), /* @__PURE__ */ React.createElement("section", { className: "section-stack" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Keep newest run directories"), /* @__PURE__ */ React.createElement("input", { value: cleanupKeep, onChange: (event) => setCleanupKeep(event.target.value) })), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => void previewCleanup(), disabled: Boolean(busy) }, "Preview cleanup"), /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => void runCleanup(), disabled: Boolean(busy) }, "Delete previewed runs"))), /* @__PURE__ */ React.createElement("section", { className: "section-stack" }, cleanupPreview ? /* @__PURE__ */ React.createElement("article", { className: "info-card" }, /* @__PURE__ */ React.createElement("h4", null, "Cleanup preview"), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, cleanupPreview.count || 0, " run directories would be removed while keeping the newest ", cleanupPreview.keep, "."), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list compact-list" }, (cleanupPreview.items || []).map((item) => /* @__PURE__ */ React.createElement("li", { key: item.run_id }, item.run_id)))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No cleanup preview yet", body: "Preview retention first so deletion stays explicit." })))));
+  }
+  function AdvancedPage() {
+    const cards = [
+      {
+        title: "Validation and corpora",
+        status: "advanced",
+        body: "Validation suites, corpora preparation, and release-gate validation remain advanced lanes with explicit safety and runtime rules."
+      },
+      {
+        title: "Benchmark and stress",
+        status: "advanced",
+        body: "Benchmark compare, cache, and stress flows need heavier validation and should not be mistaken for first-success paths."
+      },
+      {
+        title: "Performance and competition",
+        status: "experimental",
+        body: "Performance budgets and competition dry-runs are visible here so advanced users can see the lane without overselling it to newcomers."
+      }
+    ];
+    return /* @__PURE__ */ React.createElement("main", { className: "page-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Advanced"), /* @__PURE__ */ React.createElement("h2", null, "Visible advanced lanes with honest status labels"), /* @__PURE__ */ React.createElement("p", null, "The product should not hide advanced capabilities, but it also should not present them as newcomer defaults.")), /* @__PURE__ */ React.createElement("section", { className: "card-grid" }, cards.map((card) => /* @__PURE__ */ React.createElement("article", { key: card.title, className: "info-card" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("strong", null, card.title), /* @__PURE__ */ React.createElement(StatusPill, { value: card.status })), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, card.body)))));
   }
   function RunsPage({ route, navigate }) {
     const params = useMemo(() => new URLSearchParams(route.search), [route.search]);
@@ -143,8 +464,32 @@
       navigate(`/runs/${run.run_id}`);
     } }, run.run_id)), /* @__PURE__ */ React.createElement("td", null, run.workflow?.title || run.workflow?.name || "Unknown workflow"), /* @__PURE__ */ React.createElement("td", null, /* @__PURE__ */ React.createElement(StatusPill, { value: run.status })), /* @__PURE__ */ React.createElement("td", null, run.provider), /* @__PURE__ */ React.createElement("td", null, run.updated_at || "\u2014"))))), !resource.loading && !(resource.data?.items || []).length ? /* @__PURE__ */ React.createElement(EmptyState, { title: "No runs match the current filter", body: "Try clearing filters or running a workflow from the workbench." }) : null));
   }
-  function RunDetailPage({ runId, navigate }) {
+  function RunDetailPage({
+    runId,
+    navigate,
+    onMutate
+  }) {
     const resource = useJsonResource(`${bootstrap.api_root}/runs/${runId}`, [runId]);
+    const [busy, setBusy] = useState(null);
+    const [notice, setNotice] = useState(null);
+    async function generateReport() {
+      setBusy("Generating report");
+      setNotice(null);
+      try {
+        const result = await requestJson(`${bootstrap.api_root}/runs/${runId}/report`, {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        resource.reload();
+        onMutate();
+        setNotice({ tone: "success", title: "Report ready", body: "The HTML report was regenerated and is ready to open." });
+        window.open(result.href, "_blank", "noopener");
+      } catch (error) {
+        setNotice(buildActionErrorNotice("report", error));
+      } finally {
+        setBusy(null);
+      }
+    }
     if (resource.error) {
       return /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Run detail unavailable", body: resource.error });
     }
@@ -153,7 +498,7 @@
     }
     const run = resource.data;
     const report = run.artifacts?.report || {};
-    return /* @__PURE__ */ React.createElement("main", { className: "page-grid detail-shell" }, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel detail-hero" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Run detail"), /* @__PURE__ */ React.createElement("h2", null, run.hero?.title || run.workflow?.title || run.run_id), /* @__PURE__ */ React.createElement("p", null, run.hero?.summary || "Inspect the latest run summary, question rows, and artifacts."), /* @__PURE__ */ React.createElement("div", { className: "meta-row" }, /* @__PURE__ */ React.createElement(StatusPill, { value: run.run?.status }), /* @__PURE__ */ React.createElement("span", null, run.run?.provider || "Unknown provider"), /* @__PURE__ */ React.createElement("span", null, run.run?.updated_at || run.run?.completed_at || "\u2014")), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => navigate("/workbench") }, "Back to workbench"), run.recommended_compare ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(run.recommended_compare.href) }, "Compare with ", run.recommended_compare.run_id) : null, report.available ? /* @__PURE__ */ React.createElement("a", { className: "secondary-link", href: report.href, target: "_blank", rel: "noreferrer" }, "Open HTML report") : null)), /* @__PURE__ */ React.createElement("section", { className: "stats-grid" }, (run.summary_cards || []).map((card) => /* @__PURE__ */ React.createElement(MetricCard, { key: card.label, label: card.label, value: card.value }))), /* @__PURE__ */ React.createElement("div", { className: "detail-grid" }, /* @__PURE__ */ React.createElement("div", { className: "detail-main" }, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Readable summary"), /* @__PURE__ */ React.createElement("p", null, "Grouped metadata keeps the run context visible without opening raw JSON."))), /* @__PURE__ */ React.createElement("div", { className: "info-grid" }, (run.metadata_groups || []).map((group) => /* @__PURE__ */ React.createElement(KeyValueGroup, { key: group.title, group })))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Results snapshot"), /* @__PURE__ */ React.createElement("p", null, "Core quality, training, and usage metrics in one place."))), (run.result_groups || []).length ? /* @__PURE__ */ React.createElement("div", { className: "info-grid" }, (run.result_groups || []).map((group) => /* @__PURE__ */ React.createElement(KeyValueGroup, { key: group.title, group }))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No result summary yet", body: "This run does not include evaluation or training summary fields." })), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Forecast table"), /* @__PURE__ */ React.createElement("p", null, "Question titles, forecast values, and scoring context for quick review.")), /* @__PURE__ */ React.createElement("span", { className: "section-count" }, run.forecast_table?.count || 0, " rows")), /* @__PURE__ */ React.createElement(RunForecastTable, { rows: run.forecast_table?.rows || [], emptyState: run.forecast_table?.empty_state }))), /* @__PURE__ */ React.createElement("aside", { className: "detail-sidebar" }, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Guided actions"), /* @__PURE__ */ React.createElement("p", null, "Jump to the next useful surface from this run."))), /* @__PURE__ */ React.createElement("div", { className: "action-stack" }, (run.guided_actions || []).map((action) => /* @__PURE__ */ React.createElement("button", { key: action.label, className: "secondary-button action-button", onClick: () => navigate(action.href) }, action.label)))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Report & artifacts"), /* @__PURE__ */ React.createElement("p", null, "Use the report when available; fall back to raw files when it is not."))), /* @__PURE__ */ React.createElement(ReportCard, { report }), /* @__PURE__ */ React.createElement(ArtifactList, { items: run.artifacts?.items || [] }), Object.keys(run.artifacts?.raw || {}).length ? /* @__PURE__ */ React.createElement("details", { className: "artifact-preview" }, /* @__PURE__ */ React.createElement("summary", null, "Raw structured payloads"), Object.entries(run.artifacts?.raw || {}).map(([key, value]) => /* @__PURE__ */ React.createElement(ArtifactPreview, { key, label: key, value }))) : null), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Compare next"), /* @__PURE__ */ React.createElement("p", null, "Pick a baseline to understand whether the candidate moved the right metrics."))), (run.baseline_candidates || []).length ? /* @__PURE__ */ React.createElement("div", { className: "action-list" }, (run.baseline_candidates || []).map((item) => /* @__PURE__ */ React.createElement("button", { key: item.run_id, className: "secondary-button action-button", onClick: () => navigate(item.href) }, item.label || item.run_id))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No comparison candidates", body: "Run another workflow revision to unlock side-by-side comparison." })), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Node timeline"), /* @__PURE__ */ React.createElement("p", null, "Execution order and final state of each graph step."))), (run.graph_trace || []).length ? /* @__PURE__ */ React.createElement("ul", { className: "timeline-list" }, (run.graph_trace || []).map((item, index) => /* @__PURE__ */ React.createElement("li", { key: `${item.node}-${index}` }, /* @__PURE__ */ React.createElement("strong", null, item.node), /* @__PURE__ */ React.createElement("span", null, item.status || "observed")))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No graph trace", body: "This run did not persist graph trace rows." })))));
+    return /* @__PURE__ */ React.createElement("main", { className: "page-grid detail-shell" }, notice ? /* @__PURE__ */ React.createElement(Message, { tone: notice.tone, title: notice.title, body: notice.body }) : null, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel detail-hero" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Run detail"), /* @__PURE__ */ React.createElement("h2", null, run.hero?.title || run.workflow?.title || run.run_id), /* @__PURE__ */ React.createElement("p", null, run.hero?.summary || "Inspect the latest run summary, question rows, and artifacts."), /* @__PURE__ */ React.createElement("div", { className: "meta-row" }, /* @__PURE__ */ React.createElement(StatusPill, { value: run.run?.status }), /* @__PURE__ */ React.createElement("span", null, run.run?.provider || "Unknown provider"), /* @__PURE__ */ React.createElement("span", null, run.run?.updated_at || run.run?.completed_at || "\u2014")), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => navigate("/workbench") }, "Back to workbench"), run.recommended_compare ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(run.recommended_compare.href) }, "Compare with ", run.recommended_compare.run_id) : null, report.available ? /* @__PURE__ */ React.createElement("a", { className: "secondary-link", href: report.href, target: "_blank", rel: "noreferrer" }, "Open HTML report") : null, /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: generateReport, disabled: busy === "Generating report" }, busy === "Generating report" ? busy : report.available ? "Regenerate report" : "Generate report"), /* @__PURE__ */ React.createElement("a", { className: "secondary-link", href: `${bootstrap.api_root}/runs/${runId}/export?format=json` }, "Export JSON"), /* @__PURE__ */ React.createElement("a", { className: "secondary-link", href: `${bootstrap.api_root}/runs/${runId}/export?format=csv` }, "Export CSV"))), /* @__PURE__ */ React.createElement("section", { className: "stats-grid" }, (run.summary_cards || []).map((card) => /* @__PURE__ */ React.createElement(MetricCard, { key: card.label, label: card.label, value: card.value }))), /* @__PURE__ */ React.createElement("div", { className: "detail-grid" }, /* @__PURE__ */ React.createElement("div", { className: "detail-main" }, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Readable summary"), /* @__PURE__ */ React.createElement("p", null, "Grouped metadata keeps the run context visible without opening raw JSON."))), /* @__PURE__ */ React.createElement("div", { className: "info-grid" }, (run.metadata_groups || []).map((group) => /* @__PURE__ */ React.createElement(KeyValueGroup, { key: group.title, group })))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Results snapshot"), /* @__PURE__ */ React.createElement("p", null, "Core quality, training, and usage metrics in one place."))), (run.result_groups || []).length ? /* @__PURE__ */ React.createElement("div", { className: "info-grid" }, (run.result_groups || []).map((group) => /* @__PURE__ */ React.createElement(KeyValueGroup, { key: group.title, group }))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No result summary yet", body: "This run does not include evaluation or training summary fields." })), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Forecast table"), /* @__PURE__ */ React.createElement("p", null, "Question titles, forecast values, and scoring context for quick review.")), /* @__PURE__ */ React.createElement("span", { className: "section-count" }, run.forecast_table?.count || 0, " rows")), /* @__PURE__ */ React.createElement(RunForecastTable, { rows: run.forecast_table?.rows || [], emptyState: run.forecast_table?.empty_state }))), /* @__PURE__ */ React.createElement("aside", { className: "detail-sidebar" }, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Guided actions"), /* @__PURE__ */ React.createElement("p", null, "Jump to the next useful surface from this run."))), /* @__PURE__ */ React.createElement("div", { className: "action-stack" }, (run.guided_actions || []).map((action) => /* @__PURE__ */ React.createElement("button", { key: action.label, className: "secondary-button action-button", onClick: () => navigate(action.href) }, action.label)))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Report & artifacts"), /* @__PURE__ */ React.createElement("p", null, "Use the report when available; fall back to raw files when it is not."))), /* @__PURE__ */ React.createElement(ReportCard, { report }), /* @__PURE__ */ React.createElement(ArtifactList, { items: run.artifacts?.items || [] }), Object.keys(run.artifacts?.raw || {}).length ? /* @__PURE__ */ React.createElement("details", { className: "artifact-preview" }, /* @__PURE__ */ React.createElement("summary", null, "Raw structured payloads"), Object.entries(run.artifacts?.raw || {}).map(([key, value]) => /* @__PURE__ */ React.createElement(ArtifactPreview, { key, label: key, value }))) : null), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Compare next"), /* @__PURE__ */ React.createElement("p", null, "Pick a baseline to understand whether the candidate moved the right metrics."))), (run.baseline_candidates || []).length ? /* @__PURE__ */ React.createElement("div", { className: "action-list" }, (run.baseline_candidates || []).map((item) => /* @__PURE__ */ React.createElement("button", { key: item.run_id, className: "secondary-button action-button", onClick: () => navigate(item.href) }, item.label || item.run_id))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No comparison candidates", body: "Run another workflow revision to unlock side-by-side comparison." })), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Node timeline"), /* @__PURE__ */ React.createElement("p", null, "Execution order and final state of each graph step."))), (run.graph_trace || []).length ? /* @__PURE__ */ React.createElement("ul", { className: "timeline-list" }, (run.graph_trace || []).map((item, index) => /* @__PURE__ */ React.createElement("li", { key: `${item.node}-${index}` }, /* @__PURE__ */ React.createElement("strong", null, item.node), /* @__PURE__ */ React.createElement("span", null, item.status || "observed")))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No graph trace", body: "This run did not persist graph trace rows." })))));
   }
   function ComparePage({ candidateRunId, baselineRunId, navigate }) {
     const resource = useJsonResource(`${bootstrap.api_root}/runs/${candidateRunId}/compare/${baselineRunId}`, [candidateRunId, baselineRunId]);
@@ -492,6 +837,9 @@
     const normalized = String(source || "unknown").toLowerCase();
     const label = normalized === "builtin" ? "Built-in \xB7 read-only" : normalized === "local" ? "Local workflow" : source;
     return /* @__PURE__ */ React.createElement("span", { className: `source-pill ${normalized}` }, label);
+  }
+  function RunLaunchResultCard({ result, navigate }) {
+    return /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Latest launched run"), /* @__PURE__ */ React.createElement("p", null, "Jump straight into detail, report, or compare while the context is fresh."))), /* @__PURE__ */ React.createElement("div", { className: "inline-action-card" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, result.run_id), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, result.command || "Run created", " \xB7 ", result.provider || "provider-free", " \xB7 ", result.status || "running")), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => navigate(result.href) }, "Inspect run"), result.report_href ? /* @__PURE__ */ React.createElement("a", { className: "secondary-link", href: result.report_href, target: "_blank", rel: "noreferrer" }, "Open report") : null, result.compare?.href ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(result.compare.href) }, "Compare") : null)));
   }
   function RunCard({ run, onOpen }) {
     return /* @__PURE__ */ React.createElement("section", { className: "panel run-card" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Latest run"), /* @__PURE__ */ React.createElement("h3", null, run.workflow?.title || run.run_id), /* @__PURE__ */ React.createElement("p", null, run.workflow?.name || run.provider)), /* @__PURE__ */ React.createElement("div", { className: "meta-row" }, /* @__PURE__ */ React.createElement(StatusPill, { value: run.status }), /* @__PURE__ */ React.createElement("span", null, run.updated_at || "\u2014")), /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: onOpen }, "Inspect latest run"));

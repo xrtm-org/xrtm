@@ -7,6 +7,7 @@ import sys
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
@@ -45,12 +46,7 @@ def run_doctor(
     show_next_steps: bool = True,
 ) -> bool:
     versions = package_versions()
-    checks = [
-        _python_check(),
-        _package_check(versions),
-        _import_check(),
-        _runs_dir_check(runs_dir),
-    ]
+    checks = _readiness_checks(versions=versions, runs_dir=runs_dir)
     ready = all(check.ok for check in checks)
     local_status = local_llm_status(base_url=base_url)
 
@@ -61,6 +57,43 @@ def run_doctor(
         _print_next_steps(console, ready, checks)
     _print_local_llm_panel(console, local_status)
     return ready
+
+
+def doctor_snapshot(*, base_url: str | None = None, runs_dir: Path = DEFAULT_RUNS_DIR) -> dict[str, Any]:
+    """Return readiness data shared by CLI doctor and WebUI health checks."""
+
+    versions = package_versions()
+    checks = _readiness_checks(versions=versions, runs_dir=runs_dir)
+    return {
+        "ready": all(check.ok for check in checks),
+        "supported_python": SUPPORTED_PYTHON,
+        "packages": versions,
+        "checks": [
+            {
+                "name": check.name,
+                "ok": check.ok,
+                "status": "ready" if check.ok else "not_ready",
+                "detail": check.detail,
+                "fix": check.fix,
+            }
+            for check in checks
+        ],
+        "local_llm": local_llm_status(base_url=base_url),
+        "next": {
+            "start_command": RELEASED_START_COMMAND,
+            "provider_free_required": True,
+            "local_llm_optional": True,
+        },
+    }
+
+
+def _readiness_checks(*, versions: dict[str, str], runs_dir: Path) -> list[DoctorCheck]:
+    return [
+        _python_check(),
+        _package_check(versions),
+        _import_check(),
+        _runs_dir_check(runs_dir),
+    ]
 
 
 def _python_check() -> DoctorCheck:
@@ -236,4 +269,4 @@ def _print_local_llm_panel(console: Console, status: dict) -> None:
     console.print(Panel("\n".join(lines), title="Optional advanced path: local OpenAI-compatible endpoint", border_style=color))
 
 
-__all__ = ["DEFAULT_RUNS_DIR", "DoctorCheck", "run_doctor"]
+__all__ = ["DEFAULT_RUNS_DIR", "DoctorCheck", "doctor_snapshot", "run_doctor"]
