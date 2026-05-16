@@ -3,8 +3,8 @@
 This is the authoritative first-success path for the published
 `xrtm==0.7.0` package.
 
-You will install XRTM, run `xrtm start`, inspect the latest run, open the
-editable workflow workbench, make one safe workflow edit, validate it, run it,
+You will install XRTM, run `xrtm start`, inspect the latest run, open the local
+WebUI shell, make one safe workflow edit in Workbench, validate it, run it,
 compare the result, and then choose the next guide that matches your job.
 
 ## 1. Install
@@ -41,31 +41,41 @@ After that review, the main files to recognize are `run.json`,
 `run_summary.json`, `eval.json`, and `report.html` inside the newest
 `runs/<run-id>/` directory.
 
-## 4. Open the editable workflow workbench
+## 4. Open the local WebUI shell
 
-Launch the local WebUI workbench:
+Launch the local WebUI:
 
 ```bash
 xrtm web --runs-dir runs
 ```
 
-Open `http://127.0.0.1:8765/workbench` in your browser.
+Open `http://127.0.0.1:8765/` in your browser first.
 
-The workbench shows the latest run, the workflow canvas, validation status, and
-safe editing controls. Its released editor is intentionally constrained: it can
-clone a workflow into `.xrtm/workflows`, change `questions.limit` within the
-released bounds, toggle report writing, adjust supported aggregate weights, then
-validate and run the edited workflow.
+The released WebUI is a local-only React/TypeScript app shell backed by a
+Python JSON API. It gives you Overview, Runs, run detail, compare, and the
+`/workbench` draft flow in one browser shell.
 
-## 5. Clone, safely edit, validate, run, and compare
+With the default local workspace layout, reusable workflows stay in
+`.xrtm/workflows` while draft values, validation snapshots, compare cache, and
+resume state stay in `.xrtm/webui/app-state.db`.
+
+Open `http://127.0.0.1:8765/workbench` when you are ready to edit. The guided
+workbench keeps the baseline in view, creates a local draft, validates inline,
+runs a candidate, and links straight into run detail and compare pages. Its
+released editor is intentionally constrained: it can change `questions.limit`
+within the released bounds, toggle report writing, and adjust supported
+aggregate weights. It is not an arbitrary graph, JSON, or code editor.
+
+## 5. Inspect, clone, safely edit, validate, run, and compare
 
 From the workbench:
 
-1. clone `demo-provider-free` into a local workflow
-2. change `questions.limit` or the report toggle
-3. validate the workflow
-4. run it
-5. compare it with the first run
+1. use Overview or Runs to inspect the baseline you want to keep in view
+2. clone `demo-provider-free` into a local draft
+3. change `questions.limit`, the report toggle, or supported aggregate weights
+4. save and validate the draft inline
+5. run a candidate
+6. review `/runs/<candidate-run-id>` or `/runs/<candidate-run-id>/compare/<baseline-run-id>` before choosing the next step
 
 If you prefer the terminal, the TUI remains available for read-only review:
 

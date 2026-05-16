@@ -29,7 +29,7 @@ Please describe the tests that you ran to verify your changes.
 ## Cross-repo coordination
 Complete this section when the PR changes contracts, packaging/version expectations, CI sibling refs, or release sequencing.
 
-- Coordination record: <!-- issue / PR family / release-train note, or N/A -->
+- Coordination record: <!-- issue / PR family / release-train note with anchor xrtm version and explicit sibling refs, or N/A -->
 - Release clean-room evidence: <!-- provider-free workflow artifact / summary.json path, local-LLM note if applicable, or N/A -->
 - Upstream refs validated:
   - `xrtm-data`: <!-- branch / tag / SHA / PR ref, or N/A -->
@@ -48,6 +48,7 @@ Complete this section when the PR changes contracts, packaging/version expectati
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] New and existing unit tests pass locally with my changes
 - [ ] Release-pinned docs stay on the published package surface, or the change is explicitly labeled next-release/advanced elsewhere
+- [ ] Release-train notes and published-surface claims use explicit package versions or refs per the stack versioning policy
 - [ ] Coordinated validation, when needed, uses explicit upstream refs rather than same-name branch fallback
 - [ ] Post-merge validation or release-train follow-up is documented when downstream repos or site/docs are affected
 

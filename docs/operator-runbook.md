@@ -31,16 +31,23 @@ xrtm runs export latest --runs-dir runs --output export.csv --format csv
 Use compare only when both runs answer the same question set. JSON is the
 full-fidelity export; CSV is the spreadsheet-friendly summary.
 
-## 3. Reopen and steer the workflow workbench
+## 3. Reopen the WebUI shell and guided workbench
 
 ```bash
 xrtm web --runs-dir runs --workflows-dir .xrtm/workflows
 ```
 
-Open `http://127.0.0.1:8765/workbench` to review the workflow canvas for recent
-runs. The released workbench can clone a workflow into `.xrtm/workflows`, apply
-bounded safe edits, validate the edited workflow, run it, and compare the new run
-against a baseline. It is not an arbitrary graph, JSON, implementation, or code
+Open `http://127.0.0.1:8765/` to revisit the Overview, Runs, run detail,
+compare, and Workbench surfaces in the same local shell.
+
+The browser UI stays local-only: a Python JSON API serves the React app shell,
+reusable workflows stay in `.xrtm/workflows`, and draft values, validation
+snapshots, compare cache, and resume state are stored in
+`.xrtm/webui/app-state.db`.
+
+`/workbench` guides inspect → clone → safe edit → validate → run → compare.
+Safe edits stay bounded to `questions.limit`, report writing, and supported
+aggregate weights. It is not an arbitrary graph, JSON, implementation, or code
 editor.
 
 Use the terminal TUI when you only need read-only review:

@@ -2,7 +2,7 @@
 
 > This page tracks conveniences that are intentionally **not** part of the published `xrtm==0.7.0` surface. Guided onboarding helpers, latest-run shortcuts, CSV export, the CLI workflow blueprint loop, and the editable workflow workbench graduated by `0.7.0`; this page now tracks what remains unreleased.
 
-Use this together with the governance repo's [Feature Status and Graduation Policy](https://github.com/xrtm-org/governance/blob/main/policies/feature-status-and-graduation-policy.md) and [Release Readiness Policy](https://github.com/xrtm-org/governance/blob/main/policies/release-readiness-policy.md).
+Use this together with the governance repo's [Feature Status and Graduation Policy](https://github.com/xrtm-org/governance/blob/main/policies/feature-status-and-graduation-policy.md), [Release Readiness Policy](https://github.com/xrtm-org/governance/blob/main/policies/release-readiness-policy.md), and [Stack Versioning Policy](https://github.com/xrtm-org/governance/blob/main/policies/stack-versioning-policy.md).
 
 ## Status legend
 
@@ -30,7 +30,8 @@ Use this together with the governance repo's [Feature Status and Graduation Poli
 3. Graduation evidence for released docs must include the command-claim check plus provider-free clean-room acceptance from release artifacts (wheelhouse before publish, PyPI after publish). If the change touches local-model behavior, also require local-LLM clean-room evidence or an explicit defer note. Local-LLM release evidence should include the clean-room summary, benchmark artifacts, competition dry-run bundle, and GPU telemetry summary rather than a bare demo log.
 4. If a target train slips or the blocking evidence is not ready, keep the feature unreleased or downgrade the status. Do not partially update the release-pinned docs first.
 5. If a feature is promising but still semantically muddy, mark it **`redesign-required`** rather than teasing it in release docs.
-6. Use `xrtm.org/docs/next-release.md` for the public summary and keep this page as the command-level source of truth.
+6. Release-train labels here are coordination labels, not forced shared version numbers; record the exact package versions or refs that the train depends on.
+7. Use `xrtm.org/docs/next-release.md` for the public summary and keep this page as the command-level source of truth.
 
 ## Released workbench implementation notes
 

@@ -1348,11 +1348,16 @@ def test_webui_serves_api_routes() -> None:
         thread.start()
         try:
             _, port = server.server_address
+            with urlopen(f"http://127.0.0.1:{port}/api/app-shell", timeout=5) as response:
+                shell_body = response.read().decode("utf-8")
             with urlopen(f"http://127.0.0.1:{port}/api/runs", timeout=5) as response:
-                body = response.read().decode("utf-8")
-            assert "runs" in body
-            assert "local_llm" in body
-            assert "demo-provider-free" in body
+                runs_body = response.read().decode("utf-8")
+            with urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
+                html = response.read().decode("utf-8")
+            assert '"resume_target"' in shell_body
+            assert '"demo-provider-free"' in runs_body
+            assert "Overview · Runs · Workbench" in html
+            assert "/static/app.js" in html
         finally:
             server.shutdown()
             server.server_close()

@@ -40,6 +40,8 @@ env/
 .coverage
 htmlcov/
 .mypy_cache/
+.cache/
+runs-validation/
 
 # OS
 .DS_Store
