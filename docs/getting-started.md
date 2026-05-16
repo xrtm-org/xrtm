@@ -1,7 +1,7 @@
 # Getting Started with XRTM
 
 This is the authoritative first-success path for the published
-`xrtm==0.7.0` package.
+`xrtm==0.7.1` package.
 
 You will install XRTM, run `xrtm start`, inspect the latest run, open the local
 WebUI shell, make one safe workflow edit in Workbench, validate it, run it,
@@ -12,7 +12,7 @@ compare the result, and then choose the next guide that matches your job.
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.7.0
+pip install xrtm==0.7.1
 ```
 
 **Supported Python versions:** `>=3.11,<3.13`
