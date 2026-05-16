@@ -32,7 +32,7 @@ uv pip install -e ../data -e ../eval -e ../forecast -e ../train
 
 1. Branch from `main`.
 2. Use `uv` for repository automation when possible.
-3. Keep release-pinned docs on the currently published package surface.
+3. Keep release-pinned docs on the currently published package surface, with `xrtm` as the product-anchor version for released product claims.
 4. Use explicit upstream refs for coordinated changes. Same-name sibling branches are a convenience, not a compatibility contract.
 
 ## Where docs, tests, and policies belong
@@ -57,8 +57,9 @@ These surfaces are release-pinned:
 Rules:
 
 1. Only describe commands, versions, and behavior that already exist in the published package set.
-2. If a useful feature exists in source but is not published yet, record it in `docs/next-release-feature-track.md` with an explicit governance status and graduation evidence.
-3. Do not update release-pinned docs for a branch-only convenience until the package release, release contract, and released-stack smoke all move together.
+2. When docs say “current XRTM release,” anchor that claim to the published `xrtm` package version; support packages may version independently when their own compatibility story stays honest.
+3. If a useful feature exists in source but is not published yet, record it in `docs/next-release-feature-track.md` with an explicit governance status and graduation evidence.
+4. Do not update release-pinned docs for a branch-only convenience until the package release, release contract, and released-stack smoke all move together.
 
 ## Published-surface changes
 
@@ -100,5 +101,6 @@ Use the governance repo as the shared operating manual:
 
 - [PR Acceptance Policy](https://github.com/xrtm-org/governance/blob/main/policies/pr-acceptance-policy.md)
 - [Release Readiness Policy](https://github.com/xrtm-org/governance/blob/main/policies/release-readiness-policy.md)
+- [Stack Versioning Policy](https://github.com/xrtm-org/governance/blob/main/policies/stack-versioning-policy.md)
 - [Cross-Repository Compatibility and Coordination Policy](https://github.com/xrtm-org/governance/blob/main/policies/cross-repo-compatibility-policy.md)
 - [Feature Status and Graduation Policy](https://github.com/xrtm-org/governance/blob/main/policies/feature-status-and-graduation-policy.md)

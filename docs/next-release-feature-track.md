@@ -1,8 +1,8 @@
 # Next-release feature track
 
-> This page tracks conveniences that are intentionally **not** part of the published `xrtm==0.7.0` surface. Guided onboarding helpers, latest-run shortcuts, CSV export, the CLI workflow blueprint loop, and the editable workflow workbench graduated by `0.7.0`; this page now tracks what remains unreleased.
+> This page tracks conveniences that are intentionally **not** part of the published `xrtm==0.7.1` surface. Guided onboarding helpers, latest-run shortcuts, CSV export, the CLI workflow blueprint loop, and the guided local WebUI workbench are now on the released surface; this page now tracks what remains unreleased.
 
-Use this together with the governance repo's [Feature Status and Graduation Policy](https://github.com/xrtm-org/governance/blob/main/policies/feature-status-and-graduation-policy.md) and [Release Readiness Policy](https://github.com/xrtm-org/governance/blob/main/policies/release-readiness-policy.md).
+Use this together with the governance repo's [Feature Status and Graduation Policy](https://github.com/xrtm-org/governance/blob/main/policies/feature-status-and-graduation-policy.md), [Release Readiness Policy](https://github.com/xrtm-org/governance/blob/main/policies/release-readiness-policy.md), and [Stack Versioning Policy](https://github.com/xrtm-org/governance/blob/main/policies/stack-versioning-policy.md).
 
 ## Status legend
 
@@ -21,7 +21,7 @@ Use this together with the governance repo's [Feature Status and Graduation Poli
 | Corpus validation workflows | `xrtm validate run`, `xrtm validate list-corpora` | **`advanced/experimental`** | After corpus policy and released-stack validation mature further | These flows depend on corpus tiers, release-gate corpora, caching, and governance decisions that are more specialized than the honest default product path. They fit release engineering and advanced operator/research workflows better than newcomer docs. | Keep them in advanced or release-gate guidance until corpus policy, released upstream package compatibility, and larger-scale validation evidence are stable enough for public promotion. |
 | Corpus preparation UX | `xrtm validate prepare-corpus` | **`redesign-required`** | Not on the current release train | The current command is useful, but the public contract still mixes cache preparation, dataset policy, preview semantics, and release-gate expectations. The workflow deserves clearer naming and framing before it becomes a public release promise. | Redesign the user-facing command/story first (for example, make cache/setup semantics explicit), then re-evaluate whether it belongs with `validate` or a separate corpus-management surface. |
 | Run attribution flags | `--user` on run-producing commands and saved profiles | **`redesign-required`** | Not on the current release train | A free-form attribution flag is technically useful, but the released product story still says team usage relies on conventions rather than built-in identity management. Shipping the current flag as-is risks overselling multi-user semantics and privacy expectations. | Define the public semantics first: what the field means, where it appears, privacy/storage expectations, and whether it is run metadata, analyst labeling, or team workflow state. Update team docs and exports only after that contract is explicit. |
-| Editable workflow workbench / GUI canvas | `xrtm web --workflows-dir .xrtm/workflows`, `/workbench`, `/api/workbench`, `/workbench/clone`, `/workbench/edit`, `/workbench/validate`, `/workbench/run` | **`shipped`** | `0.7.0` | The released local WebUI workbench can inspect runs, view a workflow canvas, clone a workflow into the local workflow directory, save constrained safe edits, validate, run, and compare against a selected baseline run. Safe edits are intentionally bounded to `questions.limit`, `artifacts.write_report`, and aggregate candidate weights for upstream candidate nodes; there is no arbitrary graph editing, JSON editing, implementation editing, or code editing. | Keep provider-free clean-room evidence covering WebUI smoke plus clone → constrained edit → validate → run → compare. Expand only after additional policy and validation gates deliberately broaden the editing contract. |
+| Editable workflow workbench / GUI canvas | `xrtm web --workflows-dir .xrtm/workflows`, `/`, `/runs`, `/workbench`, `/api/app-shell`, `/api/runs`, `/api/drafts`, `/api/runs/<run-id>/compare/<baseline-run-id>` | **`shipped`** | `0.7.1` | The released local WebUI is a React/TypeScript app shell backed by the local Python API and SQLite app-state. It can inspect runs, resume recent work, clone a workflow into the local workflow directory, save constrained safe edits, validate, run, and compare against a selected baseline run. Safe edits are intentionally bounded to `questions.limit`, `artifacts.write_report`, and aggregate candidate weights for upstream candidate nodes; there is no arbitrary graph editing, JSON editing, implementation editing, or code editing. | Keep provider-free clean-room evidence covering WebUI smoke plus clone → constrained edit → validate → run → compare. Expand only after additional policy and validation gates deliberately broaden the editing contract. |
 
 ## Rules for contributors
 
@@ -30,14 +30,15 @@ Use this together with the governance repo's [Feature Status and Graduation Poli
 3. Graduation evidence for released docs must include the command-claim check plus provider-free clean-room acceptance from release artifacts (wheelhouse before publish, PyPI after publish). If the change touches local-model behavior, also require local-LLM clean-room evidence or an explicit defer note. Local-LLM release evidence should include the clean-room summary, benchmark artifacts, competition dry-run bundle, and GPU telemetry summary rather than a bare demo log.
 4. If a target train slips or the blocking evidence is not ready, keep the feature unreleased or downgrade the status. Do not partially update the release-pinned docs first.
 5. If a feature is promising but still semantically muddy, mark it **`redesign-required`** rather than teasing it in release docs.
-6. Use `xrtm.org/docs/next-release.md` for the public summary and keep this page as the command-level source of truth.
+6. Release-train labels here are coordination labels, not forced shared version numbers; record the exact package versions or refs that the train depends on.
+7. Use `xrtm.org/docs/next-release.md` for the public summary and keep this page as the command-level source of truth.
 
 ## Released workbench implementation notes
 
 - Entry point in source: `xrtm web`, with `--runs-dir`, `--workflows-dir`, `--host`, `--port`, and `--smoke`.
-- Default local URL: `http://127.0.0.1:8765`; the editable workbench is at `/workbench`.
-- JSON/read routes: `/api/runs`, `/api/workbench`, `/api/runs/<run-id>`.
-- Workbench form routes: `/workbench/clone`, `/workbench/edit`, `/workbench/validate`, and `/workbench/run`.
-- The workbench is server-rendered and local-workspace oriented. It writes cloned workflows under the configured local workflows directory and run artifacts under the configured runs directory.
+- Default local URL: `http://127.0.0.1:8765`; the editable workbench remains at `/workbench`.
+- App routes: `/`, `/runs`, `/workbench`, `/runs/<run-id>`, and `/runs/<candidate-run-id>/compare/<baseline-run-id>`.
+- JSON routes: `/api/app-shell`, `/api/runs`, `/api/workbench`, `/api/workflows`, `/api/drafts`, and `/api/runs/<run-id>/compare/<baseline-run-id>`.
+- The shell serves a local React/TypeScript frontend, keeps reusable workflows on disk, and stores draft values, validation snapshots, compare cache, and resume state in a local SQLite app database.
 - Safe-edit controls are deliberately narrow: `questions.limit` is capped at 25, `artifacts.write_report` is a boolean, and aggregate weights are normalized across upstream candidate nodes only.
 - This is not a general graph editor and should not be described as arbitrary workflow/JSON/code editing until the implementation and policy intentionally change.

@@ -11,6 +11,7 @@ import pytest
 
 from xrtm.product import workbench as workbench_module
 from xrtm.product.web import create_web_server, render_workbench_html
+from xrtm.product.webui_state import WebUIStateStore
 from xrtm.product.workbench import (
     WorkbenchInputError,
     apply_workbench_edit,
@@ -85,6 +86,8 @@ def test_workbench_snapshot_loads_local_workflow_and_missing_model(tmp_path: Pat
     assert snapshot["validation"]["ok"] is True
     assert snapshot["canvas"]["nodes"]
     assert snapshot["safe_edit"]["questions_limit"]["max"] == 25
+    assert snapshot["safe_edit"]["supported_edits"]
+    assert snapshot["safe_edit"]["supported_edits"][0]["key"] == "questions_limit"
 
     missing = workbench_snapshot(Path("missing-runs"), workflows_dir, workflow_name="does-not-exist")
     assert missing["workflow_error"] == "workflow does not exist: does-not-exist"
@@ -234,13 +237,12 @@ def test_workbench_snapshot_and_html_expose_gui_loop(tmp_path: Path) -> None:
 
     assert snapshot["canvas"]["nodes"]
     assert snapshot["safe_edit"]["aggregate_weight_editors"]
-    assert "Workflow canvas" in html
-    assert "Clone workflow" in html
-    assert "Save constrained edit" in html
-    assert "Validate, run, and compare" in html
+    assert "Overview · Runs · Workbench" in html
+    assert "/static/app.js" in html
+    assert "Loading the local-first app shell" in html
 
 
-def test_workbench_webui_clone_and_reject_unsafe_edit_form(tmp_path: Path) -> None:
+def test_workbench_webui_creates_draft_and_rejects_unsafe_patch(tmp_path: Path) -> None:
     workflows_dir = tmp_path / "workflows"
     server = create_web_server(runs_dir=tmp_path / "runs", workflows_dir=workflows_dir, port=0)
     thread = Thread(target=server.serve_forever, daemon=True)
@@ -249,23 +251,29 @@ def test_workbench_webui_clone_and_reject_unsafe_edit_form(tmp_path: Path) -> No
         _, port = server.server_address
         base_url = f"http://127.0.0.1:{port}"
 
-        clone_response = _post_form(
-            f"{base_url}/workbench/clone",
-            {"source_name": "demo-provider-free", "target_name": "web-demo"},
+        created = _request_json(
+            f"{base_url}/api/drafts",
+            method="POST",
+            payload={"source_workflow_name": "demo-provider-free"},
         )
-        assert clone_response.status == 200
-        assert "workflow=web-demo" in clone_response.url
-        assert (workflows_dir / "web-demo.json").exists()
+        assert created["id"].startswith("draft-")
+        assert created["draft_workflow_name"].startswith("demo-provider-free-draft")
+        assert (workflows_dir / f"{created['draft_workflow_name']}.json").exists()
+        assert created["guidance"]["limitations"]
+        assert created["guidance"]["supported_edits"]
+        assert created["guidance"]["next_step"]["key"] == "validate"
+        assert "SQLite" in " ".join(created["guidance"]["source_of_truth"])
+
+        loaded = _request_json(f"{base_url}/api/drafts/{created['id']}")
+        assert loaded["workflow"]["source"] == "local"
+        assert loaded["step_state"][4]["locked"] is True
+        assert loaded["guidance"]["next_step"]["title"] == "Validate before you run"
 
         with pytest.raises(HTTPError) as exc_info:
-            _post_form(
-                f"{base_url}/workbench/edit",
-                {
-                    "workflow_name": "web-demo",
-                    "questions_limit": "1",
-                    "artifacts_write_report": "true",
-                    "graph.nodes.injected.implementation": "not.allowed",
-                },
+            _request_json(
+                f"{base_url}/api/drafts/{created['id']}",
+                method="PATCH",
+                payload={"values": {"graph.nodes.injected.implementation": "not.allowed"}},
             )
         assert exc_info.value.code == 400
         assert "unsupported edit field" in exc_info.value.read().decode("utf-8")
@@ -273,6 +281,56 @@ def test_workbench_webui_clone_and_reject_unsafe_edit_form(tmp_path: Path) -> No
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_run_detail_snapshot_surfaces_readable_forecast_rows_and_missing_report(tmp_path: Path) -> None:
+    registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
+    runs_dir = tmp_path / "runs"
+    result = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+    report_path = runs_dir / result.run_id / "report.html"
+    report_path.unlink()
+
+    store = WebUIStateStore(tmp_path / "app-state.db")
+    store.ensure_schema()
+    store.refresh_indexes(runs_dir=runs_dir, registry=registry)
+
+    snapshot = store.run_detail_snapshot(runs_dir=runs_dir, registry=registry, run_id=result.run_id)
+
+    assert "finished" in snapshot["hero"]["summary"]
+    assert snapshot["metadata_groups"][0]["title"] == "Run metadata"
+    assert snapshot["forecast_table"]["count"] >= 1
+    assert snapshot["forecast_table"]["rows"][0]["question_title"]
+    assert snapshot["artifacts"]["report"]["available"] is False
+    assert snapshot["artifacts"]["report"]["href"] is None
+    assert snapshot["artifacts"]["items"][0]["label"] == "HTML report"
+
+
+def test_compare_snapshot_groups_metrics_and_question_titles(tmp_path: Path) -> None:
+    registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
+    runs_dir = tmp_path / "runs"
+    baseline = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+    candidate = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+
+    store = WebUIStateStore(tmp_path / "app-state.db")
+    store.ensure_schema()
+    store.refresh_indexes(runs_dir=runs_dir, registry=registry)
+
+    snapshot = store.compare_snapshot(
+        runs_dir=runs_dir,
+        candidate_run_id=candidate.run_id,
+        baseline_run_id=baseline.run_id,
+        refresh=True,
+    )
+
+    assert snapshot["schema_version"] == "xrtm.webui.compare.v2"
+    assert snapshot["verdict"]["headline"]
+    assert snapshot["verdict"]["next_step"]
+    assert snapshot["run_pair"]["candidate"]["report"]["available"] is True
+    assert snapshot["row_groups"]
+    assert snapshot["question_rows"]
+    assert snapshot["question_rows"][0]["question_title"]
+    assert snapshot["summary_cards"][0]["label"] == "Improved metrics"
+    assert snapshot["next_actions"][1]["description"] == snapshot["verdict"]["next_step"]
 
 
 def _post_form(url: str, values: dict[str, str]):
@@ -284,3 +342,15 @@ def _post_form(url: str, values: dict[str, str]):
         method="POST",
     )
     return urlopen(request, timeout=5)
+
+
+
+def _request_json(url: str, *, method: str = "GET", payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    request = Request(
+        url,
+        data=None if payload is None else json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method=method,
+    )
+    with urlopen(request, timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))

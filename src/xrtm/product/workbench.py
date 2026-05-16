@@ -133,6 +133,24 @@ def validate_workbench_workflow(registry: WorkflowRegistry, workflow_name: str |
     return {"ok": True, "errors": [], "workflow": blueprint.name}
 
 
+def preview_workbench_edit(
+    registry: WorkflowRegistry,
+    *,
+    workflow_name: str,
+    values: Mapping[str, str],
+) -> WorkflowBlueprint:
+    """Validate a safe-edit submission without persisting it."""
+
+    workflow_name = _required_name(workflow_name, "workflow")
+    _ensure_local_workflow(registry, workflow_name)
+    blueprint = registry.load(workflow_name)
+    payload = _updated_workbench_payload(blueprint, values)
+    updated = WorkflowBlueprint.from_payload(payload)
+    validate_product_blueprint(updated)
+    return updated
+
+
+
 def apply_workbench_edit(
     registry: WorkflowRegistry,
     *,
@@ -141,40 +159,7 @@ def apply_workbench_edit(
 ) -> WorkflowBlueprint:
     """Apply the MVP safe-edit form to an existing local workflow."""
 
-    workflow_name = _required_name(workflow_name, "workflow")
-    _ensure_local_workflow(registry, workflow_name)
-    blueprint = registry.load(workflow_name)
-    allowed = _allowed_edit_fields(blueprint)
-    unexpected = sorted(set(values) - allowed)
-    if unexpected:
-        raise WorkbenchInputError("unsupported edit field(s): " + ", ".join(unexpected))
-
-    if "questions_limit" not in values:
-        raise WorkbenchInputError("questions_limit is required")
-    if "artifacts_write_report" not in values:
-        raise WorkbenchInputError("artifacts_write_report is required")
-
-    limit = _parse_question_limit(values["questions_limit"])
-    write_report = _parse_bool(values["artifacts_write_report"], field="artifacts_write_report")
-    payload = blueprint.to_json_dict()
-    payload["questions"]["limit"] = limit
-    payload["artifacts"]["write_report"] = write_report
-
-    for editor in aggregate_weight_editors(blueprint):
-        node_name = editor["node"]
-        contributor_names = [contributor["name"] for contributor in editor["contributors"]]
-        for contributor in contributor_names:
-            key = f"weight:{node_name}:{contributor}"
-            if key not in values:
-                raise WorkbenchInputError(f"{key} is required")
-        submitted = {
-            contributor: _parse_weight(values[f"weight:{node_name}:{contributor}"], node=node_name, contributor=contributor)
-            for contributor in contributor_names
-        }
-        payload["graph"]["nodes"][node_name].setdefault("config", {})["weights"] = _normalize_weights(submitted)
-
-    updated = WorkflowBlueprint.from_payload(payload)
-    validate_product_blueprint(updated)
+    updated = preview_workbench_edit(registry, workflow_name=workflow_name, values=values)
     registry.save(updated, overwrite=True)
     return updated
 
@@ -256,6 +241,23 @@ def safe_edit_model(blueprint: WorkflowBlueprint) -> dict[str, Any]:
     """Return the explicitly supported safe-edit controls for a workflow."""
 
     return {
+        "supported_edits": [
+            {
+                "key": "questions_limit",
+                "label": "Questions limit",
+                "detail": f"Choose between 1 and {MAX_SAFE_QUESTION_LIMIT} questions for the cloned workflow.",
+            },
+            {
+                "key": "artifacts_write_report",
+                "label": "Write HTML report",
+                "detail": "Toggle whether the candidate run writes report.html.",
+            },
+            {
+                "key": "aggregate_weight_editors",
+                "label": "Aggregate candidate weights",
+                "detail": "Adjust supported upstream candidate weights only; no arbitrary node config editing is exposed.",
+            },
+        ],
         "questions_limit": {
             "value": blueprint.questions.limit,
             "min": 1,
@@ -363,6 +365,39 @@ def _allowed_edit_fields(blueprint: WorkflowBlueprint) -> set[str]:
     return fields
 
 
+
+def _updated_workbench_payload(blueprint: WorkflowBlueprint, values: Mapping[str, str]) -> dict[str, Any]:
+    allowed = _allowed_edit_fields(blueprint)
+    unexpected = sorted(set(values) - allowed)
+    if unexpected:
+        raise WorkbenchInputError("unsupported edit field(s): " + ", ".join(unexpected))
+
+    if "questions_limit" not in values:
+        raise WorkbenchInputError("questions_limit is required")
+    if "artifacts_write_report" not in values:
+        raise WorkbenchInputError("artifacts_write_report is required")
+
+    limit = _parse_question_limit(values["questions_limit"])
+    write_report = _parse_bool(values["artifacts_write_report"], field="artifacts_write_report")
+    payload = blueprint.to_json_dict()
+    payload["questions"]["limit"] = limit
+    payload["artifacts"]["write_report"] = write_report
+
+    for editor in aggregate_weight_editors(blueprint):
+        node_name = editor["node"]
+        contributor_names = [contributor["name"] for contributor in editor["contributors"]]
+        for contributor in contributor_names:
+            key = f"weight:{node_name}:{contributor}"
+            if key not in values:
+                raise WorkbenchInputError(f"{key} is required")
+        submitted = {
+            contributor: _parse_weight(values[f"weight:{node_name}:{contributor}"], node=node_name, contributor=contributor)
+            for contributor in contributor_names
+        }
+        payload["graph"]["nodes"][node_name].setdefault("config", {})["weights"] = _normalize_weights(submitted)
+    return payload
+
+
 def _parse_question_limit(raw: str) -> int:
     try:
         value = int(str(raw).strip())
@@ -455,6 +490,7 @@ __all__ = [
     "WorkbenchRunResult",
     "aggregate_weight_editors",
     "apply_workbench_edit",
+    "preview_workbench_edit",
     "clone_workflow_for_edit",
     "run_workbench_workflow",
     "safe_edit_model",
