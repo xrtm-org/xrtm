@@ -12,13 +12,14 @@ TUI.
 If you arrived from xrtm.org, PyPI, or this repository, use the authoritative
 first-success guide: [docs/getting-started.md](docs/getting-started.md).
 
-That guide walks the released `xrtm==0.3.3` journey in one place:
+That guide walks the released `xrtm==0.7.0` journey in one place:
 
 1. install XRTM
 2. run `xrtm start`
 3. inspect the latest run
-4. open the WebUI or TUI
-5. choose your next path
+4. open the editable workflow workbench
+5. clone, safely edit, validate, run, and compare a workflow
+6. choose your next path
 
 This README intentionally stays short so the first-run commands live in one
 place.
@@ -35,6 +36,7 @@ place.
 - [Operator Runbook](docs/operator-runbook.md)
 - [Python API Reference](docs/python-api-reference.md)
 - [Integration Examples](examples/integration/)
+- [Next-release Feature Track](docs/next-release-feature-track.md) for source-only work that is not part of the published `xrtm==0.7.0` package
 - Full documentation: [xrtm.org](https://xrtm.org)
 
 ## License

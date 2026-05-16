@@ -7,6 +7,13 @@ from xrtm.product.competition import (
     list_builtin_competition_packs,
 )
 from xrtm.product.pipeline import PipelineOptions, PipelineResult, run_pipeline
+from xrtm.product.workbench import (
+    WorkbenchInputError,
+    apply_workbench_edit,
+    clone_workflow_for_edit,
+    workbench_snapshot,
+    workflow_canvas,
+)
 from xrtm.product.workflow_graph import WorkflowGraphState, compile_workflow_blueprint, graph_trace_rows
 from xrtm.product.workflow_nodes import (
     BuiltinWorkflowNodeDefinition,
@@ -58,7 +65,10 @@ __all__ = [
     "WorkflowGraphState",
     "WorkflowRegistry",
     "WorkflowSummary",
+    "WorkbenchInputError",
+    "apply_workbench_edit",
     "build_demo_workflow_blueprint",
+    "clone_workflow_for_edit",
     "competition_submission_node",
     "competition_submission_payload",
     "compile_workflow_blueprint",
@@ -69,5 +79,7 @@ __all__ = [
     "run_pipeline",
     "run_workflow_blueprint",
     "validate_product_blueprint",
+    "workbench_snapshot",
+    "workflow_canvas",
     "workflow_to_pipeline_options",
 ]

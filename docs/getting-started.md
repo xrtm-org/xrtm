@@ -1,17 +1,18 @@
 # Getting Started with XRTM
 
 This is the authoritative first-success path for the published
-`xrtm==0.3.3` package.
+`xrtm==0.7.0` package.
 
-You will install XRTM, run `xrtm start`, inspect the latest run, open the WebUI
-or TUI, and then choose the next guide that matches your job.
+You will install XRTM, run `xrtm start`, inspect the latest run, open the
+editable workflow workbench, make one safe workflow edit, validate it, run it,
+compare the result, and then choose the next guide that matches your job.
 
 ## 1. Install
 
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.3.3
+pip install xrtm==0.7.0
 ```
 
 **Supported Python versions:** `>=3.11,<3.13`
@@ -40,23 +41,39 @@ After that review, the main files to recognize are `run.json`,
 `run_summary.json`, `eval.json`, and `report.html` inside the newest
 `runs/<run-id>/` directory.
 
-## 4. Open the same run in the WebUI or TUI
+## 4. Open the editable workflow workbench
 
-Launch the WebUI:
+Launch the local WebUI workbench:
 
 ```bash
 xrtm web --runs-dir runs
 ```
 
-Open `http://127.0.0.1:8765` in your browser.
+Open `http://127.0.0.1:8765/workbench` in your browser.
 
-If you prefer the terminal, launch the TUI instead:
+The workbench shows the latest run, the workflow canvas, validation status, and
+safe editing controls. Its released editor is intentionally constrained: it can
+clone a workflow into `.xrtm/workflows`, change `questions.limit` within the
+released bounds, toggle report writing, adjust supported aggregate weights, then
+validate and run the edited workflow.
+
+## 5. Clone, safely edit, validate, run, and compare
+
+From the workbench:
+
+1. clone `demo-provider-free` into a local workflow
+2. change `questions.limit` or the report toggle
+3. validate the workflow
+4. run it
+5. compare it with the first run
+
+If you prefer the terminal, the TUI remains available for read-only review:
 
 ```bash
 xrtm tui --runs-dir runs
 ```
 
-## 5. Choose your next path
+## 6. Choose your next path
 
 - **Researcher:** use the dedicated workflow on [xrtm.org](https://xrtm.org/docs/workflows/researcher-model-eval) for evaluation, compare review, and the deeper quality loop.
 - **Operator:** continue with the [Operator Runbook](operator-runbook.md) for repeatable profiles, monitoring, compare/export, and cleanup.
