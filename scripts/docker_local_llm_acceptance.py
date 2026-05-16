@@ -22,6 +22,9 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from docker_provider_free_acceptance import (  # noqa: E402
+    DEFAULT_MANAGED_SANDBOX_CLEANUP_POLICY,
+    DEFAULT_MANAGED_SANDBOX_TTL_HOURS,
+    add_managed_sandbox_metadata,
     build_wheelhouse,
     command_text,
     container_workspace_path,
@@ -31,6 +34,7 @@ from docker_provider_free_acceptance import (  # noqa: E402
     latest_run_id,
     load_json,
     prepare_artifacts_dir,
+    prepare_host_artifacts_dir,
     resolve_host_path,
     run_logged,
     run_release_claims,
@@ -38,6 +42,13 @@ from docker_provider_free_acceptance import (  # noqa: E402
     write_json,
     write_versions,
 )
+
+
+@dataclass(frozen=True)
+class ManagedSandboxContext:
+    manager_path: Path
+    registry_root: Path | None
+    manifest: dict[str, Any]
 
 DEFAULT_IMAGE_TAG = "xrtm-local-llm-acceptance:py311"
 DEFAULT_PYTHON_IMAGE = "python:3.11-slim"
@@ -854,9 +865,16 @@ def run_host(args: argparse.Namespace) -> int:
     xrtm_spec, _ = default_specs(workspace_root_path, xrtm_repo_root_path)
     if args.xrtm_spec:
         xrtm_spec = args.xrtm_spec
-    artifacts_dir = Path(args.artifacts_dir).resolve() if args.artifacts_dir else default_artifacts_dir(workspace_root_path)
-    prepare_artifacts_dir(artifacts_dir)
+    artifacts_dir, managed_sandbox = prepare_host_artifacts_dir(
+        args=args,
+        workspace_root_path=workspace_root_path,
+        repo_name="xrtm",
+        purpose=f"docker-local-llm acceptance ({args.validation_profile}, {args.artifact_source})",
+        default_dir_factory=default_artifacts_dir,
+    )
     metadata_dir = artifacts_dir / "metadata"
+    if managed_sandbox is not None:
+        write_json(metadata_dir / "managed-sandbox.json", managed_sandbox.manifest)
     wheelhouse_dir = Path(args.wheelhouse_dir).resolve() if args.wheelhouse_dir else artifacts_dir / "wheelhouse"
     prepare_artifacts_dir(wheelhouse_dir)
     if args.artifact_source == "wheelhouse":
@@ -901,8 +919,7 @@ def run_host(args: argparse.Namespace) -> int:
         min_gpu_active_samples=max(args.min_gpu_active_samples, profile.min_gpu_active_samples),
         min_gpu_memory_mib=max(args.min_gpu_memory_mib, profile.min_gpu_memory_mib),
     )
-    write_json(
-        metadata_dir / "request.json",
+    request_payload = add_managed_sandbox_metadata(
         {
             "artifact_source": config.artifact_source,
             "artifacts_dir": str(config.artifacts_dir),
@@ -933,7 +950,9 @@ def run_host(args: argparse.Namespace) -> int:
             "xrtm_repo_root": str(config.xrtm_repo_root),
             "xrtm_spec": config.xrtm_spec,
         },
+        managed_sandbox,
     )
+    write_json(metadata_dir / "request.json", request_payload)
     gpu_sampler: subprocess.Popen[str] | None = None
     gpu_telemetry_path = artifacts_dir / "metadata" / "gpu-telemetry.jsonl"
     if nvidia_smi_available():
@@ -995,6 +1014,7 @@ def run_host(args: argparse.Namespace) -> int:
         gpu_summary["validation"] = {"status": "failed" if failures else "passed", "failures": failures}
         summary["gpu_telemetry"] = gpu_summary
         summary["validation_profile"] = config.validation_profile
+        add_managed_sandbox_metadata(summary, managed_sandbox)
         write_json(metadata_dir / "gpu-telemetry-summary.json", gpu_summary)
         write_json(summary_path, summary)
         if failures:
@@ -1106,13 +1126,41 @@ def build_parser() -> argparse.ArgumentParser:
 
     host_parser = subparsers.add_parser("host")
     host_parser.add_argument("--artifact-source", choices=("wheelhouse", "pypi"), default="wheelhouse")
-    host_parser.add_argument("--artifacts-dir")
+    host_parser.add_argument(
+        "--artifacts-dir",
+        help="Artifact output directory. With --managed-sandbox, this becomes the tracked sandbox path.",
+    )
     host_parser.add_argument("--wheelhouse-dir")
     host_parser.add_argument("--workspace-root")
     host_parser.add_argument("--xrtm-repo-root")
     host_parser.add_argument("--image-tag", default=DEFAULT_IMAGE_TAG)
     host_parser.add_argument("--python-image", default=DEFAULT_PYTHON_IMAGE)
     host_parser.add_argument("--xrtm-spec")
+    host_parser.add_argument(
+        "--managed-sandbox",
+        action="store_true",
+        help="Track the host artifact root with the shared sandbox manager.",
+    )
+    host_parser.add_argument(
+        "--sandbox-manager",
+        help="Path to system-scripts/sandbox_manager.py. Defaults to ../system-scripts relative to the workspace root.",
+    )
+    host_parser.add_argument(
+        "--sandbox-registry-root",
+        help="Override SANDBOX_REGISTRY_ROOT for managed sandbox metadata and storage.",
+    )
+    host_parser.add_argument(
+        "--sandbox-ttl-hours",
+        type=float,
+        default=DEFAULT_MANAGED_SANDBOX_TTL_HOURS,
+        help="TTL for managed acceptance sandboxes before reap-stale can remove them.",
+    )
+    host_parser.add_argument(
+        "--sandbox-cleanup-policy",
+        choices=("delete", "archive", "manual"),
+        default=DEFAULT_MANAGED_SANDBOX_CLEANUP_POLICY,
+        help="Cleanup policy recorded for managed acceptance sandboxes.",
+    )
     host_parser.add_argument("--llama-image", default=DEFAULT_LLAMA_CPP_IMAGE)
     host_parser.add_argument("--llama-model-dir")
     host_parser.add_argument("--llama-model-file", default=DEFAULT_LLAMA_CPP_MODEL)
