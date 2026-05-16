@@ -157,8 +157,11 @@ class WebUIStateStore:
                 "version": __version__,
                 "nav": [
                     {"label": "Overview", "href": "/"},
+                    {"label": "Start", "href": "/start"},
                     {"label": "Runs", "href": "/runs"},
+                    {"label": "Operations", "href": "/operations"},
                     {"label": "Workbench", "href": "/workbench"},
+                    {"label": "Advanced", "href": "/advanced"},
                 ],
             },
             "environment": {
@@ -169,10 +172,10 @@ class WebUIStateStore:
             },
             "overview": {
                 "hero": {
-                    "title": "Local-first forecasting workbench",
+                    "title": "Local-first forecasting cockpit",
                     "summary": (
-                        "Inspect file-backed runs, create constrained local workflow drafts, "
-                        "and keep UI state in a local SQLite app database."
+                        "Start first-success runs, inspect file-backed history, operate monitors, "
+                        "and keep guided draft state in a local SQLite app database."
                     ),
                 },
                 "counts": {"runs": len(runs), "workflows": len(workflows)},
@@ -182,10 +185,10 @@ class WebUIStateStore:
                 "empty_state": {
                     "title": "Start from a flagship workflow",
                     "summary": (
-                        "The shell is ready. Clone a built-in workflow into your local workspace, "
-                        "validate a safe edit, and run it without changing the on-disk source of truth."
+                        "The shell is ready. Start a provider-free first run, inspect the result, "
+                        "then clone a built-in workflow into a safe local draft when you are ready to iterate."
                     ),
-                    "primary_cta": {"label": "Open workbench", "href": "/workbench"},
+                    "primary_cta": {"label": "Open Start", "href": "/start"},
                 }
                 if not runs
                 else None,

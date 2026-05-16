@@ -1,12 +1,12 @@
 {
-  "release_version": "0.7.1",
+  "release_version": "0.8.0",
   "summary": "Release-gated command claims for README/getting-started/operator/site docs aligned to the runtime taxonomy.",
   "allowed_claims": [
     ". .venv/bin/activate",
     "export XRTM_LOCAL_LLM_BASE_URL=http://localhost:8080/v1",
     "forecast --version",
     "pip install xrtm-forecast==0.6.10",
-    "pip install xrtm==0.7.1",
+    "pip install xrtm==0.8.0",
     "python3.11 -m venv .venv",
     "xrtm --version",
     "xrtm artifacts cleanup --runs-dir runs --keep 50",

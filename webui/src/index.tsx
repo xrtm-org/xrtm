@@ -104,13 +104,21 @@ function App(): React.ReactElement {
   let page: React.ReactElement;
   if (route.path === "/") {
     page = <OverviewPage shell={shell.data} navigate={navigate} />;
+  } else if (route.path === "/start") {
+    page = <StartPage shell={shell.data} navigate={navigate} onMutate={refreshShell} />;
   } else if (route.path === "/runs") {
     page = <RunsPage route={route} navigate={navigate} />;
+  } else if (route.path === "/operations") {
+    page = <OperationsPage navigate={navigate} onMutate={refreshShell} />;
+  } else if (route.path === "/advanced") {
+    page = <AdvancedPage />;
   } else if (/^\/runs\/[^/]+\/compare\/[^/]+$/.test(route.path)) {
     const match = route.path.match(/^\/runs\/([^/]+)\/compare\/([^/]+)$/)!;
     page = <ComparePage candidateRunId={match[1]} baselineRunId={match[2]} navigate={navigate} />;
+  } else if (/^\/workflows\/[^/]+$/.test(route.path)) {
+    page = <WorkflowDetailPage workflowName={decodeURIComponent(route.path.split("/")[2])} navigate={navigate} onMutate={refreshShell} />;
   } else if (/^\/runs\/[^/]+$/.test(route.path)) {
-    page = <RunDetailPage runId={route.path.split("/")[2]} navigate={navigate} />;
+    page = <RunDetailPage runId={route.path.split("/")[2]} navigate={navigate} onMutate={refreshShell} />;
   } else {
     page = <WorkbenchPage route={route} shell={shell.data} navigate={navigate} onMutate={refreshShell} />;
   }
@@ -178,9 +186,10 @@ function OverviewPage({ shell, navigate }: { shell: JsonObject | null; navigate:
         <h2>{overview.hero?.title}</h2>
         <p>{overview.hero?.summary}</p>
         <div className="button-row">
-          <button className="primary-button" onClick={() => navigate(overview.resume_target?.href || "/workbench")}> 
+          <button className="primary-button" onClick={() => navigate(overview.resume_target?.href || "/start")}>
             {overview.resume_target?.label || "Resume"}
           </button>
+          <button className="secondary-button" onClick={() => navigate("/start")}>Open start</button>
           <button className="secondary-button" onClick={() => navigate("/workbench")}>Open workbench</button>
         </div>
       </section>
@@ -194,11 +203,853 @@ function OverviewPage({ shell, navigate }: { shell: JsonObject | null; navigate:
         <section className="panel">
           <h3>{overview.empty_state.title}</h3>
           <p>{overview.empty_state.summary}</p>
-          <button className="primary-button" onClick={() => navigate(overview.empty_state.primary_cta?.href || "/workbench")}>
+          <button className="primary-button" onClick={() => navigate(overview.empty_state.primary_cta?.href || "/start")}>
             {overview.empty_state.primary_cta?.label || "Open workbench"}
           </button>
         </section>
       ) : null}
+    </main>
+  );
+}
+
+function StartPage({
+  shell,
+  navigate,
+  onMutate,
+}: {
+  shell: JsonObject | null;
+  navigate: (path: string) => void;
+  onMutate: () => void;
+}): React.ReactElement {
+  const health = useJsonResource(`${bootstrap.api_root}/health`, []);
+  const providers = useJsonResource(`${bootstrap.api_root}/providers/status`, []);
+  const workflows = useJsonResource(`${bootstrap.api_root}/workflows`, []);
+  const runs = useJsonResource(`${bootstrap.api_root}/runs`, []);
+  const [mode, setMode] = useState("start");
+  const [provider, setProvider] = useState("mock");
+  const [limit, setLimit] = useState("2");
+  const [user, setUser] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [model, setModel] = useState("");
+  const [maxTokens, setMaxTokens] = useState("768");
+  const [baselineRunId, setBaselineRunId] = useState("");
+  const [selectedWorkflow, setSelectedWorkflow] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: string; title: string; body: string } | null>(null);
+  const [result, setResult] = useState<JsonObject | null>(null);
+  const workflowDetail = useJsonResource(
+    selectedWorkflow ? `${bootstrap.api_root}/workflows/${encodeURIComponent(selectedWorkflow)}` : null,
+    [selectedWorkflow],
+  );
+  const workflowExplain = useJsonResource(
+    selectedWorkflow ? `${bootstrap.api_root}/workflows/${encodeURIComponent(selectedWorkflow)}/explain` : null,
+    [selectedWorkflow],
+  );
+
+  useEffect(() => {
+    if (!selectedWorkflow && (workflows.data?.items || []).length) {
+      setSelectedWorkflow(workflows.data.items[0].name);
+    }
+  }, [selectedWorkflow, workflows.data]);
+
+  async function launchRun() {
+    setBusy("Running");
+    setNotice(null);
+    try {
+      const payload: JsonObject = { limit: Number(limit), user: user || undefined };
+      if (baselineRunId) {
+        payload.baseline_run_id = baselineRunId;
+      }
+      let response: JsonObject;
+      if (mode === "start") {
+        response = await requestJson(`${bootstrap.api_root}/start`, { method: "POST", body: JSON.stringify(payload) });
+      } else {
+        payload.provider = provider;
+        payload.write_report = true;
+        if (baseUrl) payload.base_url = baseUrl;
+        if (model) payload.model = model;
+        if (maxTokens) payload.max_tokens = Number(maxTokens);
+        if (mode === "workflow" && selectedWorkflow) {
+          payload.workflow_name = selectedWorkflow;
+        }
+        response = await requestJson(`${bootstrap.api_root}/runs`, { method: "POST", body: JSON.stringify(payload) });
+      }
+      setResult(response);
+      onMutate();
+      runs.reload();
+      setNotice({
+        tone: "success",
+        title: "Run created",
+        body:
+          response.compare?.href
+            ? "The candidate is ready with a baseline comparison link."
+            : "Inspect the new run now, then export or compare it from the run detail page.",
+      });
+    } catch (error) {
+      setNotice(buildActionErrorNotice("run", error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <main className="page-grid">
+      <section className="panel hero-panel">
+        <span className="eyebrow">Start</span>
+        <h2>Run first success without leaving the WebUI</h2>
+        <p>Use the provider-free quickstart, launch a bounded demo, or run a named workflow with the same product services used by the CLI.</p>
+        <div className="button-row">
+          <button className="primary-button" onClick={launchRun} disabled={Boolean(busy) || (mode === "workflow" && !selectedWorkflow)}>
+            {busy || (mode === "start" ? "Run quickstart" : mode === "demo" ? "Run demo" : "Run workflow")}
+          </button>
+          {selectedWorkflow ? (
+            <button className="secondary-button" onClick={() => navigate(`/workflows/${encodeURIComponent(selectedWorkflow)}`)}>
+              Open workflow detail
+            </button>
+          ) : null}
+          {shell?.overview?.latest_run?.run_id ? (
+            <button className="secondary-button" onClick={() => navigate(`/runs/${shell.overview.latest_run.run_id}`)}>
+              Inspect latest run
+            </button>
+          ) : null}
+        </div>
+      </section>
+
+      {notice ? <Message tone={notice.tone} title={notice.title} body={notice.body} /> : null}
+      {result ? <RunLaunchResultCard result={result} navigate={navigate} /> : null}
+
+      <div className="split-grid">
+        <section className="panel section-stack">
+          <div className="section-header">
+            <div>
+              <h3>Run controls</h3>
+              <p>Start small with the released baseline, then move to demo or named workflow execution.</p>
+            </div>
+          </div>
+          <form
+            className="form-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void launchRun();
+            }}
+          >
+            <label>
+              <span>Mode</span>
+              <select value={mode} onChange={(event) => setMode(event.target.value)}>
+                <option value="start">First-success quickstart</option>
+                <option value="demo">Bounded demo run</option>
+                <option value="workflow">Named workflow run</option>
+              </select>
+            </label>
+            {mode === "workflow" ? (
+              <label>
+                <span>Workflow</span>
+                <select value={selectedWorkflow} onChange={(event) => setSelectedWorkflow(event.target.value)}>
+                  {(workflows.data?.items || []).map((item: JsonObject) => (
+                    <option key={item.name} value={item.name}>
+                      {item.title || item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {mode !== "start" ? (
+              <label>
+                <span>Provider</span>
+                <select value={provider} onChange={(event) => setProvider(event.target.value)}>
+                  <option value="mock">Provider-free baseline</option>
+                  <option value="local-llm">Local OpenAI-compatible endpoint</option>
+                </select>
+              </label>
+            ) : null}
+            <div className="two-field-grid">
+              <label>
+                <span>Question limit</span>
+                <input value={limit} onChange={(event) => setLimit(event.target.value)} />
+              </label>
+              <label>
+                <span>Baseline run</span>
+                <select value={baselineRunId} onChange={(event) => setBaselineRunId(event.target.value)}>
+                  <option value="">None</option>
+                  {(runs.data?.items || []).map((run: JsonObject) => (
+                    <option key={run.run_id} value={run.run_id}>
+                      {run.run_id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {mode !== "start" && provider === "local-llm" ? (
+              <div className="two-field-grid">
+                <label>
+                  <span>Base URL</span>
+                  <input value={baseUrl} placeholder="http://localhost:8000/v1" onChange={(event) => setBaseUrl(event.target.value)} />
+                </label>
+                <label>
+                  <span>Model</span>
+                  <input value={model} placeholder="your-model-id" onChange={(event) => setModel(event.target.value)} />
+                </label>
+              </div>
+            ) : null}
+            {mode !== "start" ? (
+              <label>
+                <span>Max tokens</span>
+                <input value={maxTokens} onChange={(event) => setMaxTokens(event.target.value)} />
+              </label>
+            ) : null}
+            <label>
+              <span>User attribution</span>
+              <input value={user} placeholder="Optional analyst or operator name" onChange={(event) => setUser(event.target.value)} />
+            </label>
+          </form>
+        </section>
+
+        <section className="panel section-stack">
+          <div className="section-header">
+            <div>
+              <h3>Environment health</h3>
+              <p>Readiness, provider status, and the currently selected workflow stay visible before you launch anything.</p>
+            </div>
+          </div>
+          <div className="stats-grid">
+            <MetricCard label="Ready checks passing" value={(health.data?.checks || []).filter((item: JsonObject) => item.ok).length} />
+            <MetricCard label="Checks total" value={(health.data?.checks || []).length} />
+            <MetricCard label="Local LLM healthy" value={String(Boolean(providers.data?.local_llm?.healthy))} />
+          </div>
+          {health.error ? <Message tone="error" title="Health unavailable" body={health.error} /> : null}
+          {(health.data?.checks || []).length ? (
+            <div className="card-grid">
+              {(health.data?.checks || []).map((item: JsonObject) => (
+                <article key={item.name} className="info-card">
+                  <div className="surface-header">
+                    <strong>{item.name}</strong>
+                    <StatusPill value={item.ok ? "ready" : "failed"} />
+                  </div>
+                  <p className="helper-text">{item.detail}</p>
+                </article>
+              ))}
+            </div>
+          ) : null}
+          <div className="provider-status-grid">
+            <article className="info-card">
+              <h4>Provider-free baseline</h4>
+              <p className="helper-text">Works out of the box for first success and deterministic smoke validation.</p>
+            </article>
+            <article className="info-card">
+              <h4>Local OpenAI-compatible</h4>
+              <p className="helper-text">
+                {providers.data?.local_llm?.healthy
+                  ? `Healthy at ${providers.data?.local_llm?.base_url || "configured endpoint"}.`
+                  : providers.data?.local_llm?.status || "Currently unavailable."}
+              </p>
+            </article>
+          </div>
+        </section>
+      </div>
+
+      <section className="panel section-stack">
+        <div className="section-header">
+          <div>
+            <h3>Workflow guide</h3>
+            <p>Inspect the selected workflow before running it so the graph and expected artifacts stay explicit.</p>
+          </div>
+        </div>
+        {workflowDetail.loading && !workflowDetail.data ? <LoadingCard label="Loading workflow detail" /> : null}
+        {workflowDetail.error ? <Message tone="error" title="Workflow detail unavailable" body={workflowDetail.error} /> : null}
+        {workflowDetail.data ? (
+          <div className="split-grid">
+            <section className="section-stack">
+              <article className="info-card">
+                <div className="surface-header">
+                  <div>
+                    <strong>{workflowDetail.data.workflow?.title || workflowDetail.data.workflow?.name}</strong>
+                    <p className="helper-text">{workflowDetail.data.workflow?.description || "No description available."}</p>
+                  </div>
+                  <span className={`source-pill ${workflowDetail.data.workflow?.source || "builtin"}`}>
+                    {workflowDetail.data.workflow?.source || "builtin"}
+                  </span>
+                </div>
+                <dl className="context-list">
+                  <div>
+                    <dt>Runtime provider</dt>
+                    <dd>{workflowDetail.data.workflow?.runtime_provider || "mock"}</dd>
+                  </div>
+                  <div>
+                    <dt>Question limit</dt>
+                    <dd>{workflowDetail.data.workflow?.question_limit || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Kind</dt>
+                    <dd>{workflowDetail.data.workflow?.workflow_kind || "workflow"}</dd>
+                  </div>
+                </dl>
+              </article>
+              <article className="info-card">
+                <h4>Explain</h4>
+                <p className="helper-text">{workflowExplain.data?.explanation?.summary || "Choose a workflow to load its explanation."}</p>
+                {(workflowExplain.data?.explanation?.runtime_requirements || []).length ? (
+                  <ul className="guidance-list">
+                    {(workflowExplain.data?.explanation?.runtime_requirements || []).map((item: string) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </article>
+            </section>
+            <section className="section-stack">
+              <div className="canvas-grid">
+                {(workflowDetail.data.canvas?.nodes || []).map((node: JsonObject) => (
+                  <article key={node.name} className="canvas-node">
+                    <strong>{node.name}</strong>
+                    <span>{node.kind}</span>
+                    <span>{node.description || node.implementation || "No description"}</span>
+                    <StatusPill value={node.status || "ready"} />
+                  </article>
+                ))}
+              </div>
+            </section>
+          </div>
+        ) : null}
+      </section>
+    </main>
+  );
+}
+
+function WorkflowDetailPage({
+  workflowName,
+  navigate,
+  onMutate,
+}: {
+  workflowName: string;
+  navigate: (path: string) => void;
+  onMutate: () => void;
+}): React.ReactElement {
+  const detail = useJsonResource(`${bootstrap.api_root}/workflows/${encodeURIComponent(workflowName)}`, [workflowName]);
+  const explain = useJsonResource(`${bootstrap.api_root}/workflows/${encodeURIComponent(workflowName)}/explain`, [workflowName]);
+  const runs = useJsonResource(`${bootstrap.api_root}/runs`, [workflowName]);
+  const [provider, setProvider] = useState("");
+  const [limit, setLimit] = useState("");
+  const [baselineRunId, setBaselineRunId] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: string; title: string; body: string } | null>(null);
+
+  useEffect(() => {
+    if (detail.data?.workflow && !provider) {
+      setProvider(detail.data.workflow.runtime_provider || "");
+      setLimit(String(detail.data.workflow.question_limit || ""));
+    }
+  }, [detail.data, provider]);
+
+  async function validateWorkflow() {
+    setBusy("Validating workflow");
+    setNotice(null);
+    try {
+      const response = await requestJson(`${bootstrap.api_root}/workflows/${encodeURIComponent(workflowName)}/validate`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setNotice({ tone: "success", title: "Workflow valid", body: `${response.workflow_name} is ready to run.` });
+    } catch (error) {
+      setNotice(buildActionErrorNotice("validate", error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runWorkflow() {
+    setBusy("Running workflow");
+    setNotice(null);
+    try {
+      const payload: JsonObject = {
+        workflow_name: workflowName,
+        write_report: true,
+      };
+      if (provider) payload.provider = provider;
+      if (limit) payload.limit = Number(limit);
+      if (baselineRunId) payload.baseline_run_id = baselineRunId;
+      const response = await requestJson(`${bootstrap.api_root}/runs`, { method: "POST", body: JSON.stringify(payload) });
+      onMutate();
+      setNotice({
+        tone: "success",
+        title: "Workflow launched",
+        body: response.compare?.href ? "The candidate run is ready with a comparison link." : "Inspect the run detail to review report and exports.",
+      });
+      navigate(response.compare?.href || response.href);
+    } catch (error) {
+      setNotice(buildActionErrorNotice("run", error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (detail.error) {
+    return <Message tone="error" title="Workflow unavailable" body={detail.error} />;
+  }
+  if (detail.loading || !detail.data) {
+    return <LoadingCard label="Loading workflow detail" />;
+  }
+
+  return (
+    <main className="page-grid">
+      <section className="panel hero-panel">
+        <span className="eyebrow">Workflow</span>
+        <h2>{detail.data.workflow?.title || detail.data.workflow?.name}</h2>
+        <p>{detail.data.workflow?.description || explain.data?.explanation?.summary || "Inspect, validate, and run this workflow from the WebUI."}</p>
+        <div className="button-row">
+          <button className="primary-button" onClick={runWorkflow} disabled={Boolean(busy)}>
+            {busy === "Running workflow" ? busy : "Run workflow"}
+          </button>
+          <button className="secondary-button" onClick={validateWorkflow} disabled={Boolean(busy)}>
+            {busy === "Validating workflow" ? busy : "Validate"}
+          </button>
+          <button className="secondary-button" onClick={() => navigate("/start")}>Back to start</button>
+        </div>
+      </section>
+      {notice ? <Message tone={notice.tone} title={notice.title} body={notice.body} /> : null}
+      <div className="split-grid">
+        <section className="panel section-stack">
+          <div className="section-header">
+            <div>
+              <h3>Execution settings</h3>
+              <p>Override the released provider or question limit when you want a bounded comparison run.</p>
+            </div>
+          </div>
+          <div className="two-field-grid">
+            <label>
+              <span>Provider</span>
+              <select value={provider} onChange={(event) => setProvider(event.target.value)}>
+                <option value="mock">Provider-free baseline</option>
+                <option value="local-llm">Local OpenAI-compatible endpoint</option>
+              </select>
+            </label>
+            <label>
+              <span>Question limit</span>
+              <input value={limit} onChange={(event) => setLimit(event.target.value)} />
+            </label>
+          </div>
+          <label>
+            <span>Baseline run for compare</span>
+            <select value={baselineRunId} onChange={(event) => setBaselineRunId(event.target.value)}>
+              <option value="">None</option>
+              {(runs.data?.items || []).map((run: JsonObject) => (
+                <option key={run.run_id} value={run.run_id}>
+                  {run.run_id}
+                </option>
+              ))}
+            </select>
+          </label>
+          <article className="info-card">
+            <h4>Explain</h4>
+            <p className="helper-text">{explain.data?.explanation?.summary || "Workflow explanation unavailable."}</p>
+            <ul className="guidance-list">
+              {(explain.data?.explanation?.expected_artifacts || []).map((item: string) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </article>
+        </section>
+        <section className="panel section-stack">
+          <div className="section-header">
+            <div>
+              <h3>Canvas</h3>
+              <p>Graph nodes stay visible so you can inspect the release-safe workflow shape before running it.</p>
+            </div>
+          </div>
+          <div className="canvas-grid">
+            {(detail.data.canvas?.nodes || []).map((node: JsonObject) => (
+              <article key={node.name} className="canvas-node">
+                <strong>{node.name}</strong>
+                <span>{node.kind}</span>
+                <span>{node.description || node.implementation || "No description"}</span>
+                <StatusPill value={node.status || "ready"} />
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function OperationsPage({ navigate, onMutate }: { navigate: (path: string) => void; onMutate: () => void }): React.ReactElement {
+  const profiles = useJsonResource(`${bootstrap.api_root}/profiles`, []);
+  const monitors = useJsonResource(`${bootstrap.api_root}/monitors`, []);
+  const runs = useJsonResource(`${bootstrap.api_root}/runs`, []);
+  const [profileName, setProfileName] = useState("local-default");
+  const [profileProvider, setProfileProvider] = useState("mock");
+  const [profileLimit, setProfileLimit] = useState("5");
+  const [selectedProfile, setSelectedProfile] = useState("");
+  const [selectedMonitor, setSelectedMonitor] = useState("");
+  const [selectedArtifactRun, setSelectedArtifactRun] = useState("");
+  const [cleanupKeep, setCleanupKeep] = useState("5");
+  const [cleanupPreview, setCleanupPreview] = useState<JsonObject | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: string; title: string; body: string } | null>(null);
+  const profileDetail = useJsonResource(
+    selectedProfile ? `${bootstrap.api_root}/profiles/${encodeURIComponent(selectedProfile)}` : null,
+    [selectedProfile],
+  );
+  const monitorDetail = useJsonResource(selectedMonitor ? `${bootstrap.api_root}/monitors/${selectedMonitor}` : null, [selectedMonitor]);
+  const artifactDetail = useJsonResource(
+    selectedArtifactRun ? `${bootstrap.api_root}/artifacts/${selectedArtifactRun}` : null,
+    [selectedArtifactRun],
+  );
+
+  useEffect(() => {
+    if (!selectedArtifactRun && (runs.data?.items || []).length) {
+      setSelectedArtifactRun(runs.data.items[0].run_id);
+    }
+  }, [selectedArtifactRun, runs.data]);
+
+  async function createProfile(template: "starter" | "custom") {
+    setBusy("Saving profile");
+    setNotice(null);
+    try {
+      await requestJson(`${bootstrap.api_root}/profiles`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: profileName,
+          template: template === "starter" ? "starter" : undefined,
+          provider: template === "starter" ? undefined : profileProvider,
+          limit: template === "starter" ? undefined : Number(profileLimit),
+          write_report: true,
+        }),
+      });
+      profiles.reload();
+      setSelectedProfile(profileName);
+      setNotice({ tone: "success", title: "Profile saved", body: "Run it from the list when you want a repeatable local configuration." });
+    } catch (error) {
+      setNotice(buildActionErrorNotice("profile", error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runProfile(name: string) {
+    setBusy(`Running ${name}`);
+    setNotice(null);
+    try {
+      const result = await requestJson(`${bootstrap.api_root}/profiles/${encodeURIComponent(name)}/run`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      onMutate();
+      runs.reload();
+      setNotice({ tone: "success", title: "Profile run started", body: `Inspect ${result.run_id} to review the new run.` });
+      navigate(result.href);
+    } catch (error) {
+      setNotice(buildActionErrorNotice("run", error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function createMonitor() {
+    setBusy("Starting monitor");
+    setNotice(null);
+    try {
+      const result = await requestJson(`${bootstrap.api_root}/monitors`, {
+        method: "POST",
+        body: JSON.stringify({ limit: Number(profileLimit), provider: profileProvider }),
+      });
+      monitors.reload();
+      setSelectedMonitor(result.run_id);
+      setNotice({ tone: "success", title: "Monitor started", body: "Run a cycle, pause, resume, or halt it from this page." });
+    } catch (error) {
+      setNotice(buildActionErrorNotice("monitor", error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function mutateMonitor(runId: string, action: string) {
+    setBusy(action);
+    setNotice(null);
+    try {
+      await requestJson(`${bootstrap.api_root}/monitors/${runId}/${action}`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      monitors.reload();
+      monitorDetail.reload();
+      setNotice({ tone: "success", title: "Monitor updated", body: `Monitor ${action} completed.` });
+    } catch (error) {
+      setNotice(buildActionErrorNotice(action, error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function previewCleanup() {
+    setBusy("Previewing cleanup");
+    setNotice(null);
+    try {
+      const preview = await requestJson(`${bootstrap.api_root}/artifacts/cleanup-preview`, {
+        method: "POST",
+        body: JSON.stringify({ keep: Number(cleanupKeep) }),
+      });
+      setCleanupPreview(preview);
+    } catch (error) {
+      setNotice(buildActionErrorNotice("cleanup-preview", error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runCleanup() {
+    setBusy("Cleaning artifacts");
+    setNotice(null);
+    try {
+      const result = await requestJson(`${bootstrap.api_root}/artifacts/cleanup`, {
+        method: "POST",
+        body: JSON.stringify({ keep: Number(cleanupKeep), confirm: "delete" }),
+      });
+      setCleanupPreview(result);
+      runs.reload();
+      onMutate();
+      setNotice({ tone: "success", title: "Artifacts cleaned", body: `${result.count || 0} run directories were removed.` });
+    } catch (error) {
+      setNotice(buildActionErrorNotice("cleanup", error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <main className="page-grid">
+      <section className="panel hero-panel">
+        <span className="eyebrow">Operations</span>
+        <h2>Operate profiles, monitors, and artifact retention locally</h2>
+        <p>These controls cover the day-to-day operator loop without asking you to remember CLI flags.</p>
+      </section>
+      {notice ? <Message tone={notice.tone} title={notice.title} body={notice.body} /> : null}
+
+      <div className="split-grid">
+        <section className="panel section-stack">
+          <div className="section-header">
+            <div>
+              <h3>Profiles</h3>
+              <p>Create repeatable local run presets, then launch them from the same page.</p>
+            </div>
+          </div>
+          <div className="form-grid">
+            <label>
+              <span>Name</span>
+              <input value={profileName} onChange={(event) => setProfileName(event.target.value)} />
+            </label>
+            <div className="two-field-grid">
+              <label>
+                <span>Provider</span>
+                <select value={profileProvider} onChange={(event) => setProfileProvider(event.target.value)}>
+                  <option value="mock">Provider-free baseline</option>
+                  <option value="local-llm">Local OpenAI-compatible endpoint</option>
+                </select>
+              </label>
+              <label>
+                <span>Question limit</span>
+                <input value={profileLimit} onChange={(event) => setProfileLimit(event.target.value)} />
+              </label>
+            </div>
+            <div className="button-row">
+              <button className="primary-button" onClick={() => void createProfile("custom")} disabled={Boolean(busy)}>
+                Save profile
+              </button>
+              <button className="secondary-button" onClick={() => void createProfile("starter")} disabled={Boolean(busy)}>
+                Save starter profile
+              </button>
+            </div>
+          </div>
+          <div className="action-list">
+            {(profiles.data?.items || []).map((profile: JsonObject) => (
+              <div key={profile.name} className="inline-action-card">
+                <div>
+                  <strong>{profile.name}</strong>
+                  <p className="helper-text">{profile.provider} · {profile.limit} questions</p>
+                </div>
+                <div className="button-row">
+                  <button className="secondary-button" onClick={() => setSelectedProfile(profile.name)}>Show</button>
+                  <button className="secondary-button" onClick={() => void runProfile(profile.name)}>Run</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {profileDetail.data?.profile ? (
+            <article className="info-card">
+              <h4>Selected profile</h4>
+              <dl className="context-list">
+                <div>
+                  <dt>Provider</dt>
+                  <dd>{profileDetail.data.profile.provider}</dd>
+                </div>
+                <div>
+                  <dt>Limit</dt>
+                  <dd>{profileDetail.data.profile.limit}</dd>
+                </div>
+                <div>
+                  <dt>Runs dir</dt>
+                  <dd>{profileDetail.data.profile.runs_dir}</dd>
+                </div>
+              </dl>
+            </article>
+          ) : null}
+        </section>
+
+        <section className="panel section-stack">
+          <div className="section-header">
+            <div>
+              <h3>Monitors</h3>
+              <p>Start a monitor, run a cycle, and manage its lifecycle from one place.</p>
+            </div>
+          </div>
+          <div className="button-row">
+            <button className="primary-button" onClick={() => void createMonitor()} disabled={Boolean(busy)}>
+              Start monitor
+            </button>
+          </div>
+          <div className="action-list">
+            {(monitors.data?.items || []).map((monitor: JsonObject) => (
+              <div key={monitor.run_id} className="inline-action-card">
+                <div>
+                  <strong>{monitor.run_id}</strong>
+                  <p className="helper-text">{monitor.status} · {monitor.provider || "provider-free"}</p>
+                </div>
+                <div className="button-row">
+                  <button className="secondary-button" onClick={() => setSelectedMonitor(monitor.run_id)}>Show</button>
+                  <button className="secondary-button" onClick={() => void mutateMonitor(monitor.run_id, "run-once")}>Run once</button>
+                  <button className="secondary-button" onClick={() => void mutateMonitor(monitor.run_id, "pause")}>Pause</button>
+                  <button className="secondary-button" onClick={() => void mutateMonitor(monitor.run_id, "resume")}>Resume</button>
+                  <button className="secondary-button" onClick={() => void mutateMonitor(monitor.run_id, "halt")}>Halt</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {monitorDetail.data?.monitor ? (
+            <article className="info-card">
+              <h4>Selected monitor</h4>
+              <dl className="context-list">
+                <div>
+                  <dt>Status</dt>
+                  <dd>{monitorDetail.data.monitor.status}</dd>
+                </div>
+                <div>
+                  <dt>Cycles</dt>
+                  <dd>{monitorDetail.data.monitor.cycles}</dd>
+                </div>
+                <div>
+                  <dt>Watches</dt>
+                  <dd>{(monitorDetail.data.monitor.watches || []).length}</dd>
+                </div>
+              </dl>
+            </article>
+          ) : null}
+        </section>
+      </div>
+
+      <section className="panel section-stack">
+        <div className="section-header">
+          <div>
+            <h3>Artifacts and retention</h3>
+            <p>Inspect artifact inventory for any run, preview cleanup, then confirm deletion explicitly.</p>
+          </div>
+        </div>
+        <div className="three-column-grid">
+          <section className="section-stack">
+            <label>
+              <span>Run</span>
+              <select value={selectedArtifactRun} onChange={(event) => setSelectedArtifactRun(event.target.value)}>
+                {(runs.data?.items || []).map((run: JsonObject) => (
+                  <option key={run.run_id} value={run.run_id}>
+                    {run.run_id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {artifactDetail.data ? (
+              <ul className="artifact-list">
+                {(artifactDetail.data.artifacts || []).map((item: JsonObject) => (
+                  <li key={item.name}>
+                    <div>
+                      <strong>{item.name}</strong>
+                      <span>{item.path}</span>
+                    </div>
+                    <span className={`availability-pill ${item.exists ? "available" : "missing"}`}>{item.exists ? "Present" : "Missing"}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+          <section className="section-stack">
+            <label>
+              <span>Keep newest run directories</span>
+              <input value={cleanupKeep} onChange={(event) => setCleanupKeep(event.target.value)} />
+            </label>
+            <div className="button-row">
+              <button className="secondary-button" onClick={() => void previewCleanup()} disabled={Boolean(busy)}>
+                Preview cleanup
+              </button>
+              <button className="primary-button" onClick={() => void runCleanup()} disabled={Boolean(busy)}>
+                Delete previewed runs
+              </button>
+            </div>
+          </section>
+          <section className="section-stack">
+            {cleanupPreview ? (
+              <article className="info-card">
+                <h4>Cleanup preview</h4>
+                <p className="helper-text">{cleanupPreview.count || 0} run directories would be removed while keeping the newest {cleanupPreview.keep}.</p>
+                <ul className="guidance-list compact-list">
+                  {(cleanupPreview.items || []).map((item: JsonObject) => (
+                    <li key={item.run_id}>{item.run_id}</li>
+                  ))}
+                </ul>
+              </article>
+            ) : (
+              <EmptyState title="No cleanup preview yet" body="Preview retention first so deletion stays explicit." />
+            )}
+          </section>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function AdvancedPage(): React.ReactElement {
+  const cards = [
+    {
+      title: "Validation and corpora",
+      status: "advanced",
+      body: "Validation suites, corpora preparation, and release-gate validation remain advanced lanes with explicit safety and runtime rules.",
+    },
+    {
+      title: "Benchmark and stress",
+      status: "advanced",
+      body: "Benchmark compare, cache, and stress flows need heavier validation and should not be mistaken for first-success paths.",
+    },
+    {
+      title: "Performance and competition",
+      status: "experimental",
+      body: "Performance budgets and competition dry-runs are visible here so advanced users can see the lane without overselling it to newcomers.",
+    },
+  ];
+
+  return (
+    <main className="page-grid">
+      <section className="panel hero-panel">
+        <span className="eyebrow">Advanced</span>
+        <h2>Visible advanced lanes with honest status labels</h2>
+        <p>The product should not hide advanced capabilities, but it also should not present them as newcomer defaults.</p>
+      </section>
+      <section className="card-grid">
+        {cards.map((card) => (
+          <article key={card.title} className="info-card">
+            <div className="surface-header">
+              <strong>{card.title}</strong>
+              <StatusPill value={card.status} />
+            </div>
+            <p className="helper-text">{card.body}</p>
+          </article>
+        ))}
+      </section>
     </main>
   );
 }
@@ -269,8 +1120,38 @@ function RunsPage({ route, navigate }: { route: Route; navigate: (path: string) 
   );
 }
 
-function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: string) => void }): React.ReactElement {
+function RunDetailPage({
+  runId,
+  navigate,
+  onMutate,
+}: {
+  runId: string;
+  navigate: (path: string) => void;
+  onMutate: () => void;
+}): React.ReactElement {
   const resource = useJsonResource(`${bootstrap.api_root}/runs/${runId}`, [runId]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: string; title: string; body: string } | null>(null);
+
+  async function generateReport() {
+    setBusy("Generating report");
+    setNotice(null);
+    try {
+      const result = await requestJson(`${bootstrap.api_root}/runs/${runId}/report`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      resource.reload();
+      onMutate();
+      setNotice({ tone: "success", title: "Report ready", body: "The HTML report was regenerated and is ready to open." });
+      window.open(result.href, "_blank", "noopener");
+    } catch (error) {
+      setNotice(buildActionErrorNotice("report", error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (resource.error) {
     return <Message tone="error" title="Run detail unavailable" body={resource.error} />;
   }
@@ -281,6 +1162,7 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
   const report = run.artifacts?.report || {};
   return (
     <main className="page-grid detail-shell">
+      {notice ? <Message tone={notice.tone} title={notice.title} body={notice.body} /> : null}
       <section className="panel hero-panel detail-hero">
         <span className="eyebrow">Run detail</span>
         <h2>{run.hero?.title || run.workflow?.title || run.run_id}</h2>
@@ -300,6 +1182,11 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
           {report.available ? (
             <a className="secondary-link" href={report.href} target="_blank" rel="noreferrer">Open HTML report</a>
           ) : null}
+          <button className="secondary-button" onClick={generateReport} disabled={busy === "Generating report"}>
+            {busy === "Generating report" ? busy : report.available ? "Regenerate report" : "Generate report"}
+          </button>
+          <a className="secondary-link" href={`${bootstrap.api_root}/runs/${runId}/export?format=json`}>Export JSON</a>
+          <a className="secondary-link" href={`${bootstrap.api_root}/runs/${runId}/export?format=csv`}>Export CSV</a>
         </div>
       </section>
       <section className="stats-grid">
@@ -1160,6 +2047,38 @@ function SourceBadge({ source }: { source: string }): React.ReactElement {
   const normalized = String(source || "unknown").toLowerCase();
   const label = normalized === "builtin" ? "Built-in · read-only" : normalized === "local" ? "Local workflow" : source;
   return <span className={`source-pill ${normalized}`}>{label}</span>;
+}
+
+function RunLaunchResultCard({ result, navigate }: { result: JsonObject; navigate: (path: string) => void }): React.ReactElement {
+  return (
+    <section className="panel section-stack">
+      <div className="section-header">
+        <div>
+          <h3>Latest launched run</h3>
+          <p>Jump straight into detail, report, or compare while the context is fresh.</p>
+        </div>
+      </div>
+      <div className="inline-action-card">
+        <div>
+          <strong>{result.run_id}</strong>
+          <p className="helper-text">{result.command || "Run created"} · {result.provider || "provider-free"} · {result.status || "running"}</p>
+        </div>
+        <div className="button-row">
+          <button className="primary-button" onClick={() => navigate(result.href)}>Inspect run</button>
+          {result.report_href ? (
+            <a className="secondary-link" href={result.report_href} target="_blank" rel="noreferrer">
+              Open report
+            </a>
+          ) : null}
+          {result.compare?.href ? (
+            <button className="secondary-button" onClick={() => navigate(result.compare.href)}>
+              Compare
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function RunCard({ run, onOpen }: { run: JsonObject; onOpen: () => void }): React.ReactElement {

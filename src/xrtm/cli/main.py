@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from shlex import quote as shell_quote
 
@@ -28,6 +29,7 @@ from xrtm.cli.presenters import (
     profiles_dir_command_arg,
     runs_dir_command_arg,
 )
+from xrtm.product import launch as launch_module
 from xrtm.product.artifacts import ArtifactStore
 from xrtm.product.competition import CompetitionPackRegistry
 from xrtm.product.doctor import run_doctor
@@ -77,7 +79,7 @@ from xrtm.product.validation import (
 )
 from xrtm.product.web import create_web_server, web_snapshot
 from xrtm.product.workbench import workbench_snapshot as workflow_workbench_snapshot
-from xrtm.product.workflow_runner import build_demo_workflow_blueprint, run_workflow_blueprint
+from xrtm.product.workflow_runner import run_workflow_blueprint
 from xrtm.product.workflows import DEFAULT_LOCAL_WORKFLOWS_DIR, WorkflowBlueprint, WorkflowRegistry
 from xrtm.version import __version__
 
@@ -458,13 +460,8 @@ def start(limit: int, runs_dir: Path, user: str | None) -> None:
             border_style="blue",
         )
     )
-    result = _execute_workflow(
-        _load_workflow("demo-provider-free"),
-        command="xrtm start",
-        runs_dir=runs_dir,
-        user=user,
-        limit=limit,
-        write_report=True,
+    result = _run_product_action(
+        lambda: launch_module.run_start_quickstart(limit=limit, runs_dir=runs_dir, user=user)
     )
     print_pipeline_result(console, result, title="XRTM Quickstart")
     print_quickstart_summary(console, result, runs_dir=runs_dir)
@@ -493,25 +490,22 @@ def demo(
 ) -> None:
     """Run a bounded local product demo over the real binary corpus."""
 
-    result = _execute_workflow(
-        build_demo_workflow_blueprint(
+    result = _run_product_action(
+        lambda: launch_module.run_demo_workflow(
+            provider=provider,
+            limit=limit,
+            runs_dir=runs_dir,
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            max_tokens=max_tokens,
+            write_report=not no_report,
+            user=user,
+            command="xrtm demo",
             name="demo-provider-free" if provider == "mock" else "demo-local-llm",
             title="XRTM Demo",
             description="Bounded product demo over the released real-binary corpus.",
-            provider=provider,
-            limit=limit,
-            max_tokens=max_tokens,
-        ),
-        command="xrtm demo",
-        runs_dir=runs_dir,
-        user=user,
-        limit=limit,
-        provider=provider,
-        base_url=base_url,
-        model=model,
-        api_key=api_key,
-        max_tokens=max_tokens,
-        write_report=not no_report,
+        )
     )
     print_pipeline_result(console, result, title="XRTM Demo")
     print_post_run_summary(
@@ -669,18 +663,21 @@ def workflow_run(
     """Run a named workflow blueprint."""
 
     blueprint = _load_workflow(name, workflows_dir=workflows_dir)
-    result = _execute_workflow(
-        blueprint,
-        command=f"xrtm workflow run {name}",
-        runs_dir=runs_dir,
-        user=user,
-        limit=limit,
-        provider=provider,
-        base_url=base_url,
-        model=model,
-        api_key=api_key,
-        max_tokens=max_tokens,
-        write_report=not no_report,
+    result = _run_product_action(
+        lambda: launch_module.run_registered_workflow(
+            name,
+            workflows_dir=workflows_dir,
+            runs_dir=runs_dir,
+            limit=limit,
+            provider=provider,
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            max_tokens=max_tokens,
+            write_report=not no_report,
+            user=user,
+            command=f"xrtm workflow run {name}",
+        )
     )
     print_pipeline_result(console, result, title=f"Workflow: {blueprint.title}")
     print_post_run_summary(
@@ -958,11 +955,19 @@ def run_pipeline_command(
 def run_profile_command(name: str, profiles_dir: Path, runs_dir: Path | None) -> None:
     """Run a saved workflow profile."""
 
-    try:
-        profile = ProfileStore(profiles_dir).load(name)
-    except (FileNotFoundError, ValueError) as exc:
-        raise click.ClickException(str(exc)) from exc
-    _run_pipeline_command(profile.to_pipeline_options(runs_dir=runs_dir))
+    result = _run_product_action(lambda: launch_module.run_saved_profile(name, profiles_dir=profiles_dir, runs_dir=runs_dir))
+    profile = ProfileStore(profiles_dir).load(name)
+    options = profile.to_pipeline_options(runs_dir=runs_dir)
+    print_pipeline_result(console, result, title=pipeline_result_title(options.command))
+    print_post_run_summary(
+        console,
+        result,
+        runs_dir=runs_dir or Path(profile.runs_dir),
+        success_title="Run complete",
+        success_label=f"{options.command} completed",
+        what_succeeded=pipeline_success_details(write_report=profile.write_report),
+        write_report=profile.write_report,
+    )
 
 
 @cli.group()
@@ -1909,6 +1914,13 @@ def _run_pipeline_command(options: PipelineOptions) -> None:
 def _execute_pipeline(options: PipelineOptions) -> PipelineResult:
     try:
         return run_pipeline(options)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _run_product_action(action: Callable[[], PipelineResult]) -> PipelineResult:
+    try:
+        return action()
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 

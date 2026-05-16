@@ -7,6 +7,7 @@ The product architecture now has three practical layers:
 | Layer | Import path | Use case |
 | --- | --- | --- |
 | **Product workflow API** | `xrtm.product` | Load shipped workflows, validate them, compile them, run them, and inspect workflow metadata or dry-run competition packs. |
+| **Shared launch services** | `xrtm.product.launch` | Use the same first-success, named-workflow, and saved-profile launch semantics shared by the CLI and WebUI. |
 | **Workflow graph layer** | `xrtm.product` | Build or inspect blueprint graphs with nodes, edges, parallel groups, and traces. |
 | **Lower-level forecasting primitives** | `xrtm.forecast` | Work directly with `Orchestrator`, agents, model factories, and other framework components when you need custom code-level systems. |
 
@@ -94,6 +95,29 @@ This writes the same canonical run artifacts as the CLI, including:
 - `blueprint.json`
 - `graph_trace.jsonl`
 - `report.html` when report writing is enabled
+
+## Use the shared launch services
+
+```python
+from pathlib import Path
+
+from xrtm.product.launch import run_registered_workflow, run_start_quickstart
+
+quickstart = run_start_quickstart(limit=1, runs_dir=Path("runs"))
+candidate = run_registered_workflow(
+    "demo-provider-free",
+    workflows_dir=Path(".xrtm/workflows"),
+    runs_dir=Path("runs"),
+    limit=1,
+)
+
+print(quickstart.run.run_id)
+print(candidate.run.run_id)
+```
+
+Use these helpers when you want the same mutating behavior that powers the
+released CLI and WebUI routes, rather than rebuilding run-launch semantics in
+your own wrapper.
 
 ## Build a custom workflow blueprint
 

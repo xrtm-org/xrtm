@@ -8,8 +8,13 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import pytest
+from click.testing import CliRunner
 
+from xrtm.cli import main as cli_main
+from xrtm.cli.main import cli
+from xrtm.product import launch as launch_module
 from xrtm.product import workbench as workbench_module
+from xrtm.product.profiles import ProfileStore, WorkflowProfile
 from xrtm.product.web import create_web_server, render_workbench_html
 from xrtm.product.webui_state import WebUIStateStore
 from xrtm.product.workbench import (
@@ -237,7 +242,7 @@ def test_workbench_snapshot_and_html_expose_gui_loop(tmp_path: Path) -> None:
 
     assert snapshot["canvas"]["nodes"]
     assert snapshot["safe_edit"]["aggregate_weight_editors"]
-    assert "Overview · Runs · Workbench" in html
+    assert "Overview · Start · Runs · Operations · Workbench" in html
     assert "/static/app.js" in html
     assert "Loading the local-first app shell" in html
 
@@ -277,6 +282,259 @@ def test_workbench_webui_creates_draft_and_rejects_unsafe_patch(tmp_path: Path) 
             )
         assert exc_info.value.code == 400
         assert "unsupported edit field" in exc_info.value.read().decode("utf-8")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_webui_p0_api_routes_use_product_services(tmp_path: Path) -> None:
+    workflows_dir = tmp_path / "workflows"
+    runs_dir = tmp_path / "runs"
+    registry = WorkflowRegistry(local_roots=(workflows_dir,))
+    result = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+    report_path = runs_dir / result.run_id / "report.html"
+    report_path.unlink()
+
+    server = create_web_server(runs_dir=runs_dir, workflows_dir=workflows_dir, port=0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        _, port = server.server_address
+        base_url = f"http://127.0.0.1:{port}"
+
+        health = _request_json(f"{base_url}/api/health")
+        assert health["ready"] is True
+        assert {check["name"] for check in health["checks"]} >= {"Python", "Core packages", "Core imports"}
+
+        providers = _request_json(f"{base_url}/api/providers/status")
+        assert providers["provider_free"]["ready"] is True
+        assert "openai-compatible-endpoint" in providers["first_class_categories"]
+
+        explanation = _request_json(f"{base_url}/api/workflows/demo-provider-free/explain")
+        assert explanation["workflow_name"] == "demo-provider-free"
+        assert "runs" in explanation["explanation"]["summary"]
+
+        validation = _request_json(f"{base_url}/api/workflows/demo-provider-free/validate", method="POST")
+        assert validation["ok"] is True
+        assert validation["workflow_name"] == "demo-provider-free"
+
+        start_run = _request_json(f"{base_url}/api/start", method="POST", payload={"limit": 1, "user": "starter"})
+        assert start_run["href"].startswith("/runs/")
+        assert (runs_dir / start_run["run_id"]).exists()
+
+        launched = _request_json(
+            f"{base_url}/api/runs",
+            method="POST",
+            payload={"workflow_name": "demo-provider-free", "limit": 1, "baseline_run_id": start_run["run_id"]},
+        )
+        assert launched["href"] == f"/runs/{launched['run_id']}"
+        assert launched["compare"]["baseline_run_id"] == start_run["run_id"]
+
+        report = _request_json(f"{base_url}/api/runs/{result.run_id}/report", method="POST")
+        assert report["href"] == f"/runs/{result.run_id}/report"
+        assert report_path.exists()
+
+        with urlopen(f"{base_url}/api/runs/{result.run_id}/export?format=json", timeout=5) as response:
+            exported = json.loads(response.read().decode("utf-8"))
+            assert response.headers["Content-Type"].startswith("application/json")
+        assert exported["run"]["run_id"] == result.run_id
+
+        with urlopen(f"{base_url}/api/runs/{result.run_id}/export?format=csv", timeout=5) as response:
+            csv_body = response.read().decode("utf-8")
+            assert response.headers["Content-Type"].startswith("text/csv")
+            assert response.headers["Content-Disposition"].endswith(f'{result.run_id}.csv"')
+        assert "forecast_probability" in csv_body
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_cli_and_webui_run_mutations_share_launch_services(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workflows_dir = tmp_path / ".xrtm" / "workflows"
+    profiles_dir = tmp_path / ".xrtm" / "profiles"
+    runs_dir = tmp_path / "runs"
+    workflows_dir.mkdir(parents=True)
+    profile = WorkflowProfile(name="ops-profile", provider="mock", limit=2, runs_dir=str(runs_dir))
+    ProfileStore(profiles_dir).create(profile)
+
+    start_run_dir = runs_dir / "start-run"
+    workflow_run_dir = runs_dir / "workflow-run"
+    profile_run_dir = runs_dir / "profile-run"
+    for path in (start_run_dir, workflow_run_dir, profile_run_dir):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "report.html").write_text("<html>ok</html>", encoding="utf-8")
+
+    calls: list[tuple[str, Any, ...]] = []
+
+    def fake_start_quickstart(*, limit: int, runs_dir: Path, user: str | None):
+        calls.append(("start", limit, runs_dir, user))
+        return SimpleNamespace(
+            run_id="start-run",
+            run=SimpleNamespace(run_id="start-run", run_dir=start_run_dir, status="succeeded", provider="mock", command="xrtm start"),
+        )
+
+    def fake_run_workflow(
+        name: str,
+        *,
+        workflows_dir: Path,
+        runs_dir: Path,
+        limit: int | None,
+        provider: str | None,
+        base_url: str | None,
+        model: str | None,
+        api_key: str | None,
+        max_tokens: int | None,
+        write_report: bool,
+        user: str | None,
+        command: str | None = None,
+    ):
+        calls.append(("workflow", name, workflows_dir, runs_dir, limit, provider, write_report, user, command))
+        return SimpleNamespace(
+            run_id="workflow-run",
+            run=SimpleNamespace(
+                run_id="workflow-run",
+                run_dir=workflow_run_dir,
+                status="succeeded",
+                provider=provider or "mock",
+                command=command or f"xrtm workflow run {name}",
+            ),
+        )
+
+    def fake_run_profile(name: str, *, profiles_dir: Path, runs_dir: Path | None = None):
+        calls.append(("profile", name, profiles_dir, runs_dir))
+        return SimpleNamespace(
+            run_id="profile-run",
+            run=SimpleNamespace(run_id="profile-run", run_dir=profile_run_dir, status="succeeded", provider="mock", command=f"xrtm run profile {name}"),
+        )
+
+    monkeypatch.setattr(cli_main, "run_doctor", lambda *args, **kwargs: True)
+    monkeypatch.setattr(cli_main, "print_pipeline_result", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli_main, "print_post_run_summary", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli_main, "print_quickstart_summary", lambda *args, **kwargs: None)
+    monkeypatch.setattr(launch_module, "run_start_quickstart", fake_start_quickstart)
+    monkeypatch.setattr(launch_module, "run_registered_workflow", fake_run_workflow)
+    monkeypatch.setattr(launch_module, "run_saved_profile", fake_run_profile)
+
+    runner = CliRunner()
+    cli_start = runner.invoke(cli, ["start", "--limit", "1", "--runs-dir", str(runs_dir), "--user", "cli-user"])
+    cli_workflow = runner.invoke(
+        cli,
+        [
+            "workflow",
+            "run",
+            "demo-provider-free",
+            "--workflows-dir",
+            str(workflows_dir),
+            "--runs-dir",
+            str(runs_dir),
+            "--limit",
+            "1",
+            "--provider",
+            "mock",
+        ],
+    )
+    cli_profile = runner.invoke(cli, ["run", "profile", "ops-profile", "--profiles-dir", str(profiles_dir), "--runs-dir", str(runs_dir)])
+
+    assert cli_start.exit_code == 0, cli_start.output
+    assert cli_workflow.exit_code == 0, cli_workflow.output
+    assert cli_profile.exit_code == 0, cli_profile.output
+
+    server = create_web_server(runs_dir=runs_dir, workflows_dir=workflows_dir, port=0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        _, port = server.server_address
+        base_url = f"http://127.0.0.1:{port}"
+
+        web_start = _request_json(f"{base_url}/api/start", method="POST", payload={"limit": 1, "user": "web-user"})
+        web_workflow = _request_json(
+            f"{base_url}/api/runs",
+            method="POST",
+            payload={"workflow_name": "demo-provider-free", "limit": 1, "provider": "mock"},
+        )
+        web_profile = _request_json(f"{base_url}/api/profiles/ops-profile/run", method="POST")
+
+        assert web_start["run_id"] == "start-run"
+        assert web_workflow["run_id"] == "workflow-run"
+        assert web_profile["run_id"] == "profile-run"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert calls[0] == ("start", 1, runs_dir, "cli-user")
+    assert calls[1][:6] == ("workflow", "demo-provider-free", workflows_dir, runs_dir, 1, "mock")
+    assert calls[2] == ("profile", "ops-profile", profiles_dir, runs_dir)
+    assert calls[3] == ("start", 1, runs_dir, "web-user")
+    assert calls[4][:6] == ("workflow", "demo-provider-free", workflows_dir, runs_dir, 1, "mock")
+    assert calls[5] == ("profile", "ops-profile", profiles_dir, None)
+
+
+def test_webui_operator_api_routes_manage_profiles_monitors_and_cleanup(tmp_path: Path) -> None:
+    workflows_dir = tmp_path / ".xrtm" / "workflows"
+    runs_dir = tmp_path / "runs"
+    server = create_web_server(runs_dir=runs_dir, workflows_dir=workflows_dir, port=0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        _, port = server.server_address
+        base_url = f"http://127.0.0.1:{port}"
+
+        created_profile = _request_json(
+            f"{base_url}/api/profiles",
+            method="POST",
+            payload={"name": "starter", "template": "starter"},
+        )
+        assert created_profile["profile"]["name"] == "starter"
+
+        profiles = _request_json(f"{base_url}/api/profiles")
+        assert [item["name"] for item in profiles["items"]] == ["starter"]
+
+        profile_detail = _request_json(f"{base_url}/api/profiles/starter")
+        assert profile_detail["profile"]["runs_dir"] == str(runs_dir)
+
+        profile_run = _request_json(f"{base_url}/api/profiles/starter/run", method="POST")
+        assert profile_run["href"] == f"/runs/{profile_run['run_id']}"
+
+        monitor = _request_json(f"{base_url}/api/monitors", method="POST", payload={"limit": 1, "provider": "mock"})
+        monitor_id = monitor["run_id"]
+        listed_monitors = _request_json(f"{base_url}/api/monitors")
+        assert any(item["run_id"] == monitor_id for item in listed_monitors["items"])
+
+        monitor_detail = _request_json(f"{base_url}/api/monitors/{monitor_id}")
+        assert monitor_detail["monitor"]["status"] in {"created", "monitoring"}
+
+        monitor_once = _request_json(f"{base_url}/api/monitors/{monitor_id}/run-once", method="POST")
+        assert monitor_once["monitor"]["cycles"] == 1
+
+        paused = _request_json(f"{base_url}/api/monitors/{monitor_id}/pause", method="POST")
+        assert paused["monitor"]["status"] == "paused"
+        resumed = _request_json(f"{base_url}/api/monitors/{monitor_id}/resume", method="POST")
+        assert resumed["monitor"]["status"] == "running"
+        halted = _request_json(f"{base_url}/api/monitors/{monitor_id}/halt", method="POST")
+        assert halted["monitor"]["status"] == "halted"
+
+        artifacts = _request_json(f"{base_url}/api/artifacts/{profile_run['run_id']}")
+        assert any(item["name"] == "run.json" for item in artifacts["artifacts"])
+
+        _request_json(f"{base_url}/api/profiles/starter/run", method="POST")
+        preview = _request_json(f"{base_url}/api/artifacts/cleanup-preview", method="POST", payload={"keep": 1})
+        assert preview["count"] >= 1
+
+        cleanup = _request_json(
+            f"{base_url}/api/artifacts/cleanup",
+            method="POST",
+            payload={"keep": 1, "confirm": "delete"},
+        )
+        assert cleanup["count"] == preview["count"]
+        removed_run_ids = {item["run_id"] for item in cleanup["items"]}
+        for run_id in removed_run_ids:
+            assert not (runs_dir / run_id).exists()
+        assert len([path for path in runs_dir.iterdir() if path.is_dir()]) == 1
     finally:
         server.shutdown()
         server.server_close()

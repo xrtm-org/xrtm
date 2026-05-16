@@ -1356,7 +1356,7 @@ def test_webui_serves_api_routes() -> None:
                 html = response.read().decode("utf-8")
             assert '"resume_target"' in shell_body
             assert '"demo-provider-free"' in runs_body
-            assert "Overview · Runs · Workbench" in html
+            assert "Overview · Start · Runs · Operations · Workbench" in html
             assert "/static/app.js" in html
         finally:
             server.shutdown()
