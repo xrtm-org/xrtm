@@ -76,6 +76,7 @@ from xrtm.product.validation import (
     run_validation,
 )
 from xrtm.product.web import create_web_server, web_snapshot
+from xrtm.product.workbench import workbench_snapshot as workflow_workbench_snapshot
 from xrtm.product.workflow_runner import build_demo_workflow_blueprint, run_workflow_blueprint
 from xrtm.product.workflows import DEFAULT_LOCAL_WORKFLOWS_DIR, WorkflowBlueprint, WorkflowRegistry
 from xrtm.version import __version__
@@ -1860,17 +1861,27 @@ def tui(runs_dir: Path, watch: bool, refresh_interval: float, iterations: int | 
 
 @cli.command()
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", type=int, default=8765, show_default=True)
 @click.option("--smoke", is_flag=True, help="Validate routes without blocking.")
-def web(runs_dir: Path, host: str, port: int, smoke: bool) -> None:
-    """Serve the local XRTM WebUI/dashboard."""
+def web(runs_dir: Path, workflows_dir: Path, host: str, port: int, smoke: bool) -> None:
+    """Serve the local XRTM WebUI/dashboard and editable workflow workbench."""
 
     if smoke:
         snapshot = web_snapshot(runs_dir)
-        console.print(f"[green]WebUI smoke ok:[/green] {len(snapshot['runs'])} run(s)")
+        workbench = workflow_workbench_snapshot(runs_dir, workflows_dir)
+        console.print(
+            f"[green]WebUI smoke ok:[/green] {len(snapshot['runs'])} run(s), "
+            f"{len(workbench['workflows'])} workflow(s), workbench ready"
+        )
         return
-    server = create_web_server(runs_dir=runs_dir, host=host, port=port)
+    server = create_web_server(runs_dir=runs_dir, workflows_dir=workflows_dir, host=host, port=port)
     address, active_port = server.server_address
     console.print(f"[green]XRTM WebUI:[/green] http://{address}:{active_port}")
     try:

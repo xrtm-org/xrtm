@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from importlib.resources import files
@@ -15,6 +16,14 @@ _WORKFLOW_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 _SUPPORTED_PROVIDERS = {"mock", "local-llm"}
 _SUPPORTED_QUESTION_SOURCES = {"real-binary-corpus"}
 ALLOWED_PRODUCT_NODE_KINDS = frozenset({"tool", "model", "scorer", "aggregator", "router", "human-gate", "agent"})
+AGGREGATE_CANDIDATES_IMPLEMENTATION = "xrtm.product.workflow_nodes.aggregate_candidate_forecasts_node"
+CANDIDATE_IMPLEMENTATIONS = frozenset(
+    {
+        "xrtm.product.workflow_nodes.candidate_forecast_node",
+        "xrtm.product.workflow_nodes.provider_free_candidate_node",
+        "xrtm.product.workflow_nodes.time_series_baseline_node",
+    }
+)
 
 
 def validate_workflow_name(name: str) -> None:
@@ -482,6 +491,27 @@ class WorkflowRegistry:
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return path
 
+    def local_path(self, name: str, *, destination_root: Path | None = None) -> Path:
+        validate_workflow_name(name)
+        root = destination_root or self.local_roots[0]
+        return root / f"{name}.json"
+
+    def save(
+        self,
+        blueprint: WorkflowBlueprint,
+        *,
+        destination_root: Path | None = None,
+        overwrite: bool = False,
+    ) -> Path:
+        validate_workflow_name(blueprint.name)
+        destination = destination_root or self.local_roots[0]
+        destination.mkdir(parents=True, exist_ok=True)
+        path = self.local_path(blueprint.name, destination_root=destination)
+        if path.exists() and not overwrite:
+            raise FileExistsError(f"workflow already exists: {blueprint.name}")
+        path.write_text(json.dumps(blueprint.to_json_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return path
+
     def explain(self, name: str) -> dict[str, Any]:
         blueprint = self.validate(name)
         return explain_blueprint(blueprint)
@@ -550,10 +580,54 @@ def validate_product_blueprint(blueprint: WorkflowBlueprint) -> None:
             errors.append(
                 f"{node_name}: implementation {node.implementation!r} is outside the safe product node library"
             )
+        if node.implementation == AGGREGATE_CANDIDATES_IMPLEMENTATION:
+            errors.extend(_validate_aggregate_weights(blueprint, node_name, node))
         if blueprint.workflow_kind == "benchmark" and node.implementation and "search" in node.implementation:
             errors.append(f"{node_name}: benchmark workflows may not include hidden network/search nodes")
     if errors:
         raise ValueError("workflow validation failed:\n- " + "\n- ".join(errors))
+
+
+def _validate_aggregate_weights(blueprint: WorkflowBlueprint, node_name: str, node: NodeSpec) -> list[str]:
+    weights = node.config.get("weights", {})
+    if weights in ({}, None):
+        return []
+    if not isinstance(weights, dict):
+        return [f"{node_name}: aggregate weights must be an object"]
+    allowed = set(aggregate_candidate_upstreams(blueprint, node_name))
+    errors = []
+    unknown = sorted(set(weights) - allowed)
+    if unknown:
+        errors.append(f"{node_name}: aggregate weights reference non-upstream candidate nodes: {', '.join(unknown)}")
+    positive = False
+    for contributor, raw_value in weights.items():
+        if not isinstance(raw_value, (int, float)) or isinstance(raw_value, bool) or not math.isfinite(float(raw_value)):
+            errors.append(f"{node_name}: aggregate weight for {contributor} must be a finite number")
+            continue
+        if float(raw_value) < 0:
+            errors.append(f"{node_name}: aggregate weight for {contributor} may not be negative")
+        if float(raw_value) > 0:
+            positive = True
+    if weights and not positive:
+        errors.append(f"{node_name}: at least one aggregate weight must be greater than zero")
+    return errors
+
+
+def aggregate_candidate_upstreams(blueprint: WorkflowBlueprint, aggregate_node: str) -> list[str]:
+    """Return existing upstream candidate nodes that may contribute to an aggregate node."""
+
+    contributors: list[str] = []
+    for edge in blueprint.graph.edges:
+        if edge.to_node != aggregate_node:
+            continue
+        sources = [edge.from_node]
+        if edge.from_node in blueprint.graph.parallel_groups:
+            sources = list(blueprint.graph.parallel_groups[edge.from_node].nodes)
+        for source in sources:
+            node = blueprint.graph.nodes.get(source)
+            if node is not None and node.implementation in CANDIDATE_IMPLEMENTATIONS and source not in contributors:
+                contributors.append(source)
+    return contributors
 
 
 def explain_blueprint(blueprint: WorkflowBlueprint) -> dict[str, Any]:
@@ -621,7 +695,9 @@ def explain_blueprint(blueprint: WorkflowBlueprint) -> dict[str, Any]:
 __all__ = [
     "DEFAULT_LOCAL_WORKFLOWS_DIR",
     "WORKFLOW_SCHEMA_VERSION",
+    "AGGREGATE_CANDIDATES_IMPLEMENTATION",
     "ArtifactPolicy",
+    "CANDIDATE_IMPLEMENTATIONS",
     "ConditionalRouteSpec",
     "EdgeSpec",
     "GraphSpec",
@@ -633,6 +709,7 @@ __all__ = [
     "WorkflowBlueprint",
     "WorkflowRegistry",
     "WorkflowSummary",
+    "aggregate_candidate_upstreams",
     "explain_blueprint",
     "validate_product_blueprint",
     "validate_workflow_name",

@@ -35,6 +35,7 @@ place.
 - [Operator Runbook](docs/operator-runbook.md)
 - [Python API Reference](docs/python-api-reference.md)
 - [Integration Examples](examples/integration/)
+- [Next-release Feature Track](docs/next-release-feature-track.md) for source-only work that is not part of the published `xrtm==0.3.3` package
 - Full documentation: [xrtm.org](https://xrtm.org)
 
 ## License
