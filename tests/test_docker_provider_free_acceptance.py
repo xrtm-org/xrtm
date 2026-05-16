@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -122,6 +123,87 @@ def test_docker_run_command_supports_repo_root_equal_to_workspace_root(monkeypat
     assert command[repo_root_index + 1] == "/workspace"
 
 
+def test_prepare_host_artifacts_dir_uses_managed_sandbox_when_requested(tmp_path, monkeypatch) -> None:
+    module = _load_module()
+    workspace_root = tmp_path / "workspace"
+    requested_dir = tmp_path / "requested-artifacts"
+    manager_path = tmp_path / "sandbox_manager.py"
+    registry_root = tmp_path / "registry"
+    workspace_root.mkdir()
+    manager_path.write_text("# stub\n", encoding="utf-8")
+    created_dir = tmp_path / "managed-artifacts"
+    captured: dict[str, object] = {}
+
+    def fake_run_sandbox_manager_json(manager, command, *, registry_root=None):
+        captured["manager_path"] = manager
+        captured["command"] = command
+        captured["registry_root"] = registry_root
+        return {
+            "id": "sandbox-123",
+            "path": str(created_dir),
+            "state": "active",
+            "purpose": "docker-provider-free acceptance (pypi)",
+            "type": "validation",
+            "expires_at": "2026-05-12T00:00:00Z",
+            "cleanup_policy": {"mode": "manual"},
+            "integrity": {
+                "manifest_path": str(registry_root / "manifests" / "sandbox-123.json"),
+                "registry_root": str(registry_root),
+            },
+        }
+
+    monkeypatch.setattr(module, "run_sandbox_manager_json", fake_run_sandbox_manager_json)
+    args = module.build_parser().parse_args(
+        [
+            "host",
+            "--artifact-source",
+            "pypi",
+            "--managed-sandbox",
+            "--artifacts-dir",
+            str(requested_dir),
+            "--sandbox-manager",
+            str(manager_path),
+            "--sandbox-registry-root",
+            str(registry_root),
+            "--sandbox-ttl-hours",
+            "12",
+            "--sandbox-cleanup-policy",
+            "manual",
+        ]
+    )
+
+    artifacts_dir, managed = module.prepare_host_artifacts_dir(
+        args=args,
+        workspace_root_path=workspace_root,
+        repo_name="xrtm",
+        purpose="docker-provider-free acceptance (pypi)",
+        default_dir_factory=module.default_artifacts_dir,
+    )
+
+    assert artifacts_dir == created_dir
+    assert artifacts_dir.is_dir()
+    assert managed is not None
+    assert managed.manager_path == manager_path
+    assert managed.registry_root == registry_root
+    assert captured["manager_path"] == manager_path
+    assert captured["registry_root"] == registry_root
+    assert captured["command"] == [
+        "create",
+        "--repo",
+        "xrtm",
+        "--purpose",
+        "docker-provider-free acceptance (pypi)",
+        "--type",
+        "validation",
+        "--cleanup-policy",
+        "manual",
+        "--ttl-hours",
+        "12.0",
+        "--path",
+        str(requested_dir),
+    ]
+
+
 def test_run_first_success_uses_released_start_journey(tmp_path, monkeypatch) -> None:
     module = _load_module()
     calls: list[list[str]] = []
@@ -170,6 +252,71 @@ def test_run_first_success_uses_released_start_journey(tmp_path, monkeypatch) ->
     }
     assert written["path"] == journey_dir / "summary.json"
     assert written["payload"] == summary
+
+
+def test_run_host_records_managed_sandbox_metadata(tmp_path, monkeypatch) -> None:
+    module = _load_module()
+    workspace_root = tmp_path / "workspace"
+    xrtm_repo_root = workspace_root / "xrtm"
+    artifacts_dir = tmp_path / "managed-provider-free"
+    manager_path = tmp_path / "sandbox_manager.py"
+    registry_root = tmp_path / "registry"
+    workspace_root.mkdir()
+    xrtm_repo_root.mkdir(parents=True)
+    artifacts_dir.mkdir()
+    manager_path.write_text("# stub\n", encoding="utf-8")
+    managed = module.ManagedSandboxContext(
+        manager_path=manager_path,
+        registry_root=registry_root,
+        manifest={
+            "id": "sandbox-123",
+            "path": str(artifacts_dir),
+            "state": "active",
+            "purpose": "docker-provider-free acceptance (pypi)",
+            "type": "validation",
+            "expires_at": "2026-05-12T00:00:00Z",
+            "cleanup_policy": {"mode": "delete"},
+            "integrity": {
+                "manifest_path": str(registry_root / "manifests" / "sandbox-123.json"),
+                "registry_root": str(registry_root),
+            },
+        },
+    )
+
+    def fake_run_logged(command, *, log_path, cwd=None, env=None):
+        if command[:2] == ["docker", "run"]:
+            (artifacts_dir / "summary.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+        return None
+
+    monkeypatch.setattr(
+        module,
+        "prepare_host_artifacts_dir",
+        lambda **kwargs: (artifacts_dir, managed),
+    )
+    monkeypatch.setattr(module, "default_specs", lambda root, repo_root: ("xrtm==0.3.0", "xrtm-forecast==0.6.6"))
+    monkeypatch.setattr(module, "run_logged", fake_run_logged)
+
+    args = module.build_parser().parse_args(
+        [
+            "host",
+            "--workspace-root",
+            str(workspace_root),
+            "--xrtm-repo-root",
+            str(xrtm_repo_root),
+            "--artifact-source",
+            "pypi",
+        ]
+    )
+
+    assert module.run_host(args) == 0
+    request_payload = json.loads((artifacts_dir / "metadata" / "request.json").read_text(encoding="utf-8"))
+    summary_payload = json.loads((artifacts_dir / "summary.json").read_text(encoding="utf-8"))
+    managed_payload = json.loads((artifacts_dir / "metadata" / "managed-sandbox.json").read_text(encoding="utf-8"))
+
+    assert request_payload["managed_sandbox"]["id"] == "sandbox-123"
+    assert request_payload["managed_sandbox"]["manager_path"] == str(manager_path)
+    assert summary_payload["managed_sandbox"]["path"] == str(artifacts_dir)
+    assert managed_payload["id"] == "sandbox-123"
 
 
 def test_run_logged_appends_core_diagnostics_on_failure(tmp_path) -> None:

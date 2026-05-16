@@ -20,6 +20,10 @@ WORKSPACE_REPOS = ("data", "eval", "forecast", "train", "xrtm")
 DEFAULT_IMAGE_TAG = "xrtm-provider-free-acceptance:py311"
 DEFAULT_PYTHON_IMAGE = "python:3.11-slim"
 CONTAINER_WORKSPACE_ROOT = Path("/workspace")
+DEFAULT_MANAGED_SANDBOX_TTL_HOURS = 24.0
+DEFAULT_MANAGED_SANDBOX_CLEANUP_POLICY = "delete"
+MANAGED_SANDBOX_ENV = "XRTM_ACCEPTANCE_USE_MANAGED_SANDBOX"
+TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -33,6 +37,13 @@ class HostConfig:
     python_image: str
     xrtm_spec: str
     forecast_spec: str
+
+
+@dataclass(frozen=True)
+class ManagedSandboxContext:
+    manager_path: Path
+    registry_root: Path | None
+    manifest: dict[str, Any]
 
 
 def script_path() -> Path:
@@ -65,6 +76,112 @@ def utc_timestamp() -> str:
 
 def default_artifacts_dir(root: Path, timestamp: str | None = None) -> Path:
     return root / "acceptance-studies" / "docker-provider-free" / (timestamp or utc_timestamp())
+
+
+def env_flag_enabled(value: str | None) -> bool:
+    return value is not None and value.strip().lower() in TRUTHY_ENV_VALUES
+
+
+def managed_sandbox_requested(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "managed_sandbox", False) or env_flag_enabled(os.environ.get(MANAGED_SANDBOX_ENV)))
+
+
+def default_sandbox_manager_path(workspace_root_path: Path) -> Path:
+    return workspace_root_path.parent / "system-scripts" / "sandbox_manager.py"
+
+
+def resolve_sandbox_manager_path(workspace_root_path: Path, override: str | None) -> Path:
+    candidate = Path(override).expanduser().resolve() if override else default_sandbox_manager_path(workspace_root_path).resolve()
+    if not candidate.is_file():
+        raise FileNotFoundError(f"Sandbox manager not found: {candidate}")
+    return candidate
+
+
+def run_sandbox_manager_json(
+    manager_path: Path,
+    command: list[str],
+    *,
+    registry_root: Path | None = None,
+) -> dict[str, Any]:
+    env = dict(os.environ)
+    if registry_root is not None:
+        env["SANDBOX_REGISTRY_ROOT"] = str(registry_root)
+    result = subprocess.run(
+        [sys.executable, str(manager_path), *command, "--json"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        check=False,
+    )
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip() or f"sandbox manager exited with {result.returncode}"
+        raise RuntimeError(f"Sandbox manager command failed: {details}")
+    return json.loads(result.stdout)
+
+
+def managed_sandbox_summary(context: ManagedSandboxContext) -> dict[str, Any]:
+    manifest = context.manifest
+    integrity = manifest.get("integrity", {})
+    return {
+        "id": manifest["id"],
+        "path": manifest["path"],
+        "state": manifest["state"],
+        "purpose": manifest["purpose"],
+        "type": manifest["type"],
+        "expires_at": manifest["expires_at"],
+        "cleanup_policy": manifest["cleanup_policy"],
+        "manifest_path": integrity.get("manifest_path"),
+        "registry_root": integrity.get("registry_root"),
+        "manager_path": str(context.manager_path),
+    }
+
+
+def add_managed_sandbox_metadata(payload: dict[str, Any], managed_sandbox: ManagedSandboxContext | None) -> dict[str, Any]:
+    if managed_sandbox is not None:
+        payload["managed_sandbox"] = managed_sandbox_summary(managed_sandbox)
+    return payload
+
+
+def prepare_host_artifacts_dir(
+    *,
+    args: argparse.Namespace,
+    workspace_root_path: Path,
+    repo_name: str,
+    purpose: str,
+    default_dir_factory,
+) -> tuple[Path, ManagedSandboxContext | None]:
+    requested_artifacts_dir = Path(args.artifacts_dir).expanduser().resolve() if args.artifacts_dir else None
+    if not managed_sandbox_requested(args):
+        artifacts_dir = requested_artifacts_dir or default_dir_factory(workspace_root_path)
+        prepare_artifacts_dir(artifacts_dir)
+        return artifacts_dir, None
+
+    manager_path = resolve_sandbox_manager_path(workspace_root_path, getattr(args, "sandbox_manager", None))
+    registry_root = (
+        Path(args.sandbox_registry_root).expanduser().resolve()
+        if getattr(args, "sandbox_registry_root", None)
+        else None
+    )
+    create_command = [
+        "create",
+        "--repo",
+        repo_name,
+        "--purpose",
+        purpose,
+        "--type",
+        "validation",
+        "--cleanup-policy",
+        args.sandbox_cleanup_policy,
+        "--ttl-hours",
+        str(args.sandbox_ttl_hours),
+    ]
+    if requested_artifacts_dir is not None:
+        create_command.extend(["--path", str(requested_artifacts_dir)])
+    manifest = run_sandbox_manager_json(manager_path, create_command, registry_root=registry_root)
+    artifacts_dir = Path(manifest["path"]).resolve()
+    prepare_artifacts_dir(artifacts_dir)
+    return artifacts_dir, ManagedSandboxContext(manager_path=manager_path, registry_root=registry_root, manifest=manifest)
 
 
 def load_project_version(repo_dir: Path) -> str:
@@ -790,9 +907,16 @@ def run_host(args: argparse.Namespace) -> int:
         xrtm_spec = args.xrtm_spec
     if args.forecast_spec:
         forecast_spec = args.forecast_spec
-    artifacts_dir = Path(args.artifacts_dir).resolve() if args.artifacts_dir else default_artifacts_dir(workspace_root_path)
-    prepare_artifacts_dir(artifacts_dir)
+    artifacts_dir, managed_sandbox = prepare_host_artifacts_dir(
+        args=args,
+        workspace_root_path=workspace_root_path,
+        repo_name="xrtm",
+        purpose=f"docker-provider-free acceptance ({args.artifact_source})",
+        default_dir_factory=default_artifacts_dir,
+    )
     metadata_dir = artifacts_dir / "metadata"
+    if managed_sandbox is not None:
+        write_json(metadata_dir / "managed-sandbox.json", managed_sandbox.manifest)
     wheelhouse_dir = None
     if args.artifact_source == "wheelhouse":
         wheelhouse_dir = Path(args.wheelhouse_dir).resolve() if args.wheelhouse_dir else artifacts_dir / "wheelhouse"
@@ -808,8 +932,7 @@ def run_host(args: argparse.Namespace) -> int:
         xrtm_spec=xrtm_spec,
         forecast_spec=forecast_spec,
     )
-    write_json(
-        metadata_dir / "request.json",
+    request_payload = add_managed_sandbox_metadata(
         {
             "artifact_source": config.artifact_source,
             "artifacts_dir": str(config.artifacts_dir),
@@ -821,7 +944,9 @@ def run_host(args: argparse.Namespace) -> int:
             "xrtm_repo_root": str(config.xrtm_repo_root),
             "xrtm_spec": config.xrtm_spec,
         },
+        managed_sandbox,
     )
+    write_json(metadata_dir / "request.json", request_payload)
     run_logged(
         docker_build_command(xrtm_repo_root_path, config.image_tag, config.python_image),
         log_path=metadata_dir / "docker-build.log",
@@ -833,7 +958,9 @@ def run_host(args: argparse.Namespace) -> int:
     summary_path = artifacts_dir / "summary.json"
     if summary_path.exists():
         summary = load_json(summary_path)
+        add_managed_sandbox_metadata(summary, managed_sandbox)
         print(json.dumps(summary, indent=2, sort_keys=True))
+        write_json(summary_path, summary)
     else:
         print(f"Docker acceptance completed; summary not found at {summary_path}")
     return 0
@@ -907,7 +1034,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     host_parser = subparsers.add_parser("host")
     host_parser.add_argument("--artifact-source", choices=("wheelhouse", "pypi"), default="wheelhouse")
-    host_parser.add_argument("--artifacts-dir")
+    host_parser.add_argument(
+        "--artifacts-dir",
+        help="Artifact output directory. With --managed-sandbox, this becomes the tracked sandbox path.",
+    )
     host_parser.add_argument("--wheelhouse-dir")
     host_parser.add_argument("--workspace-root")
     host_parser.add_argument("--xrtm-repo-root")
@@ -915,6 +1045,31 @@ def build_parser() -> argparse.ArgumentParser:
     host_parser.add_argument("--python-image", default=DEFAULT_PYTHON_IMAGE)
     host_parser.add_argument("--xrtm-spec")
     host_parser.add_argument("--forecast-spec")
+    host_parser.add_argument(
+        "--managed-sandbox",
+        action="store_true",
+        help="Track the host artifact root with the shared sandbox manager.",
+    )
+    host_parser.add_argument(
+        "--sandbox-manager",
+        help="Path to system-scripts/sandbox_manager.py. Defaults to ../system-scripts relative to the workspace root.",
+    )
+    host_parser.add_argument(
+        "--sandbox-registry-root",
+        help="Override SANDBOX_REGISTRY_ROOT for managed sandbox metadata and storage.",
+    )
+    host_parser.add_argument(
+        "--sandbox-ttl-hours",
+        type=float,
+        default=DEFAULT_MANAGED_SANDBOX_TTL_HOURS,
+        help="TTL for managed acceptance sandboxes before reap-stale can remove them.",
+    )
+    host_parser.add_argument(
+        "--sandbox-cleanup-policy",
+        choices=("delete", "archive", "manual"),
+        default=DEFAULT_MANAGED_SANDBOX_CLEANUP_POLICY,
+        help="Cleanup policy recorded for managed acceptance sandboxes.",
+    )
 
     inside_parser = subparsers.add_parser("inside")
     inside_parser.add_argument("--workspace-root", required=True)

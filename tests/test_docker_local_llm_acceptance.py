@@ -259,3 +259,91 @@ def test_run_host_requires_nvidia_smi_for_release_profile(tmp_path, monkeypatch)
         assert "nvidia-smi is required" in str(exc)
     else:
         raise AssertionError("expected release profile to require nvidia-smi")
+
+
+def test_run_host_records_managed_sandbox_metadata(tmp_path, monkeypatch) -> None:
+    module = _load_module()
+    workspace_root = tmp_path / "workspace"
+    repo_root = workspace_root / "xrtm"
+    model_dir = tmp_path / "models"
+    model_file = model_dir / "Qwen3.5-9B-UD-Q4_K_XL.gguf"
+    artifacts_dir = tmp_path / "managed-local-llm"
+    manager_path = tmp_path / "sandbox_manager.py"
+    registry_root = tmp_path / "registry"
+    workspace_root.mkdir()
+    repo_root.mkdir(parents=True)
+    model_dir.mkdir()
+    artifacts_dir.mkdir()
+    manager_path.write_text("# stub\n", encoding="utf-8")
+    model_file.write_text("model", encoding="utf-8")
+    managed = module.ManagedSandboxContext(
+        manager_path=manager_path,
+        registry_root=registry_root,
+        manifest={
+            "id": "sandbox-456",
+            "path": str(artifacts_dir),
+            "state": "active",
+            "purpose": "docker-local-llm acceptance (smoke, pypi)",
+            "type": "validation",
+            "expires_at": "2026-05-12T00:00:00Z",
+            "cleanup_policy": {"mode": "delete"},
+            "integrity": {
+                "manifest_path": str(registry_root / "manifests" / "sandbox-456.json"),
+                "registry_root": str(registry_root),
+            },
+        },
+    )
+
+    def fake_run_logged(command, *, log_path, cwd=None, env=None):
+        if command[:2] == ["docker", "compose"] and "up" in command:
+            (artifacts_dir / "summary.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+        return None
+
+    monkeypatch.setattr(
+        module,
+        "prepare_host_artifacts_dir",
+        lambda **kwargs: (artifacts_dir, managed),
+    )
+    monkeypatch.setattr(module, "default_specs", lambda root, repo_root: ("xrtm==0.3.0", "xrtm-forecast==0.6.6"))
+    monkeypatch.setattr(module, "nvidia_smi_available", lambda: False)
+    monkeypatch.setattr(module, "run_logged", fake_run_logged)
+    monkeypatch.setattr(module, "best_effort_logged", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "summarize_gpu_telemetry",
+        lambda *args, **kwargs: {
+            "available": True,
+            "sample_count": 0,
+            "duration_seconds": 0.0,
+            "active_sample_count": 0,
+            "active_ratio": 0.0,
+            "peak_memory_used_mib": 0,
+            "peak_utilization_gpu_percent": 0,
+            "mean_utilization_gpu_percent": 0.0,
+        },
+    )
+
+    args = module.build_parser().parse_args(
+        [
+            "host",
+            "--workspace-root",
+            str(workspace_root),
+            "--xrtm-repo-root",
+            str(repo_root),
+            "--artifact-source",
+            "pypi",
+            "--llama-model-dir",
+            str(model_dir),
+        ]
+    )
+
+    assert module.run_host(args) == 0
+    request_payload = json.loads((artifacts_dir / "metadata" / "request.json").read_text(encoding="utf-8"))
+    summary_payload = json.loads((artifacts_dir / "summary.json").read_text(encoding="utf-8"))
+    managed_payload = json.loads((artifacts_dir / "metadata" / "managed-sandbox.json").read_text(encoding="utf-8"))
+
+    assert request_payload["managed_sandbox"]["id"] == "sandbox-456"
+    assert request_payload["managed_sandbox"]["manager_path"] == str(manager_path)
+    assert summary_payload["managed_sandbox"]["path"] == str(artifacts_dir)
+    assert summary_payload["validation_profile"] == "smoke"
+    assert managed_payload["id"] == "sandbox-456"
