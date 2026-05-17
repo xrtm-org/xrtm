@@ -16,9 +16,9 @@ from rich.table import Table
 from xrtm.product.pipeline import package_versions
 from xrtm.product.providers import local_llm_status
 
-SUPPORTED_PYTHON = ">=3.11,<3.13"
+SUPPORTED_PYTHON = ">=3.11,<3.14"
 SUPPORTED_PYTHON_MIN = (3, 11)
-SUPPORTED_PYTHON_MAX_EXCLUSIVE = (3, 13)
+SUPPORTED_PYTHON_MAX_EXCLUSIVE = (3, 14)
 DEFAULT_RUNS_DIR = Path("runs")
 RELEASED_START_COMMAND = "xrtm start --runs-dir runs"
 _PACKAGE_IMPORTS = {

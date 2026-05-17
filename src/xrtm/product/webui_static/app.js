@@ -13,6 +13,12 @@
   function currentRoute() {
     return { path: window.location.pathname, search: window.location.search.replace(/^\?/, "") };
   }
+  function isNavItemActive(routePath, href) {
+    if (href === "/") return routePath === "/";
+    if (href === "/start") return routePath === "/start" || /^\/workflows\/[^/]+$/.test(routePath);
+    if (href === "/runs") return routePath === "/runs" || /^\/runs\/[^/]+(?:\/compare\/[^/]+)?$/.test(routePath);
+    return routePath === href;
+  }
   async function requestJson(url, init) {
     const response = await fetch(url, {
       headers: { "Content-Type": "application/json" },
@@ -71,11 +77,26 @@
       setRoute(currentRoute());
     };
     const refreshShell = () => setShellRefresh((value) => value + 1);
-    const nav = shell.data?.app?.nav ?? [
+    const appChrome = shell.data?.app || {};
+    const nav = appChrome.nav ?? [
       { label: "Overview", href: "/" },
       { label: "Runs", href: "/runs" },
       { label: "Playground", href: "/playground" },
       { label: "Workbench", href: "/workbench" }
+    ];
+    const trustCues = appChrome.trust_cues || ["Local-only shell", "File-backed history", "SQLite draft state"];
+    const environmentCards = shell.data?.environment?.cards || [
+      { key: "version", label: "Version", value: shell.data?.app?.version ? `xrtm ${String(shell.data.app.version)}` : "unknown" },
+      { key: "runs", label: "Runs", value: shell.data?.environment?.runs_dir || "\u2014" },
+      { key: "workflows", label: "Workflows", value: shell.data?.environment?.workflows_dir || "\u2014" },
+      {
+        key: "local-llm",
+        label: "Local LLM",
+        value: shell.data?.environment?.local_llm?.healthy ? "Healthy" : "Unavailable",
+        status: shell.data?.environment?.local_llm?.healthy ? "healthy" : "unavailable",
+        detail: shell.data?.environment?.local_llm?.base_url || shell.data?.environment?.local_llm?.error || "Unavailable"
+      },
+      { key: "app-db", label: "App DB", value: shell.data?.environment?.app_db || "\u2014" }
     ];
     let page;
     if (route.path === "/") {
@@ -100,19 +121,23 @@
     } else {
       page = /* @__PURE__ */ React.createElement(WorkbenchPage, { route, shell: shell.data, navigate, onMutate: refreshShell });
     }
-    return /* @__PURE__ */ React.createElement("div", { className: "app-shell" }, /* @__PURE__ */ React.createElement("header", { className: "topbar" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "title-row" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "XRTM WebUI"), shell.data?.app?.version ? /* @__PURE__ */ React.createElement("span", { className: "version-pill" }, "v", String(shell.data.app.version)) : null), /* @__PURE__ */ React.createElement("h1", null, "Local forecasting cockpit")), /* @__PURE__ */ React.createElement("nav", { className: "topnav", "aria-label": "Primary" }, nav.map((item) => /* @__PURE__ */ React.createElement(
-      "a",
-      {
-        key: item.href,
-        className: route.path === item.href ? "nav-link active" : "nav-link",
-        href: item.href,
-        onClick: (event) => {
-          event.preventDefault();
-          navigate(item.href);
-        }
-      },
-      item.label
-    )))), bootstrap.initial_error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Initial error", body: bootstrap.initial_error }) : null, shell.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "App shell error", body: shell.error }) : null, shell.loading && !shell.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading app shell" }) : null, shell.data ? /* @__PURE__ */ React.createElement("section", { className: "environment-strip" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Version"), /* @__PURE__ */ React.createElement("span", null, shell.data.app?.version ? `xrtm ${String(shell.data.app.version)}` : "unknown")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Runs"), /* @__PURE__ */ React.createElement("span", null, shell.data.environment?.runs_dir)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Workflows"), /* @__PURE__ */ React.createElement("span", null, shell.data.environment?.workflows_dir)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Local LLM"), /* @__PURE__ */ React.createElement("span", null, String(shell.data.environment?.local_llm?.healthy))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "App DB"), /* @__PURE__ */ React.createElement("span", null, shell.data.environment?.app_db))) : null, page);
+    return /* @__PURE__ */ React.createElement("div", { className: "app-shell" }, /* @__PURE__ */ React.createElement("section", { className: "panel shell-chrome" }, /* @__PURE__ */ React.createElement("header", { className: "topbar" }, /* @__PURE__ */ React.createElement("div", { className: "shell-copy-stack" }, /* @__PURE__ */ React.createElement("div", { className: "title-row" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, String(appChrome.name || "XRTM WebUI")), shell.data?.app?.version ? /* @__PURE__ */ React.createElement("span", { className: "version-pill" }, "v", String(shell.data.app.version)) : null), /* @__PURE__ */ React.createElement("h1", null, String(appChrome.subtitle || "Local forecasting cockpit")), /* @__PURE__ */ React.createElement("p", { className: "shell-copy" }, String(appChrome.summary || "File-backed runs, local workflows, and resumable SQLite state in one muted local shell.")), /* @__PURE__ */ React.createElement("div", { className: "meta-row shell-trust-row" }, trustCues.map((cue) => /* @__PURE__ */ React.createElement("span", { key: cue, className: "shell-trust-pill" }, cue)))), /* @__PURE__ */ React.createElement("div", { className: "shell-nav-stack" }, /* @__PURE__ */ React.createElement("div", { className: "title-row" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Primary lanes")), /* @__PURE__ */ React.createElement("nav", { className: "topnav", "aria-label": "Primary" }, nav.map((item) => {
+      const active = isNavItemActive(route.path, String(item.href || "/"));
+      return /* @__PURE__ */ React.createElement(
+        "a",
+        {
+          key: item.href,
+          className: active ? "nav-link active" : "nav-link",
+          href: item.href,
+          "aria-current": active ? "page" : void 0,
+          onClick: (event) => {
+            event.preventDefault();
+            navigate(item.href);
+          }
+        },
+        item.label
+      );
+    })))), shell.data ? /* @__PURE__ */ React.createElement("section", { className: "environment-strip", "aria-label": "Environment status" }, environmentCards.map((card) => /* @__PURE__ */ React.createElement("article", { key: String(card.key || card.label), className: "environment-card" }, /* @__PURE__ */ React.createElement("div", { className: "environment-card-head" }, /* @__PURE__ */ React.createElement("strong", null, card.label), card.status ? /* @__PURE__ */ React.createElement(StatusPill, { value: String(card.status) }) : null), /* @__PURE__ */ React.createElement("span", { className: "environment-card-value", title: String(card.value || "\u2014") }, card.value || "\u2014"), card.detail ? /* @__PURE__ */ React.createElement("span", { className: "environment-card-detail", title: String(card.detail) }, card.detail) : null))) : null), bootstrap.initial_error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Initial error", body: bootstrap.initial_error }) : null, shell.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "App shell error", body: shell.error }) : null, shell.loading && !shell.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading app shell" }) : null, /* @__PURE__ */ React.createElement("div", { className: "page-stack" }, page));
   }
   function OverviewPage({ shell, navigate }) {
     const overview = shell?.overview;
@@ -445,7 +470,7 @@
       setStatus(params.get("status") || "");
       setProvider(params.get("provider") || "");
     }, [params]);
-    return /* @__PURE__ */ React.createElement("main", { className: "page-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Runs"), /* @__PURE__ */ React.createElement("h2", null, "Inspect canonical run history"), /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement("main", { className: "page-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel page-lead" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Runs"), /* @__PURE__ */ React.createElement("h2", null, "Inspect canonical run history"), /* @__PURE__ */ React.createElement("p", null, "Filter the file-backed history without losing status semantics, provider context, or comparison paths."), /* @__PURE__ */ React.createElement(
       "form",
       {
         className: "filter-row",

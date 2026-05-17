@@ -4,7 +4,11 @@ This page is the implementation-level source of truth for CLI/WebUI parity in
 `xrtm`. It follows the governance
 [Interface Parity and Claim Ownership Policy](https://github.com/xrtm-org/governance/blob/main/policies/interface-parity-and-claim-ownership-policy.md).
 
-Current baseline: published `xrtm==0.8.2`.
+Current baseline: published `xrtm==0.8.3`.
+
+The current `0.8.3` source line is stability/polish only. Shell copy, visual
+refinement, index freshness, and Python 3.13 health fixes should align wording
+with the existing released contract, not widen the parity claims below.
 
 ## Status legend
 
@@ -23,7 +27,7 @@ Current baseline: published `xrtm==0.8.2`.
 | --- | --- | --- | --- |
 | Readiness/health | `/start`, `GET /api/health` | `parity-ready` | WebUI Start page renders the shared doctor snapshot and passed clean-room Gate 2 on the release build. |
 | Provider status | `/start`, `GET /api/providers/status` | `partial` | WebUI Start page now shows provider-free and local-LLM status from the shared provider snapshot. |
-| Overview shell | `/`, `GET /api/app-shell` | `partial` | High-level summary over run history and workbench state. |
+| Overview shell | `/`, `GET /api/app-shell` | `partial` | Local-only shell summary over file-backed run history, workflow index, and resumable workbench state. The `0.8.3` shell/index polish line does not widen this beyond summary/navigation. |
 | Run list/search | `/runs`, `GET /api/runs` | `parity-ready` | Covers `xrtm runs list` and the basic searchable view of `xrtm runs search`. |
 | Run detail | `/runs/<run-id>`, `GET /api/runs/<id>` | `parity-ready` | Covers the review intent of `xrtm runs show`. |
 | Run compare | `/runs/<candidate>/compare/<baseline>`, `GET /api/runs/<candidate>/compare/<baseline>` | `parity-ready` | Covers `xrtm runs compare`. |
@@ -36,7 +40,7 @@ Current baseline: published `xrtm==0.8.2`.
 | First-success run | `/start`, `POST /api/start` | `parity-ready` | WebUI launches the same quickstart service used by `xrtm start` and passed release Gate 2. |
 | Demo run setup | `/start`, `POST /api/runs` | `partial` | WebUI now launches bounded demo runs with provider/runtime overrides through shared launch services. |
 | Workflow run | `/start`, `/workflows/<name>`, `POST /api/runs` | `partial` | WebUI now launches named workflows through the same shared launch service used by CLI workflow runs. |
-| Playground exploratory loop | `/playground`, `GET/PATCH /api/playground`, `POST /api/playground/run`, `POST /api/playground/runs/<run-id>/save-workflow\|save-profile` | `parity-ready` | Shared sandbox state, one-custom-question-first flow, read-only step inspection, and explicit save-back wiring now ship in both interfaces for the released `0.8.2` provider-free sandbox contract. Keep any wider real-runtime or cloud/API wording off the released surface until matching Gate 2 proof exists. |
+| Playground exploratory loop | `/playground`, `GET/PATCH /api/playground`, `POST /api/playground/run`, `POST /api/playground/runs/<run-id>/save-workflow\|save-profile` | `parity-ready` | Shared sandbox state, one-custom-question-first flow, read-only step inspection, and explicit save-back wiring now ship in both interfaces for the released `0.8.3` provider-free sandbox contract. Keep any wider real-runtime or cloud/API wording off the released surface until matching Gate 2 proof exists. |
 | Draft authoring | `/workbench`, `GET /api/authoring/catalog`, `POST /api/drafts`, `PATCH /api/drafts/<id>` | `partial` | Covers draft creation from scratch/template/clone plus shared core-field and node/edge/entry authoring inside the released schema and node catalog. Parallel-group and conditional-route editing remain thin/read-only. |
 | Draft validate | `/workbench`, `POST /api/drafts/<id>/validate` | `parity-ready` | Shared authored-workflow validation now backs both CLI and WebUI draft flows. |
 | Draft run | `/workbench`, `POST /api/drafts/<id>/run` | `parity-ready` | Shared authored-workflow run wiring now backs both CLI and WebUI draft execution. |
@@ -53,7 +57,7 @@ Current baseline: published `xrtm==0.8.2`.
 | `xrtm doctor` | Newcomer readiness | `parity-ready` | released | `xrtm.product.doctor.run_doctor`, `doctor_snapshot` | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 complete |
 | `xrtm start` | First-success run | `parity-ready` | released | `xrtm.product.launch.run_start_quickstart` | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 complete |
 | `xrtm demo` | Demo run setup | `partial` | P0 | `xrtm.product.launch.run_demo_workflow` | `xrtm` next-release track | Gate 1 + selective Gate 2 if promoted |
-| `xrtm playground` | Run the bounded exploratory sandbox loop | `parity-ready` | released (`0.8.2`) | `xrtm.product.launch.run_sandbox_session`, `save_sandbox_workflow`, `save_sandbox_profile`, WebUI playground state services | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 provider-free baseline complete; any real-runtime or cloud/API playground claim still needs matching clean-room proof before promotion |
+| `xrtm playground` | Run the bounded exploratory sandbox loop | `parity-ready` | released (`0.8.3`) | `xrtm.product.launch.run_sandbox_session`, `save_sandbox_workflow`, `save_sandbox_profile`, WebUI playground state services | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 provider-free baseline complete; any real-runtime or cloud/API playground claim still needs matching clean-room proof before promotion |
 | `xrtm workflow list` | Workflow discovery | `partial` | P0 | `WorkflowRegistry.list_workflows` | `xrtm` docs | Gate 1 |
 | `xrtm workflow show` | Workflow inspection | `partial` | P0 | `xrtm.product.launch.load_registered_workflow`, `WorkflowRegistry.load` | `xrtm` docs | Gate 1 |
 | `xrtm workflow validate` | Workflow validation | `partial` | P0 | `xrtm.product.launch.validate_registered_workflow`, `WorkflowRegistry.validate` | `xrtm` docs | Gate 1 + WebUI route/API smoke |
@@ -104,7 +108,7 @@ Current baseline: published `xrtm==0.8.2`.
 
 ## Released parity proof
 
-The `0.8.2` release proof should cover:
+The `0.8.3` release proof should cover:
 
 1. open WebUI from a fresh install
 2. run readiness/doctor from the browser

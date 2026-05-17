@@ -127,48 +127,63 @@ class WebUIStateStore:
         now = _utc_now()
         workflows = registry.list_workflows()
         runs = list_run_records(runs_dir)
-        with self._connect() as connection:
-            connection.execute("DELETE FROM workflow_index")
-            connection.executemany(
-                """
-                INSERT INTO workflow_index (
-                    name, source, title, runtime_provider, question_limit, updated_at, workflow_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        workflow.name,
-                        workflow.source,
-                        workflow.title,
-                        workflow.runtime_provider,
-                        workflow.question_limit,
-                        now,
-                        _json_dump(workflow.__dict__),
-                    )
-                    for workflow in workflows
-                ],
+        workflow_rows = [
+            (
+                workflow.name,
+                workflow.source,
+                workflow.title,
+                workflow.runtime_provider,
+                workflow.question_limit,
+                now,
+                _json_dump(workflow.__dict__),
             )
-            connection.execute("DELETE FROM run_index")
-            connection.executemany(
-                """
-                INSERT INTO run_index (
-                    run_id, status, provider, workflow_name, updated_at, search_text, indexed_at, run_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        str(run.get("run_id")),
-                        _string_or_none(run.get("status")),
-                        _string_or_none(run.get("provider")),
-                        _string_or_none(_mapping(run.get("workflow")).get("name")),
-                        _string_or_none(run.get("updated_at")),
-                        _run_search_text(run),
-                        now,
-                        _json_dump(run),
-                    )
-                    for run in runs
-                    if run.get("run_id") is not None
-                ],
+            for workflow in workflows
+        ]
+        run_rows = [
+            (
+                str(run.get("run_id")),
+                _string_or_none(run.get("status")),
+                _string_or_none(run.get("provider")),
+                _string_or_none(_mapping(run.get("workflow")).get("name")),
+                _string_or_none(run.get("updated_at")),
+                _run_search_text(run),
+                now,
+                _json_dump(run),
+            )
+            for run in runs
+            if run.get("run_id") is not None
+        ]
+        with self._connect() as connection:
+            self._refresh_index_table(
+                connection,
+                table="workflow_index",
+                key_column="name",
+                columns=(
+                    "name",
+                    "source",
+                    "title",
+                    "runtime_provider",
+                    "question_limit",
+                    "updated_at",
+                    "workflow_json",
+                ),
+                rows=workflow_rows,
+            )
+            self._refresh_index_table(
+                connection,
+                table="run_index",
+                key_column="run_id",
+                columns=(
+                    "run_id",
+                    "status",
+                    "provider",
+                    "workflow_name",
+                    "updated_at",
+                    "search_text",
+                    "indexed_at",
+                    "run_json",
+                ),
+                rows=run_rows,
             )
 
     def app_shell_snapshot(self, *, runs_dir: Path, registry: WorkflowRegistry) -> dict[str, Any]:
@@ -177,10 +192,23 @@ class WebUIStateStore:
         workflows = self.list_workflows()
         latest_run = runs[0] if runs else None
         resume_target = self.resume_target(runs=runs)
+        local_llm_snapshot = local_llm_status()
+        local_llm_detail = (
+            ", ".join(str(model) for model in local_llm_snapshot.get("models", [])[:2])
+            if local_llm_snapshot.get("healthy") and local_llm_snapshot.get("models")
+            else local_llm_snapshot.get("error") or local_llm_snapshot.get("base_url") or "Unavailable"
+        )
         return {
             "app": {
                 "name": "XRTM WebUI",
                 "version": __version__,
+                "subtitle": "Local forecasting cockpit",
+                "summary": "File-backed runs, local workflows, and resumable SQLite state in one muted local shell.",
+                "trust_cues": [
+                    "Local-only shell",
+                    "File-backed history",
+                    "SQLite draft state",
+                ],
                 "nav": [
                     {"label": "Overview", "href": "/"},
                     {"label": "Start", "href": "/start"},
@@ -195,7 +223,40 @@ class WebUIStateStore:
                 "runs_dir": str(runs_dir),
                 "workflows_dir": str(registry.local_roots[0]),
                 "app_db": str(self.db_path),
-                "local_llm": local_llm_status(),
+                "local_llm": local_llm_snapshot,
+                "cards": [
+                    {
+                        "key": "version",
+                        "label": "Version",
+                        "value": f"xrtm {__version__}",
+                        "detail": "Packaged shell + backend contract",
+                    },
+                    {
+                        "key": "runs",
+                        "label": "Runs",
+                        "value": str(runs_dir),
+                        "detail": "Canonical run history root",
+                    },
+                    {
+                        "key": "workflows",
+                        "label": "Workflows",
+                        "value": str(registry.local_roots[0]),
+                        "detail": "Editable local workflow root",
+                    },
+                    {
+                        "key": "local-llm",
+                        "label": "Local LLM",
+                        "value": "Healthy" if local_llm_snapshot.get("healthy") else "Unavailable",
+                        "detail": local_llm_detail,
+                        "status": "healthy" if local_llm_snapshot.get("healthy") else "unavailable",
+                    },
+                    {
+                        "key": "app-db",
+                        "label": "App DB",
+                        "value": str(self.db_path),
+                        "detail": "Resumable WebUI state store",
+                    },
+                ],
             },
             "overview": {
                 "hero": {
@@ -1082,6 +1143,46 @@ class WebUIStateStore:
                 return candidate
             candidate = f"{base_name}-{index}"
             index += 1
+
+    def _refresh_index_table(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        table: str,
+        key_column: str,
+        columns: tuple[str, ...],
+        rows: list[tuple[Any, ...]],
+    ) -> None:
+        stage_table = f"temp_{table}"
+        column_list = ", ".join(columns)
+        placeholders = ", ".join("?" for _ in columns)
+        assignments = ", ".join(f"{column} = excluded.{column}" for column in columns if column != key_column)
+        connection.execute(f"DROP TABLE IF EXISTS {stage_table}")
+        connection.execute(f"CREATE TEMP TABLE {stage_table} AS SELECT {column_list} FROM {table} WHERE 0")
+        try:
+            connection.executemany(
+                f"INSERT INTO {stage_table} ({column_list}) VALUES ({placeholders})",
+                rows,
+            )
+            connection.executemany(
+                f"""
+                INSERT INTO {table} ({column_list})
+                VALUES ({placeholders})
+                ON CONFLICT({key_column}) DO UPDATE SET {assignments}
+                """,
+                rows,
+            )
+            connection.execute(
+                f"""
+                DELETE FROM {table}
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM {stage_table}
+                    WHERE {stage_table}.{key_column} = {table}.{key_column}
+                )
+                """
+            )
+        finally:
+            connection.execute(f"DROP TABLE IF EXISTS {stage_table}")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)

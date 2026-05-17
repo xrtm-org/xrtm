@@ -76,6 +76,30 @@ If your change touches one of them:
 2. link the upstream/downstream coordination record when sibling repos are involved
 3. update `xrtm.org` only after the product or governance source of truth is settled
 
+## WebUI design language for the 0.8.3 polish train
+
+When changing the WebUI during the `0.8.3` train, keep the style contract
+explicit instead of reinterpreting it from scratch each time:
+
+> **muted and postal, monochromatic muted plate, neo minimalism, card-based
+> design with layered elements when appropriate, approachable sophistication**
+
+Practical guidance:
+
+1. Prefer restrained neutrals and soft contrast over bright accent-heavy
+   dashboards.
+2. Use cards and document-like panels as the default layout unit.
+3. Build hierarchy through spacing, alignment, typography, and surface depth
+   before adding decorative elements.
+4. Use layered elements only when they clarify workflow state or page context.
+5. Keep the product polished and trustworthy without drifting into flashy,
+   luxury, or heavy-enterprise visual language.
+6. Treat visible version/release cues as part of the trust model, not optional
+   decoration.
+
+This `0.8.3` train is for bug fixes, code review, and UX/UI polish only. Do not
+smuggle new capability families into the release under the label of design work.
+
 ## Validation before opening a PR
 
 Run the normal package gate:

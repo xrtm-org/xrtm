@@ -13,6 +13,7 @@ from click.testing import CliRunner
 from xrtm.cli import main as cli_main
 from xrtm.cli.main import cli
 from xrtm.product import launch as launch_module
+from xrtm.product import webui_state as webui_state_module
 from xrtm.product import workbench as workbench_module
 from xrtm.product.profiles import ProfileStore, WorkflowProfile
 from xrtm.product.sandbox import MAX_SANDBOX_QUESTIONS
@@ -626,6 +627,7 @@ def test_webui_p0_api_routes_use_product_services(tmp_path: Path) -> None:
 
         health = _request_json(f"{base_url}/api/health")
         assert health["ready"] is True
+        assert health["supported_python"] == ">=3.11,<3.14"
         assert {check["name"] for check in health["checks"]} >= {"Python", "Core packages", "Core imports"}
 
         providers = _request_json(f"{base_url}/api/providers/status")
@@ -982,6 +984,41 @@ def test_compare_snapshot_groups_metrics_and_question_titles(tmp_path: Path) -> 
     assert snapshot["next_actions"][1]["description"] == snapshot["verdict"]["next_step"]
 
 
+def test_refresh_indexes_replaces_rows_without_full_table_clears(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
+    runs_dir = tmp_path / "runs"
+    run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+
+    store = WebUIStateStore(tmp_path / "app-state.db")
+    store.ensure_schema()
+    store.refresh_indexes(runs_dir=runs_dir, registry=registry)
+
+    workflows = registry.list_workflows()
+    assert len(workflows) >= 2
+    filtered_workflows = workflows[:1]
+    traces: list[str] = []
+    original_connect = store._connect
+
+    def traced_connect():
+        connection = original_connect()
+        connection.set_trace_callback(traces.append)
+        return connection
+
+    monkeypatch.setattr(store, "_connect", traced_connect)
+    monkeypatch.setattr(registry, "list_workflows", lambda: filtered_workflows)
+    monkeypatch.setattr(webui_state_module, "list_run_records", lambda _: [])
+
+    store.refresh_indexes(runs_dir=runs_dir, registry=registry)
+
+    assert [item["name"] for item in store.list_workflows()] == [workflow.name for workflow in filtered_workflows]
+    assert store.list_runs() == []
+    statements = {" ".join(statement.split()) for statement in traces}
+    assert "DELETE FROM workflow_index" not in statements
+    assert "DELETE FROM run_index" not in statements
+
+
 def test_playground_state_store_runs_shared_sandbox_session(tmp_path: Path) -> None:
     registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
     runs_dir = tmp_path / "runs"
@@ -993,7 +1030,12 @@ def test_playground_state_store_runs_shared_sandbox_session(tmp_path: Path) -> N
     assert initial["catalog"]["limits"]["max_questions"] == MAX_SANDBOX_QUESTIONS
     assert initial["catalog"]["limits"]["single_run_questions"] == 1
     shell = store.app_shell_snapshot(runs_dir=runs_dir, registry=registry)
+    assert shell["app"]["subtitle"] == "Local forecasting cockpit"
+    assert "SQLite draft state" in shell["app"]["trust_cues"]
     assert any(item["href"] == "/playground" for item in shell["app"]["nav"])
+    local_llm_card = next(item for item in shell["environment"]["cards"] if item["key"] == "local-llm")
+    assert local_llm_card["label"] == "Local LLM"
+    assert local_llm_card["status"] in {"healthy", "unavailable"}
 
     updated = store.update_playground_session(
         registry=registry,
