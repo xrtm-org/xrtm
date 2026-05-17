@@ -1828,7 +1828,7 @@ def test_webui_serves_api_routes() -> None:
                 html = response.read().decode("utf-8")
             assert '"resume_target"' in shell_body
             assert '"demo-provider-free"' in runs_body
-            assert "Overview · Start · Runs · Playground · Operations · Workbench" in html
+            assert "Hub · Studio · Playground · Observatory · Operations · Advanced" in html
             assert "version-pill" in html
             assert "/static/app.js" in html
         finally:

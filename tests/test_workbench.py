@@ -322,8 +322,16 @@ def test_workbench_snapshot_and_html_expose_gui_loop(tmp_path: Path) -> None:
     html = render_workbench_html(Path("missing-runs"), workflows_dir, query_string="workflow=flagship-benchmark")
 
     assert snapshot["canvas"]["nodes"]
+    assert snapshot["canvas"]["schema_version"] == "xrtm.studio.canvas.v1"
+    first_node = snapshot["canvas"]["nodes"][0]
+    assert first_node["id"] == f"node:{first_node['name']}"
+    assert first_node["position"]["source"] == "deterministic-dag"
+    assert first_node["position_persisted"] is False
+    assert snapshot["canvas"]["layout"]["positions_persisted"] is False
+    assert snapshot["authoring_catalog"]["node_palette"]["drag_drop"]["default_action"] == "add-node"
+    assert snapshot["authoring_catalog"]["node_catalog"][0]["id"].startswith("palette:")
     assert snapshot["safe_edit"]["aggregate_weight_editors"]
-    assert "Overview · Start · Runs · Playground · Operations · Workbench" in html
+    assert "Hub · Studio · Playground · Observatory · Operations · Advanced" in html
     assert "version-pill" in html
     assert "/static/app.js" in html
     assert "Loading the local-first app shell" in html
@@ -546,6 +554,70 @@ def test_webui_authoring_patch_updates_workflow_fields_and_graph(tmp_path: Path)
         thread.join(timeout=5)
 
 
+def test_studio_api_alias_exposes_graph_contract_and_preview_validation(tmp_path: Path) -> None:
+    workflows_dir = tmp_path / "workflows"
+    server = create_web_server(runs_dir=tmp_path / "runs", workflows_dir=workflows_dir, port=0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        _, port = server.server_address
+        base_url = f"http://127.0.0.1:{port}"
+
+        with urlopen(f"{base_url}/studio", timeout=5) as response:
+            assert response.headers["Content-Type"].startswith("text/html")
+        with urlopen(f"{base_url}/static/app.js", timeout=5) as response:
+            app_js = response.read().decode("utf-8")
+        assert "Drag nodes, drop safe palette items" in app_js
+        assert "Node positions are local UI state" in app_js
+        assert "/studio/drafts" in app_js
+
+        studio = _request_json(f"{base_url}/api/studio")
+        assert studio["schema_version"] == "xrtm.studio.api.v1"
+        assert studio["routes"]["mutate_graph"]["href"] == "/api/studio/drafts/{draft_id}/graph"
+
+        catalog = _request_json(f"{base_url}/api/studio/catalog")
+        assert catalog["node_palette"]["items"]
+        assert catalog["node_palette"]["items"][0]["draggable"] is True
+
+        created = _request_json(
+            f"{base_url}/api/studio/drafts",
+            method="POST",
+            payload={
+                "creation_mode": "template",
+                "template_id": "ensemble-starter",
+                "draft_workflow_name": "studio-contract-draft",
+            },
+        )
+        draft_id = created["draft"]["id"]
+        assert created["studio"]["positions"]["persisted"] is False
+        assert created["canvas"]["layout"]["strategy"] == "deterministic-dag"
+
+        patched = _request_json(
+            f"{base_url}/api/studio/drafts/{draft_id}/graph",
+            method="PATCH",
+            payload={
+                "action": {
+                    "type": "update-node",
+                    "node_name": "aggregate_candidates",
+                    "config": {"weights": {"provider_free_control": 70, "time_series_baseline": 30}},
+                }
+            },
+        )
+        assert patched["validation"]["ok"] is True
+        assert patched["validation"]["persisted"] is False
+        aggregate = next(node for node in patched["canvas"]["nodes"] if node["name"] == "aggregate_candidates")
+        assert aggregate["description"]
+        assert aggregate["config"]["weights"]["provider_free_control"] == pytest.approx(0.7)
+
+        loaded = _request_json(f"{base_url}/api/studio/drafts/{draft_id}")
+        assert loaded["studio"]["read_only_graph_sections"] == ["parallel_groups", "conditional_routes"]
+        assert loaded["draft"]["validation"]["ok"] is True
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_webui_authoring_clone_flow_runs_and_compares_candidate(tmp_path: Path) -> None:
     workflows_dir = tmp_path / "workflows"
     runs_dir = tmp_path / "runs"
@@ -653,6 +725,21 @@ def test_webui_p0_api_routes_use_product_services(tmp_path: Path) -> None:
         )
         assert launched["href"] == f"/runs/{launched['run_id']}"
         assert launched["compare"]["baseline_run_id"] == start_run["run_id"]
+
+        runs_payload = _request_json(f"{base_url}/api/runs")
+        assert runs_payload["schema_version"] == "xrtm.webui.runs.v2"
+        assert runs_payload["surface"]["name"] == "Observatory"
+        assert runs_payload["summary_cards"][0]["label"] == "Indexed runs"
+        assert runs_payload["items"][0]["observatory"]["inspect_href"].startswith("/runs/")
+
+        with urlopen(f"{base_url}/observatory", timeout=5) as response:
+            assert response.headers["Content-Type"].startswith("text/html")
+        with urlopen(f"{base_url}/observatory/{result.run_id}", timeout=5) as response:
+            assert response.headers["Content-Type"].startswith("text/html")
+
+        run_detail = _request_json(f"{base_url}/api/runs/{result.run_id}")
+        assert run_detail["observatory"]["title"] == "Run inspector"
+        assert run_detail["execution_trace"]["items"]
 
         report = _request_json(f"{base_url}/api/runs/{result.run_id}/report", method="POST")
         assert report["href"] == f"/runs/{result.run_id}/report"
@@ -947,13 +1034,23 @@ def test_run_detail_snapshot_surfaces_readable_forecast_rows_and_missing_report(
 
     snapshot = store.run_detail_snapshot(runs_dir=runs_dir, registry=registry, run_id=result.run_id)
 
+    assert snapshot["schema_version"] == "xrtm.webui.run-detail.v2"
+    assert snapshot["observatory"]["runs_href"] == "/runs"
     assert "finished" in snapshot["hero"]["summary"]
     assert snapshot["metadata_groups"][0]["title"] == "Run metadata"
+    assert snapshot["probability_summary"]["cards"][0]["label"] == "Forecast rows"
+    assert snapshot["score_summary"]["groups"]
+    assert snapshot["execution_trace"]["items"]
+    assert [item["order"] for item in snapshot["execution_trace"]["items"]] == sorted(
+        item["order"] for item in snapshot["execution_trace"]["items"]
+    )
     assert snapshot["forecast_table"]["count"] >= 1
     assert snapshot["forecast_table"]["rows"][0]["question_title"]
     assert snapshot["artifacts"]["report"]["available"] is False
     assert snapshot["artifacts"]["report"]["href"] is None
+    assert snapshot["artifacts"]["exports"][0]["href"] == f"/api/runs/{result.run_id}/export?format=json"
     assert snapshot["artifacts"]["items"][0]["label"] == "HTML report"
+    assert "empty_state" in snapshot["uncertainty_summary"]
 
 
 def test_compare_snapshot_groups_metrics_and_question_titles(tmp_path: Path) -> None:
@@ -1029,10 +1126,26 @@ def test_playground_state_store_runs_shared_sandbox_session(tmp_path: Path) -> N
     assert initial["session"]["context_type"] == "workflow"
     assert initial["catalog"]["limits"]["max_questions"] == MAX_SANDBOX_QUESTIONS
     assert initial["catalog"]["limits"]["single_run_questions"] == 1
+    assert initial["context_preview"]["canvas"]["nodes"][0]["id"].startswith("node:")
+    assert initial["context_preview"]["canvas"]["entry_id"].startswith("node:")
     shell = store.app_shell_snapshot(runs_dir=runs_dir, registry=registry)
     assert shell["app"]["subtitle"] == "Local forecasting cockpit"
+    assert "Shared local shell" in shell["app"]["trust_cues"]
     assert "SQLite draft state" in shell["app"]["trust_cues"]
+    assert [item["label"] for item in shell["app"]["nav"]] == [
+        "Hub",
+        "Studio",
+        "Playground",
+        "Observatory",
+        "Operations",
+        "Advanced",
+    ]
+    assert any(item["href"] == "/studio" for item in shell["app"]["nav"])
     assert any(item["href"] == "/playground" for item in shell["app"]["nav"])
+    assert shell["hub"]["doors"][0]["key"] == "quick-forecast"
+    assert shell["hub"]["doors"][1]["primary_cta"]["href"].startswith("/studio")
+    assert shell["hub"]["templates"][0]["playground_href"].startswith("/playground?context=template")
+    assert shell["hub"]["workflows"][0]["studio_href"].startswith("/studio?workflow=")
     local_llm_card = next(item for item in shell["environment"]["cards"] if item["key"] == "local-llm")
     assert local_llm_card["label"] == "Local LLM"
     assert local_llm_card["status"] in {"healthy", "unavailable"}
@@ -1055,6 +1168,12 @@ def test_playground_state_store_runs_shared_sandbox_session(tmp_path: Path) -> N
     assert launched["last_result"]["run"]["command"] == "xrtm web playground"
     assert launched["last_result"]["context"]["template_id"] == "provider-free-demo"
     assert launched["last_result"]["inspection_steps"][0]["node_id"] == "load_questions"
+    assert launched["last_result"]["graph_trace_artifact"]["available"] is True
+    assert launched["last_result"]["execution_trace"]["source"] == "graph_trace"
+    assert launched["last_result"]["ordered_node_trace"][0]["canvas_node_id"] == "node:load_questions"
+    load_node = next(node for node in launched["last_result"]["canvas"]["nodes"] if node["name"] == "load_questions")
+    assert load_node["executed"] is True
+    assert load_node["trace_order"] == 1
     assert launched["last_result"]["save_back"]["profile"]["status"] == "requires_workflow_save"
     resume = store.resume_target()
     assert resume["kind"] == "playground"
@@ -1136,6 +1255,13 @@ def test_playground_state_store_uses_shared_launch_contract(monkeypatch: pytest.
     assert [call[0] for call in calls] == ["resolve", "resolve", "run", "resolve"]
     assert launched["last_result"]["run"]["command"] == "xrtm web playground"
     assert [step["node_id"] for step in launched["last_result"]["inspection_steps"]] == ["load_questions", "score"]
+    assert launched["last_result"]["graph_trace_artifact"]["available"] is False
+    assert launched["last_result"]["graph_trace_artifact"]["empty_state"]["title"] == "No graph trace artifact"
+    assert launched["last_result"]["execution_trace"]["source"] == "sandbox"
+    assert [step["canvas_node_id"] for step in launched["last_result"]["ordered_node_trace"]] == ["node:load_questions", "node:score"]
+    load_node = next(node for node in launched["last_result"]["canvas"]["nodes"] if node["name"] == "load_questions")
+    assert load_node["executed"] is True
+    assert load_node["trace_source"] == "sandbox"
     assert launched["last_result"]["save_back"]["mode"] == "explicit"
     assert launched["guidance"]["limitations"][0].startswith("This WebUI flow launches one question at a time")
 
@@ -1152,7 +1278,16 @@ def test_playground_webui_routes_update_state_and_run_session(tmp_path: Path) ->
 
         with urlopen(f"{base_url}/playground", timeout=5) as response:
             html = response.read().decode("utf-8")
-        assert "Overview · Start · Runs · Playground · Operations · Workbench" in html
+        assert "Hub · Studio · Playground · Observatory · Operations · Advanced" in html
+        with urlopen(f"{base_url}/hub", timeout=5) as response:
+            hub_html = response.read().decode("utf-8")
+        assert "initial_path\": \"/hub\"" in hub_html
+        with urlopen(f"{base_url}/studio", timeout=5) as response:
+            studio_html = response.read().decode("utf-8")
+        assert "initial_path\": \"/studio\"" in studio_html
+        with urlopen(f"{base_url}/workbench", timeout=5) as response:
+            legacy_html = response.read().decode("utf-8")
+        assert "initial_path\": \"/workbench\"" in legacy_html
 
         snapshot = _request_json(f"{base_url}/api/playground")
         assert snapshot["session"]["context_type"] == "workflow"
@@ -1183,6 +1318,8 @@ def test_playground_webui_routes_update_state_and_run_session(tmp_path: Path) ->
         assert launched["last_result"]["labeling"]["classification"] == "exploratory"
         assert launched["last_result"]["run_href"] == f"/runs/{launched['last_result']['run_id']}"
         assert launched["last_result"]["inspection_steps"][1]["node_id"] == "forecast"
+        assert launched["last_result"]["execution_trace"]["items"][1]["canvas_node_id"] == "node:forecast"
+        assert launched["last_result"]["canvas"]["trace"]["executed_node_count"] >= 1
     finally:
         server.shutdown()
         server.server_close()

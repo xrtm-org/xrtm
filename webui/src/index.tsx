@@ -29,9 +29,10 @@ function routePath(route: Route): string {
 }
 
 function isNavItemActive(routePath: string, href: string): boolean {
-  if (href === "/") return routePath === "/";
+  if (href === "/" || href === "/hub") return routePath === "/" || routePath === "/hub";
   if (href === "/start") return routePath === "/start" || /^\/workflows\/[^/]+$/.test(routePath);
-  if (href === "/runs") return routePath === "/runs" || /^\/runs\/[^/]+(?:\/compare\/[^/]+)?$/.test(routePath);
+  if (href === "/runs" || href === "/observatory") return routePath === "/runs" || routePath === "/observatory" || /^\/(?:runs|observatory)\/[^/]+(?:\/compare\/[^/]+)?$/.test(routePath);
+  if (href === "/studio") return routePath === "/studio" || routePath === "/workbench" || /^\/workflows\/[^/]+$/.test(routePath);
   return routePath === href;
 }
 
@@ -46,6 +47,31 @@ async function requestJson(url: string, init?: RequestInit): Promise<JsonObject>
     throw new Error(payload.error || `${response.status} ${response.statusText}`);
   }
   return payload;
+}
+
+function draftFromPayload(payload: JsonObject | null): JsonObject | null {
+  if (!payload) return null;
+  return payload.draft && typeof payload.draft === "object" ? payload.draft : payload;
+}
+
+function studioEdgeKey(edge: JsonObject): string {
+  const from = edge.from || edge.source;
+  const to = edge.to || edge.target;
+  if (from || to) return `${from || "?"}->${to || "?"}:${edge.label || ""}`;
+  return String(edge.id || "edge");
+}
+
+function suggestNodeName(item: JsonObject, existingNodes: JsonObject[]): string {
+  const existing = new Set(existingNodes.map((node) => String(node.name || "").toLowerCase()));
+  const raw = String(item.name || item.implementation || "node").split(/[/:.]/).pop() || "node";
+  const base = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "node";
+  let candidate = base;
+  let suffix = 2;
+  while (existing.has(candidate.toLowerCase())) {
+    candidate = `${base}_${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
 }
 
 function useJsonResource(url: string | null, deps: React.DependencyList): { data: JsonObject | null; loading: boolean; error: string | null; reload: () => void } {
@@ -104,12 +130,14 @@ function App(): React.ReactElement {
 
   const appChrome = (shell.data?.app || {}) as JsonObject;
   const nav = appChrome.nav ?? [
-    { label: "Overview", href: "/" },
-    { label: "Runs", href: "/runs" },
+    { label: "Hub", href: "/hub" },
+    { label: "Studio", href: "/studio" },
     { label: "Playground", href: "/playground" },
-    { label: "Workbench", href: "/workbench" },
+    { label: "Observatory", href: "/observatory" },
+    { label: "Operations", href: "/operations" },
+    { label: "Advanced", href: "/advanced" },
   ];
-  const trustCues = (appChrome.trust_cues || ["Local-only shell", "File-backed history", "SQLite draft state"]) as string[];
+  const trustCues = (appChrome.trust_cues || ["Shared local shell", "File-backed history", "SQLite draft state"]) as string[];
   const environmentCards = (shell.data?.environment?.cards || [
     { key: "version", label: "Version", value: shell.data?.app?.version ? `xrtm ${String(shell.data.app.version)}` : "unknown" },
     { key: "runs", label: "Runs", value: shell.data?.environment?.runs_dir || "—" },
@@ -125,24 +153,26 @@ function App(): React.ReactElement {
   ]) as JsonObject[];
 
   let page: React.ReactElement;
-  if (route.path === "/") {
-    page = <OverviewPage shell={shell.data} navigate={navigate} />;
+  if (route.path === "/" || route.path === "/hub") {
+    page = <HubPage shell={shell.data} navigate={navigate} />;
   } else if (route.path === "/start") {
     page = <StartPage shell={shell.data} navigate={navigate} onMutate={refreshShell} />;
-  } else if (route.path === "/runs") {
+  } else if (route.path === "/runs" || route.path === "/observatory") {
     page = <RunsPage route={route} navigate={navigate} />;
   } else if (route.path === "/playground") {
-    page = <PlaygroundPage shell={shell.data} navigate={navigate} onMutate={refreshShell} />;
+    page = <PlaygroundPage route={route} shell={shell.data} navigate={navigate} onMutate={refreshShell} />;
   } else if (route.path === "/operations") {
     page = <OperationsPage navigate={navigate} onMutate={refreshShell} />;
   } else if (route.path === "/advanced") {
     page = <AdvancedPage />;
-  } else if (/^\/runs\/[^/]+\/compare\/[^/]+$/.test(route.path)) {
-    const match = route.path.match(/^\/runs\/([^/]+)\/compare\/([^/]+)$/)!;
+  } else if (route.path === "/studio" || route.path === "/workbench") {
+    page = <WorkbenchPage route={route} shell={shell.data} navigate={navigate} onMutate={refreshShell} />;
+  } else if (/^\/(?:runs|observatory)\/[^/]+\/compare\/[^/]+$/.test(route.path)) {
+    const match = route.path.match(/^\/(?:runs|observatory)\/([^/]+)\/compare\/([^/]+)$/)!;
     page = <ComparePage candidateRunId={match[1]} baselineRunId={match[2]} navigate={navigate} />;
   } else if (/^\/workflows\/[^/]+$/.test(route.path)) {
     page = <WorkflowDetailPage workflowName={decodeURIComponent(route.path.split("/")[2])} navigate={navigate} onMutate={refreshShell} />;
-  } else if (/^\/runs\/[^/]+$/.test(route.path)) {
+  } else if (/^\/(?:runs|observatory)\/[^/]+$/.test(route.path)) {
     page = <RunDetailPage runId={route.path.split("/")[2]} navigate={navigate} onMutate={refreshShell} />;
   } else {
     page = <WorkbenchPage route={route} shell={shell.data} navigate={navigate} onMutate={refreshShell} />;
@@ -215,40 +245,193 @@ function App(): React.ReactElement {
   );
 }
 
-function OverviewPage({ shell, navigate }: { shell: JsonObject | null; navigate: (path: string) => void }): React.ReactElement {
-  const overview = shell?.overview;
-  if (!overview) {
-    return <LoadingCard label="Loading overview" />;
+function HubPage({ shell, navigate }: { shell: JsonObject | null; navigate: (path: string) => void }): React.ReactElement {
+  const hub = (shell?.hub || shell?.overview) as JsonObject | undefined;
+  if (!hub) {
+    return <LoadingCard label="Loading Hub" />;
   }
+  const hero = (hub.hero || shell?.overview?.hero || {}) as JsonObject;
+  const doors = (hub.doors || []) as JsonObject[];
+  const templates = (hub.templates || []) as JsonObject[];
+  const workflows = (hub.workflows || []) as JsonObject[];
+  const readiness = (hub.readiness || []) as JsonObject[];
+  const nextActions = (hub.next_actions || []) as JsonObject[];
+  const counts = (hub.counts || shell?.overview?.counts || {}) as JsonObject;
+  const latestRun = (hub.latest_run || shell?.overview?.latest_run) as JsonObject | null;
+  const resumeTarget = (hub.resume_target || shell?.overview?.resume_target || {}) as JsonObject;
+
   return (
     <main className="page-grid">
       <section className="panel hero-panel">
-        <span className="eyebrow">Overview</span>
-        <h2>{overview.hero?.title}</h2>
-        <p>{overview.hero?.summary}</p>
+        <span className="eyebrow">{hero.eyebrow || "Hub"}</span>
+        <h2>{hero.title || "Local-first Hub"}</h2>
+        <p>{hero.summary || "Start from a template, run locally, and inspect file-backed results without login or account setup."}</p>
         <div className="button-row">
-          <button className="primary-button" onClick={() => navigate(overview.resume_target?.href || "/start")}>
-            {overview.resume_target?.label || "Resume"}
+          <button className="primary-button" onClick={() => navigate(String(doors[0]?.primary_cta?.href || "/playground"))}>
+            {String(doors[0]?.primary_cta?.label || "Open Playground")}
           </button>
-          <button className="secondary-button" onClick={() => navigate("/start")}>Open start</button>
-          <button className="secondary-button" onClick={() => navigate("/workbench")}>Open workbench</button>
+          <button className="secondary-button" onClick={() => navigate(String(doors[1]?.primary_cta?.href || "/studio"))}>
+            {String(doors[1]?.primary_cta?.label || "Open Studio")}
+          </button>
+          {resumeTarget.href ? (
+            <button className="secondary-button" onClick={() => navigate(String(resumeTarget.href))}>
+              {String(resumeTarget.label || "Resume")}
+            </button>
+          ) : null}
         </div>
       </section>
+
       <section className="stats-grid">
-        <MetricCard label="Indexed runs" value={overview.counts?.runs ?? 0} />
-        <MetricCard label="Indexed workflows" value={overview.counts?.workflows ?? 0} />
-        <MetricCard label="Latest action" value={overview.resume_target?.kind || "workbench"} />
+        <MetricCard label="Indexed runs" value={counts.runs ?? 0} />
+        <MetricCard label="Workflows" value={counts.workflows ?? 0} />
+        <MetricCard label="Starter templates" value={counts.templates ?? templates.length} />
+        <MetricCard label="Resume lane" value={resumeTarget.kind || "hub"} />
       </section>
-      {overview.latest_run ? <RunCard run={overview.latest_run} onOpen={() => navigate(`/runs/${overview.latest_run.run_id}`)} /> : null}
-      {overview.empty_state ? (
-        <section className="panel">
-          <h3>{overview.empty_state.title}</h3>
-          <p>{overview.empty_state.summary}</p>
-          <button className="primary-button" onClick={() => navigate(overview.empty_state.primary_cta?.href || "/start")}>
-            {overview.empty_state.primary_cta?.label || "Open workbench"}
-          </button>
+
+      <section className="split-grid">
+        {doors.map((door) => (
+          <article key={String(door.key || door.label)} className="panel section-stack">
+            <div className="surface-header">
+              <div>
+                <span className="eyebrow">{door.label}</span>
+                <h3>{door.title}</h3>
+              </div>
+              <StatusPill value={String(door.status || "local")} />
+            </div>
+            <p className="helper-text">{door.summary}</p>
+            <div className="button-row">
+              {door.primary_cta ? (
+                <button className="primary-button" onClick={() => navigate(String(door.primary_cta.href))}>
+                  {String(door.primary_cta.label)}
+                </button>
+              ) : null}
+              {door.secondary_cta ? (
+                <button className="secondary-button" onClick={() => navigate(String(door.secondary_cta.href))}>
+                  {String(door.secondary_cta.label)}
+                </button>
+              ) : null}
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="split-grid">
+        <section className="panel section-stack" id="workflow-config-fields">
+          <div className="section-header">
+            <div>
+              <span className="eyebrow">Templates</span>
+              <h3>Starter gallery</h3>
+              <p>Template cards reuse the existing workflow authoring catalog and open local-first routes.</p>
+            </div>
+          </div>
+          <div className="workflow-list workflow-catalog">
+            {templates.map((template) => (
+              <article key={String(template.template_id)} className="workflow-tile">
+                <div className="workflow-tile-head">
+                  <strong>{template.title}</strong>
+                  <StatusPill value={String(template.workflow_kind || "workflow")} />
+                </div>
+                <span className="workflow-note">{template.description}</span>
+                <div className="meta-row">
+                  {((template.tags || []) as string[]).slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}
+                </div>
+                <div className="button-row">
+                  <button className="primary-button" onClick={() => navigate(String(template.playground_href || `/playground?context=template&template=${template.template_id}`))}>
+                    Open Playground
+                  </button>
+                  <button className="secondary-button" onClick={() => navigate(String(template.studio_href || `/studio?mode=template&template=${template.template_id}`))}>
+                    Open Studio
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {!templates.length ? <EmptyState title="No starter templates found" body="The Hub could not load starter templates from the authoring catalog." /> : null}
         </section>
-      ) : null}
+
+        <section className="panel section-stack">
+          <div className="section-header">
+            <div>
+              <span className="eyebrow">Workflow catalog</span>
+              <h3>Existing workflows</h3>
+              <p>Open a workflow in Playground for one-question exploration or Studio to inspect/create a local draft.</p>
+            </div>
+          </div>
+          <div className="workflow-list workflow-catalog">
+            {workflows.map((workflow) => (
+              <article key={String(workflow.name)} className="workflow-tile">
+                <div className="workflow-tile-head">
+                  <strong>{workflow.title || workflow.name}</strong>
+                  <SourceBadge source={String(workflow.source || "builtin")} />
+                </div>
+                <span>{workflow.name}</span>
+                <span className="workflow-note">{workflow.description || "Reusable workflow from the registry."}</span>
+                <dl className="context-list">
+                  <div><dt>Runtime</dt><dd>{workflow.runtime_provider || "mock"}</dd></div>
+                  <div><dt>Questions</dt><dd>{formatValue(workflow.question_limit)}</dd></div>
+                </dl>
+                <div className="button-row">
+                  <button className="primary-button" onClick={() => navigate(String(workflow.playground_href || `/playground?context=workflow&workflow=${workflow.name}`))}>
+                    Open Playground
+                  </button>
+                  <button className="secondary-button" onClick={() => navigate(String(workflow.studio_href || `/studio?workflow=${workflow.name}`))}>
+                    Open Studio
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {!workflows.length ? <EmptyState title="No workflows indexed" body="Refresh the local workflow registry or create a draft in Studio." /> : null}
+        </section>
+      </section>
+
+      <section className="split-grid">
+        <section className="panel section-stack">
+          <div className="section-header">
+            <div>
+              <span className="eyebrow">Recent activity</span>
+              <h3>Latest local run</h3>
+            </div>
+          </div>
+          {latestRun ? (
+            <RunCard run={latestRun} onOpen={() => navigate(`/runs/${latestRun.run_id}`)} />
+          ) : (
+            <EmptyState title="No runs yet" body="Open Playground or the first-success quickstart to create a local run history entry." />
+          )}
+        </section>
+
+        <section className="panel section-stack">
+          <div className="section-header">
+            <div>
+              <span className="eyebrow">Local readiness</span>
+              <h3>Status without account assumptions</h3>
+            </div>
+          </div>
+          <div className="card-grid">
+            {readiness.map((item) => (
+              <article key={String(item.key || item.label)} className="info-card">
+                <div className="surface-header">
+                  <strong>{item.label}</strong>
+                  <StatusPill value={String(item.status || "ready")} />
+                </div>
+                <p className="helper-text">{item.value}</p>
+                <span className="workflow-note">{item.detail}</span>
+              </article>
+            ))}
+          </div>
+          <div className="action-list">
+            {nextActions.map((action) => (
+              <div key={String(action.label)} className="inline-action-card">
+                <div>
+                  <strong>{action.label}</strong>
+                  <p className="helper-text">{action.description}</p>
+                </div>
+                <button className="secondary-button" onClick={() => navigate(String(action.href))}>Open</button>
+              </div>
+            ))}
+          </div>
+        </section>
+      </section>
     </main>
   );
 }
@@ -288,8 +471,9 @@ function StartPage({
   );
 
   useEffect(() => {
-    if (!selectedWorkflow && (workflows.data?.items || []).length) {
-      setSelectedWorkflow(workflows.data.items[0].name);
+    const items = (workflows.data?.items || []) as JsonObject[];
+    if (!selectedWorkflow && items.length) {
+      setSelectedWorkflow(String(items[0].name || ""));
     }
   }, [selectedWorkflow, workflows.data]);
 
@@ -737,8 +921,9 @@ function OperationsPage({ navigate, onMutate }: { navigate: (path: string) => vo
   );
 
   useEffect(() => {
-    if (!selectedArtifactRun && (runs.data?.items || []).length) {
-      setSelectedArtifactRun(runs.data.items[0].run_id);
+    const items = (runs.data?.items || []) as JsonObject[];
+    if (!selectedArtifactRun && items.length) {
+      setSelectedArtifactRun(String(items[0].run_id || ""));
     }
   }, [selectedArtifactRun, runs.data]);
 
@@ -1111,9 +1296,9 @@ function RunsPage({ route, navigate }: { route: Route; navigate: (path: string) 
   return (
     <main className="page-grid">
       <section className="panel hero-panel page-lead">
-        <span className="eyebrow">Runs</span>
-        <h2>Inspect canonical run history</h2>
-        <p>Filter the file-backed history without losing status semantics, provider context, or comparison paths.</p>
+        <span className="eyebrow">Observatory</span>
+        <h2>{resource.data?.surface?.title || "Observatory run inspector"}</h2>
+        <p>{resource.data?.surface?.summary || "Filter file-backed run history, drill into results, and continue through reports, exports, and comparisons."}</p>
         <form
           className="filter-row"
           onSubmit={(event) => {
@@ -1131,6 +1316,11 @@ function RunsPage({ route, navigate }: { route: Route; navigate: (path: string) 
           <button className="secondary-button" type="submit">Filter</button>
         </form>
       </section>
+      {(resource.data?.summary_cards || []).length ? (
+        <section className="stats-grid">
+          {(resource.data?.summary_cards || []).map((card: JsonObject) => <MetricCard key={card.label} label={card.label} value={card.value} />)}
+        </section>
+      ) : null}
       {resource.error ? <Message tone="error" title="Runs unavailable" body={resource.error} /> : null}
       {resource.loading ? <LoadingCard label="Loading runs" /> : null}
       <section className="panel">
@@ -1148,7 +1338,10 @@ function RunsPage({ route, navigate }: { route: Route; navigate: (path: string) 
             {(resource.data?.items || []).map((run: JsonObject) => (
               <tr key={run.run_id}>
                 <td><a href={`/runs/${run.run_id}`} onClick={(event) => { event.preventDefault(); navigate(`/runs/${run.run_id}`); }}>{run.run_id}</a></td>
-                <td>{run.workflow?.title || run.workflow?.name || "Unknown workflow"}</td>
+                <td>
+                  <div className="table-primary">{run.observatory?.label || run.workflow?.title || run.workflow?.name || "Unknown workflow"}</div>
+                  <div className="table-secondary">{run.observatory?.summary || run.workflow?.name || "—"}</div>
+                </td>
                 <td><StatusPill value={run.status} /></td>
                 <td>{run.provider}</td>
                 <td>{run.updated_at || "—"}</td>
@@ -1156,7 +1349,12 @@ function RunsPage({ route, navigate }: { route: Route; navigate: (path: string) 
             ))}
           </tbody>
         </table>
-        {!resource.loading && !(resource.data?.items || []).length ? <EmptyState title="No runs match the current filter" body="Try clearing filters or running a workflow from the workbench." /> : null}
+        {!resource.loading && !(resource.data?.items || []).length ? (
+          <EmptyState
+            title={resource.data?.empty_state?.title || "No runs match the current filter"}
+            body={resource.data?.empty_state?.body || "Try clearing filters or running a workflow from the workbench."}
+          />
+        ) : null}
       </section>
     </main>
   );
@@ -1206,16 +1404,16 @@ function RunDetailPage({
     <main className="page-grid detail-shell">
       {notice ? <Message tone={notice.tone} title={notice.title} body={notice.body} /> : null}
       <section className="panel hero-panel detail-hero">
-        <span className="eyebrow">Run detail</span>
+        <span className="eyebrow">Observatory / Run inspector</span>
         <h2>{run.hero?.title || run.workflow?.title || run.run_id}</h2>
-        <p>{run.hero?.summary || "Inspect the latest run summary, question rows, and artifacts."}</p>
+        <p>{run.hero?.summary || run.observatory?.summary || "Inspect the latest run summary, question rows, trace, and artifacts."}</p>
         <div className="meta-row">
           <StatusPill value={run.run?.status} />
           <span>{run.run?.provider || "Unknown provider"}</span>
           <span>{run.run?.updated_at || run.run?.completed_at || "—"}</span>
         </div>
         <div className="button-row">
-          <button className="primary-button" onClick={() => navigate("/workbench")}>Back to workbench</button>
+          <button className="primary-button" onClick={() => navigate(run.observatory?.runs_href || "/runs")}>Back to Observatory</button>
           {run.recommended_compare ? (
             <button className="secondary-button" onClick={() => navigate(run.recommended_compare.href)}>
               Compare with {run.recommended_compare.run_id}
@@ -1227,8 +1425,12 @@ function RunDetailPage({
           <button className="secondary-button" onClick={generateReport} disabled={busy === "Generating report"}>
             {busy === "Generating report" ? busy : report.available ? "Regenerate report" : "Generate report"}
           </button>
-          <a className="secondary-link" href={`${bootstrap.api_root}/runs/${runId}/export?format=json`}>Export JSON</a>
-          <a className="secondary-link" href={`${bootstrap.api_root}/runs/${runId}/export?format=csv`}>Export CSV</a>
+          {(run.artifacts?.exports || [
+            { label: "Export JSON", href: `${bootstrap.api_root}/runs/${runId}/export?format=json` },
+            { label: "Export CSV", href: `${bootstrap.api_root}/runs/${runId}/export?format=csv` },
+          ]).map((item: JsonObject) => (
+            <a key={item.label} className="secondary-link" href={item.href}>{item.label}</a>
+          ))}
         </div>
       </section>
       <section className="stats-grid">
@@ -1246,6 +1448,41 @@ function RunDetailPage({
             <div className="info-grid">
               {(run.metadata_groups || []).map((group: JsonObject) => <KeyValueGroup key={group.title} group={group} />)}
             </div>
+          </section>
+          <section className="panel section-stack">
+            <div className="section-header">
+              <div>
+                <h3>Probability & result summary</h3>
+                <p>Forecast probabilities, resolution coverage, and existing run result fields in one Observatory review block.</p>
+              </div>
+            </div>
+            {(run.probability_summary?.cards || []).length ? (
+              <div className="stats-grid">
+                {(run.probability_summary?.cards || []).map((card: JsonObject) => <MetricCard key={card.label} label={card.label} value={card.label.toLowerCase().includes("probability") ? formatProbability(card.value) : card.value} />)}
+              </div>
+            ) : null}
+            {(run.probability_summary?.groups || []).some((group: JsonObject) => (group.items || []).length) ? (
+              <div className="info-grid">
+                {(run.probability_summary?.groups || []).filter((group: JsonObject) => (group.items || []).length).map((group: JsonObject) => <KeyValueGroup key={group.title} group={group} />)}
+              </div>
+            ) : (
+              <EmptyState title={run.probability_summary?.empty_state?.title || "No probability rows"} body={run.probability_summary?.empty_state?.body || "This run does not include probability rows."} />
+            )}
+          </section>
+          <section className="panel section-stack">
+            <div className="section-header">
+              <div>
+                <h3>Score summary</h3>
+                <p>Existing eval/train outputs stay explicit when they are present.</p>
+              </div>
+            </div>
+            {(run.score_summary?.groups || []).length ? (
+              <div className="info-grid">
+                {(run.score_summary?.groups || []).map((group: JsonObject) => <KeyValueGroup key={group.title} group={group} />)}
+              </div>
+            ) : (
+              <EmptyState title={run.score_summary?.empty_state?.title || "No score outputs"} body={run.score_summary?.empty_state?.body || "This run does not include evaluation or training score fields."} />
+            )}
           </section>
           <section className="panel section-stack">
             <div className="section-header">
@@ -1298,6 +1535,13 @@ function RunDetailPage({
             </div>
             <ReportCard report={report} />
             <ArtifactList items={run.artifacts?.items || []} />
+            {(run.artifacts?.exports || []).length ? (
+              <div className="button-row">
+                {(run.artifacts?.exports || []).map((item: JsonObject) => (
+                  <a key={item.label} className="secondary-link" href={item.href}>{item.label}</a>
+                ))}
+              </div>
+            ) : null}
             {Object.keys(run.artifacts?.raw || {}).length ? (
               <details className="artifact-preview">
                 <summary>Raw structured payloads</summary>
@@ -1327,21 +1571,37 @@ function RunDetailPage({
           <section className="panel section-stack">
             <div className="section-header">
               <div>
-                <h3>Node timeline</h3>
-                <p>Execution order and final state of each graph step.</p>
+                <h3>Execution trace</h3>
+                <p>Ordered graph trace or sandbox inspection steps where the run persisted them.</p>
               </div>
             </div>
-            {(run.graph_trace || []).length ? (
+            {(run.execution_trace?.items || []).length ? (
               <ul className="timeline-list">
-                {(run.graph_trace || []).map((item: JsonObject, index: number) => (
-                  <li key={`${item.node}-${index}`}>
-                    <strong>{item.node}</strong>
-                    <span>{item.status || "observed"}</span>
+                {(run.execution_trace?.items || []).map((item: JsonObject, index: number) => (
+                  <li key={`${item.node_id}-${index}`}>
+                    <strong>{item.order}. {item.label || item.node_id}</strong>
+                    <span>{item.node_id} · {item.node_type || "node"} · {item.status || "observed"}</span>
+                    {item.preview ? <span className="table-secondary">{item.preview}</span> : null}
                   </li>
                 ))}
               </ul>
             ) : (
-              <EmptyState title="No graph trace" body="This run did not persist graph trace rows." />
+              <EmptyState title={run.execution_trace?.empty_state?.title || "No execution trace"} body={run.execution_trace?.empty_state?.body || "This run did not persist graph trace rows."} />
+            )}
+          </section>
+          <section className="panel section-stack">
+            <div className="section-header">
+              <div>
+                <h3>Uncertainty</h3>
+                <p>Shown only when the artifacts include enough uncertainty or reliability data.</p>
+              </div>
+            </div>
+            {run.uncertainty_summary?.available ? (
+              <div className="info-grid">
+                {(run.uncertainty_summary?.groups || []).map((group: JsonObject) => <KeyValueGroup key={group.title} group={group} />)}
+              </div>
+            ) : (
+              <EmptyState title={run.uncertainty_summary?.empty_state?.title || "Uncertainty unavailable"} body={run.uncertainty_summary?.empty_state?.body || "No uncertainty fields were present in the current read model."} />
             )}
           </section>
         </aside>
@@ -1454,14 +1714,20 @@ function ComparePage({ candidateRunId, baselineRunId, navigate }: { candidateRun
 }
 
 function PlaygroundPage({
+  route,
   shell,
   navigate,
   onMutate,
 }: {
+  route: Route;
   shell: JsonObject | null;
   navigate: (path: string) => void;
   onMutate: () => void;
 }): React.ReactElement {
+  const params = useMemo(() => new URLSearchParams(route.search), [route.search]);
+  const requestedContext = params.get("context") === "template" || params.get("context") === "workflow" ? params.get("context") || "" : "";
+  const requestedWorkflow = params.get("workflow") || "";
+  const requestedTemplate = params.get("template") || params.get("template_id") || "";
   const resource = useJsonResource(`${bootstrap.api_root}/playground`, []);
   const [contextType, setContextType] = useState("workflow");
   const [workflowName, setWorkflowName] = useState("");
@@ -1481,18 +1747,23 @@ function PlaygroundPage({
   const lastResult = resource.data?.last_result as JsonObject | null;
   const steps = ((lastResult?.inspection_steps || []) as JsonObject[]).filter((step) => typeof step?.node_id === "string");
   const activeStep = steps.find((step) => playgroundStepKey(step) === selectedStepKey) || steps[0] || null;
+  const resultTrace = (lastResult?.execution_trace || {}) as JsonObject;
+  const orderedTrace = ((lastResult?.ordered_node_trace || resultTrace.items || []) as JsonObject[]).filter((step) => typeof step?.node_id === "string");
+  const traceByNodeId = useMemo(() => Object.fromEntries(orderedTrace.map((item: JsonObject) => [String(item.node_id), item])), [orderedTrace]);
+  const graphTraceArtifact = (lastResult?.graph_trace_artifact || {}) as JsonObject;
   const readyToRun = Boolean(questionPrompt.trim() && (contextType === "workflow" ? workflowName : templateId));
   const latestRun = shell?.overview?.latest_run as JsonObject | null;
 
   useEffect(() => {
     if (!session) return;
-    setContextType(String(session.context_type || "workflow"));
-    setWorkflowName(String(session.workflow_name || workflows[0]?.name || ""));
-    setTemplateId(String(session.template_id || templates[0]?.template_id || ""));
+    const nextContextType = requestedContext || (requestedTemplate ? "template" : requestedWorkflow ? "workflow" : String(session.context_type || "workflow"));
+    setContextType(nextContextType);
+    setWorkflowName(String(requestedWorkflow || session.workflow_name || workflows[0]?.name || ""));
+    setTemplateId(String(requestedTemplate || session.template_id || templates[0]?.template_id || ""));
     setQuestionPrompt(String(session.question_prompt || ""));
     setQuestionTitle(String(session.question_title || ""));
     setResolutionCriteria(String(session.resolution_criteria || ""));
-  }, [session?.updated_at, session?.context_type, session?.workflow_name, session?.template_id, session?.question_prompt, session?.question_title, session?.resolution_criteria, workflows, templates]);
+  }, [session?.updated_at, session?.context_type, session?.workflow_name, session?.template_id, session?.question_prompt, session?.question_title, session?.resolution_criteria, workflows, templates, requestedContext, requestedWorkflow, requestedTemplate]);
 
   useEffect(() => {
     if (!steps.length) {
@@ -1564,6 +1835,13 @@ function PlaygroundPage({
       });
     } finally {
       setBusy(null);
+    }
+  }
+
+  function selectTraceNode(nodeId: string) {
+    const matchingStep = steps.find((step) => String(step.node_id) === nodeId);
+    if (matchingStep) {
+      setSelectedStepKey(playgroundStepKey(matchingStep));
     }
   }
 
@@ -1704,6 +1982,15 @@ function PlaygroundPage({
                 </dl>
               </div>
               <section className="guidance-section">
+                <h3>Graph node identity</h3>
+                <PlaygroundGraphTracePreview
+                  canvas={(contextPreview.canvas || {}) as JsonObject}
+                  traceItems={[]}
+                  activeNodeId=""
+                  onSelectNode={() => undefined}
+                />
+              </section>
+              <section className="guidance-section">
                 <h3>Playground contract</h3>
                 <ul className="guidance-list">
                   {((resource.data?.guidance?.limitations || []) as string[]).map((item) => <li key={item}>{item}</li>)}
@@ -1755,11 +2042,52 @@ function PlaygroundPage({
             ))}
           </section>
 
+          <section className="panel section-stack">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">5. Graph trace</span>
+                <h3>Executed nodes linked to graph identity</h3>
+              </div>
+              <StatusPill value={String(resultTrace.source_label || "No trace rows")} />
+            </div>
+            {graphTraceArtifact.available === false && resultTrace.source === "sandbox" ? (
+              <Message
+                tone="warning"
+                title={graphTraceArtifact.empty_state?.title || "No graph trace artifact"}
+                body={graphTraceArtifact.empty_state?.body || "Showing sandbox inspection steps without claiming a persisted graph_trace.jsonl artifact."}
+              />
+            ) : null}
+            <PlaygroundGraphTracePreview
+              canvas={((lastResult.canvas || contextPreview?.canvas || {}) as JsonObject)}
+              traceItems={orderedTrace}
+              activeNodeId={String(activeStep?.node_id || "")}
+              onSelectNode={selectTraceNode}
+            />
+            {orderedTrace.length ? (
+              <ol className="node-trace-list">
+                {orderedTrace.map((item: JsonObject) => (
+                  <li key={`${item.canvas_node_id || item.node_id}-${item.order}`}>
+                    <span className="trace-order">{formatValue(item.order)}</span>
+                    <div>
+                      <strong>{item.label || item.node_id}</strong>
+                      <span>{item.canvas_node_id || `node:${item.node_id}`} · {item.node_id} · {item.status || "observed"}</span>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <EmptyState
+                title={resultTrace.empty_state?.title || graphTraceArtifact.empty_state?.title || "No execution trace"}
+                body={resultTrace.empty_state?.body || graphTraceArtifact.empty_state?.body || "This playground run did not persist trace rows."}
+              />
+            )}
+          </section>
+
           <section className="playground-grid">
             <section className="panel section-stack">
               <div className="section-heading">
                 <div>
-                  <span className="eyebrow">5. Inspect</span>
+                  <span className="eyebrow">6. Inspect</span>
                   <h3>Ordered step outputs</h3>
                 </div>
                 <span className="section-count">{steps.length} steps</span>
@@ -1776,7 +2104,7 @@ function PlaygroundPage({
                       <strong>{formatValue(step.order)}. {step.label || step.node_id}</strong>
                       <StatusPill value={String(step.status || "completed")} />
                     </div>
-                    <span className="workflow-note">{step.node_id} · {step.node_type || "node"}</span>
+                    <span className="workflow-note">{traceByNodeId[String(step.node_id)]?.canvas_node_id || `node:${step.node_id}`} · {step.node_id} · {step.node_type || "node"}</span>
                     <span>{step.output_preview || "No preview available."}</span>
                   </button>
                 ))}
@@ -1837,10 +2165,17 @@ function PlaygroundPage({
 function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; shell: JsonObject | null; navigate: (path: string) => void; onMutate: () => void }): React.ReactElement {
   const params = useMemo(() => new URLSearchParams(route.search), [route.search]);
   const draftId = params.get("draft");
+  const requestedTemplate = params.get("template") || params.get("template_id");
+  const requestedMode = params.get("mode");
   const selectedWorkflow = params.get("workflow") || shell?.overview?.latest_run?.workflow?.name || "demo-provider-free";
+  const isStudio = route.path === "/studio";
+  const surfaceLabel = isStudio ? "Studio" : "Workbench";
+  const surfaceBase = isStudio ? "/studio" : "/workbench";
+  const draftApiBase = isStudio ? `${bootstrap.api_root}/studio/drafts` : `${bootstrap.api_root}/drafts`;
+  const catalogUrl = isStudio ? `${bootstrap.api_root}/studio/catalog` : `${bootstrap.api_root}/authoring/catalog`;
   const workflows = useJsonResource(`${bootstrap.api_root}/workflows`, [route.search]);
-  const authoringCatalog = useJsonResource(`${bootstrap.api_root}/authoring/catalog`, []);
-  const draft = useJsonResource(draftId ? `${bootstrap.api_root}/drafts/${draftId}` : null, [draftId]);
+  const authoringCatalog = useJsonResource(catalogUrl, [catalogUrl]);
+  const draft = useJsonResource(draftId ? `${draftApiBase}/${draftId}` : null, [draftId, draftApiBase]);
   const workflow = useJsonResource(!draftId ? `${bootstrap.api_root}/workflows/${selectedWorkflow}` : null, [selectedWorkflow, draftId]);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<{ tone: string; title: string; body: string } | null>(null);
@@ -1865,8 +2200,21 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     runtime: "",
   });
   const [addEdgeForm, setAddEdgeForm] = useState<Record<string, string>>({ from_node: "", to_node: "" });
+  const [selectedEdgeId, setSelectedEdgeId] = useState("");
+  const [inspectorMode, setInspectorMode] = useState<"workflow" | "node" | "edge">("workflow");
+  const [edgeDraftFrom, setEdgeDraftFrom] = useState("");
+  const [localPositions, setLocalPositions] = useState<Record<string, { x: number; y: number }>>({});
 
-  const activeDraft = draft.data;
+  useEffect(() => {
+    if (requestedTemplate) {
+      setCreationMode("template");
+      setCreateForm((current) => ({ ...current, template_id: requestedTemplate }));
+    } else if (requestedMode === "scratch" || requestedMode === "clone" || requestedMode === "template") {
+      setCreationMode(requestedMode);
+    }
+  }, [requestedTemplate, requestedMode]);
+
+  const activeDraft = draftFromPayload(draft.data);
   const activeWorkflow = activeDraft ? activeDraft.workflow : workflow.data?.workflow;
   const activeAuthoring = activeDraft ? activeDraft.authoring : workflow.data?.authoring;
   const activeCanvas = activeDraft ? activeDraft.canvas : workflow.data?.canvas;
@@ -1874,6 +2222,9 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   const graphNodes = ((activeGraph.nodes || []) as JsonObject[]).filter((node) => typeof node?.name === "string");
   const graphTargets = ((activeGraph.targets || []) as JsonObject[]).filter((target) => typeof target?.name === "string");
   const selectedNode = graphNodes.find((node) => node.name === selectedNodeName) || null;
+  const canvasEdges = ((activeCanvas?.edges || []) as JsonObject[]);
+  const graphEdges = ((activeGraph.edges || []) as JsonObject[]);
+  const selectedEdge = canvasEdges.find((edge) => studioEdgeKey(edge) === selectedEdgeId) || null;
   const overviewLatestRun = shell?.overview?.latest_run || null;
   const safeEditSupport = (activeDraft?.guidance?.supported_edits || activeDraft?.safe_edit?.supported_edits || workflow.data?.safe_edit?.supported_edits || []) as JsonObject[];
   const safeEditLimitations = (activeDraft?.guidance?.limitations || activeAuthoring?.limitations || defaultAuthoringLimitations()) as string[];
@@ -1886,7 +2237,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   const validationFixes = buildValidationFixes(activeDraft);
   const runDisabled = !(activeDraft?.validation?.ok && !activeDraft?.validation?.stale);
   const templates = (authoringCatalog.data?.templates || []) as JsonObject[];
-  const nodeCatalog = (authoringCatalog.data?.node_catalog || []) as JsonObject[];
+  const nodeCatalog = ((authoringCatalog.data?.node_catalog || authoringCatalog.data?.node_palette?.items || []) as JsonObject[]);
   const creationModes = (authoringCatalog.data?.creation_modes || []) as JsonObject[];
   const creationDisabled = !createForm.draft_workflow_name || (creationMode === "clone" && !(createForm.source_workflow_name || activeWorkflow?.name)) || (creationMode === "template" && !createForm.template_id);
 
@@ -1919,12 +2270,31 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   useEffect(() => {
     if (!graphNodes.length) {
       setSelectedNodeName("");
+      setInspectorMode("workflow");
       return;
     }
     if (!selectedNodeName || !graphNodes.some((node) => node.name === selectedNodeName)) {
       setSelectedNodeName(String(graphNodes[0].name));
     }
   }, [graphNodes, selectedNodeName]);
+
+  useEffect(() => {
+    const names = new Set(graphNodes.map((node) => String(node.name)));
+    setLocalPositions((current) => {
+      const next = Object.fromEntries(Object.entries(current).filter(([name]) => names.has(name)));
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+    if (edgeDraftFrom && !names.has(edgeDraftFrom)) {
+      setEdgeDraftFrom("");
+    }
+  }, [graphNodes, edgeDraftFrom]);
+
+  useEffect(() => {
+    if (selectedEdgeId && !canvasEdges.some((edge) => studioEdgeKey(edge) === selectedEdgeId)) {
+      setSelectedEdgeId("");
+      if (inspectorMode === "edge") setInspectorMode("workflow");
+    }
+  }, [canvasEdges, selectedEdgeId, inspectorMode]);
 
   useEffect(() => {
     if (!selectedNode) {
@@ -1960,9 +2330,10 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
       } else if (creationMode === "template") {
         payload.template_id = createForm.template_id;
       }
-      const created = await requestJson(`${bootstrap.api_root}/drafts`, { method: "POST", body: JSON.stringify(payload) });
+      const created = await requestJson(draftApiBase, { method: "POST", body: JSON.stringify(payload) });
+      const createdDraft = draftFromPayload(created);
       onMutate();
-      navigate(`/workbench?draft=${created.id}`);
+      navigate(`${surfaceBase}?draft=${createdDraft?.id || created.id}`);
     } catch (error) {
       setActionNotice(buildActionErrorNotice("create", error));
     } finally {
@@ -1975,20 +2346,38 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     setBusy(successTitle);
     setActionNotice(null);
     try {
-      const updated = await requestJson(`${bootstrap.api_root}/drafts/${draftId}`, {
+      const updated = await requestJson(isStudio ? `${draftApiBase}/${draftId}/graph` : `${draftApiBase}/${draftId}`, {
         method: "PATCH",
         body: JSON.stringify({ action }),
       });
       draft.reload();
       onMutate();
       setActionNotice({ tone: "success", title: successTitle, body: successBody });
-      return updated;
+      return draftFromPayload(updated);
     } catch (error) {
       setActionNotice(buildActionErrorNotice(stage, error));
       return null;
     } finally {
       setBusy(null);
     }
+  }
+
+  function selectWorkflowInspector() {
+    setInspectorMode("workflow");
+    setSelectedEdgeId("");
+    setEdgeDraftFrom("");
+  }
+
+  function selectNodeInspector(name: string) {
+    setSelectedNodeName(name);
+    setSelectedEdgeId("");
+    setInspectorMode("node");
+  }
+
+  function selectEdgeInspector(edge: JsonObject) {
+    setSelectedEdgeId(studioEdgeKey(edge));
+    setEdgeDraftFrom("");
+    setInspectorMode("edge");
   }
 
   async function applyCoreFields() {
@@ -2071,39 +2460,57 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     );
   }
 
-  async function addNode() {
+  async function addNode(overrides: Record<string, string> = {}, dropPosition?: { x: number; y: number }) {
     if (!draftId) return;
+    const form = { ...addNodeForm, ...overrides };
     const action: JsonObject = {
       type: "add-node",
-      node_name: addNodeForm.node_name,
-      implementation: addNodeForm.implementation,
-      description: normalizeText(addNodeForm.description),
-      runtime: normalizeText(addNodeForm.runtime),
-      optional: parseBooleanString(addNodeForm.optional),
+      node_name: form.node_name,
+      implementation: form.implementation,
+      description: normalizeText(form.description),
+      runtime: normalizeText(form.runtime),
+      optional: parseBooleanString(form.optional),
     };
-    if (addNodeForm.incoming_from) action.incoming_from = [addNodeForm.incoming_from];
-    if (addNodeForm.outgoing_to) action.outgoing_to = [addNodeForm.outgoing_to];
-    const addedName = addNodeForm.node_name;
+    if (form.incoming_from) action.incoming_from = [form.incoming_from];
+    if (form.outgoing_to) action.outgoing_to = [form.outgoing_to];
+    const addedName = form.node_name;
     const updated = await applyDraftAction(
       "node",
       action,
       "Node added",
-      `${addedName} is now part of the authored workflow graph.`
+      `${addedName} is now part of the authored workflow graph${isStudio ? " and validation was refreshed." : "."}`
     );
     if (updated) {
-      setSelectedNodeName(addedName);
+      selectNodeInspector(addedName);
+      if (dropPosition) {
+        setLocalPositions((current) => ({ ...current, [addedName]: dropPosition }));
+      }
       setAddNodeForm((current) => ({ ...current, node_name: "", description: "", runtime: "", incoming_from: "", outgoing_to: "" }));
     }
   }
 
+  async function addPaletteNode(itemOrImplementation: JsonObject | string, dropPosition?: { x: number; y: number }) {
+    const item = typeof itemOrImplementation === "string"
+      ? nodeCatalog.find((candidate) => candidate.implementation === itemOrImplementation) || { implementation: itemOrImplementation, name: itemOrImplementation }
+      : itemOrImplementation;
+    const connectionFrom = selectedNode?.name || activeGraph.entry || graphNodes[0]?.name || "";
+    await addNode(
+      {
+        node_name: suggestNodeName(item, graphNodes),
+        implementation: String(item.implementation || ""),
+        incoming_from: String(connectionFrom || ""),
+        outgoing_to: "",
+        description: String(item.summary || item.description || ""),
+        runtime: String(item.default_runtime || ""),
+        optional: "false",
+      },
+      dropPosition
+    );
+  }
+
   async function addEdge() {
     if (!draftId) return;
-    await applyDraftAction(
-      "edge",
-      { type: "add-edge", from_node: addEdgeForm.from_node, to_node: addEdgeForm.to_node },
-      "Edge added",
-      `${addEdgeForm.from_node} now connects to ${addEdgeForm.to_node}.`
-    );
+    await addEdgeFromValues(addEdgeForm.from_node, addEdgeForm.to_node);
   }
 
   async function removeEdge(fromNode: string, toNode: string) {
@@ -2114,14 +2521,39 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
       "Edge removed",
       `${fromNode} no longer connects to ${toNode}.`
     );
+    setSelectedEdgeId("");
+    if (inspectorMode === "edge") setInspectorMode("workflow");
+  }
+
+  async function createEdgeFromCanvas(fromNode: string, toNode: string) {
+    setAddEdgeForm({ from_node: fromNode, to_node: toNode });
+    await addEdgeFromValues(fromNode, toNode);
+  }
+
+  async function addEdgeFromValues(fromNode: string, toNode: string) {
+    if (!draftId) return;
+    const updated = await applyDraftAction(
+      "edge",
+      { type: "add-edge", from_node: fromNode, to_node: toNode },
+      "Edge added",
+      `${fromNode} now connects to ${toNode}${isStudio ? " and validation was refreshed." : "."}`
+    );
+    if (updated) {
+      const addedEdge = ((updated.authoring?.graph?.edges || []) as JsonObject[]).find((edge) => edge.from === fromNode && edge.to === toNode);
+      if (addedEdge) {
+        setSelectedEdgeId(studioEdgeKey(addedEdge));
+        setInspectorMode("edge");
+      }
+      setEdgeDraftFrom("");
+    }
   }
 
   async function validateDraft() {
     if (!draftId) return;
-    setBusy("Validating draft");
+    setBusy("Saving and validating draft");
     setActionNotice(null);
     try {
-      const result = await requestJson(`${bootstrap.api_root}/drafts/${draftId}/validate`, { method: "POST", body: JSON.stringify({}) });
+      const result = await requestJson(`${draftApiBase}/${draftId}/validate`, { method: "POST", body: JSON.stringify({}) });
       draft.reload();
       onMutate();
       const validation = result.validation;
@@ -2132,7 +2564,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
               title: validation.stale ? "Validation needs a refresh" : "Validation passed",
               body: validation.stale
                 ? "A newer edit changed the draft after validation. Validate once more before you run."
-                : "The latest authored draft validated successfully. Next: run a candidate and compare it with the baseline.",
+                : "The latest authored draft was saved and validated successfully. Next: run a candidate and compare it with the baseline.",
             }
           : {
               tone: "warning",
@@ -2152,7 +2584,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     setBusy("Running candidate");
     setActionNotice(null);
     try {
-      const response = await requestJson(`${bootstrap.api_root}/drafts/${draftId}/run`, { method: "POST", body: JSON.stringify({}) });
+      const response = await requestJson(`${draftApiBase}/${draftId}/run`, { method: "POST", body: JSON.stringify({}) });
       onMutate();
       if (response.compare) {
         navigate(`/runs/${response.compare.candidate_run_id}/compare/${response.compare.baseline_run_id}`);
@@ -2194,11 +2626,13 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         {!draftId && (workflow.loading || authoringCatalog.loading) && !workflow.data ? <LoadingCard label="Loading workflow authoring surface" /> : null}
 
         <section className="panel hero-panel workbench-hero">
-          <span className="eyebrow">Workbench</span>
-          <h2>{draftId ? "Author workflow fields and graph visually" : "Create a new authored workflow or clone one into a local draft"}</h2>
+          <span className="eyebrow">{surfaceLabel}</span>
+          <h2>{draftId ? "Drag-drop the bounded workflow graph IDE" : "Create a new authored workflow or clone one into a local draft"}</h2>
           <p>
             {draftId
-              ? "Use the shared backend authoring layer to change supported workflow fields, add or remove safe graph nodes and edges, validate inline, then run and compare without leaving the workbench."
+              ? isStudio
+                ? "Move nodes locally, drag safe palette nodes onto the canvas, create/remove edges, edit supported config, validate, save, and run through the Studio API without arbitrary plugin or code editing."
+                : "The legacy workbench route stays compatible with the same safe authoring backend while Studio is the primary graph IDE surface."
               : "Start from scratch, a template, or an existing workflow. Draft state stays local and resumable while the reusable workflow file remains coherent on disk."}
           </p>
           <div className="meta-row">
@@ -2312,7 +2746,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
               <button
                 key={item.name}
                 className={item.name === activeWorkflow?.name ? "workflow-tile active" : "workflow-tile"}
-                onClick={() => navigate(`/workbench?workflow=${encodeURIComponent(item.name)}`)}
+                onClick={() => navigate(`${surfaceBase}?workflow=${encodeURIComponent(item.name)}`)}
                 type="button"
               >
                 <div className="workflow-tile-head">
@@ -2431,29 +2865,110 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
           )}
         </section>
 
-        <section className="panel section-stack">
+        <section className="panel section-stack studio-ide-panel">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">3. Visual graph authoring</span>
-              <h3>Edit nodes, edges, and entry against the rendered workflow graph</h3>
+              <span className="eyebrow">3. Studio graph IDE</span>
+              <h3>Drag nodes, drop safe palette items, select nodes/edges, then validate</h3>
             </div>
-            <p className="section-copy">Basic node, edge, and entry changes are editable here. Parallel groups and conditional routes stay visible but read-only for now.</p>
+            <p className="section-copy">Node positions are local UI state for this session; the workflow schema currently persists graph topology and config, not canvas coordinates.</p>
           </div>
           {!draftId ? (
             <EmptyState title="Create a draft to unlock graph authoring" body="The canvas becomes editable as soon as you open a draft session." />
           ) : (
             <>
-              <WorkflowCanvasSurface canvas={activeCanvas} entry={String(activeGraph.entry || "")} selectedNodeName={selectedNodeName} onSelect={setSelectedNodeName} />
+              <div className="studio-toolbar">
+                <button className={inspectorMode === "workflow" ? "secondary-button active" : "secondary-button"} onClick={selectWorkflowInspector}>Workflow inspector</button>
+                <button className={inspectorMode === "node" ? "secondary-button active" : "secondary-button"} onClick={() => selectedNodeName && selectNodeInspector(selectedNodeName)} disabled={!selectedNodeName}>Node inspector</button>
+                <button className={inspectorMode === "edge" ? "secondary-button active" : "secondary-button"} onClick={() => selectedEdge && selectEdgeInspector(selectedEdge)} disabled={!selectedEdge}>Edge inspector</button>
+                {edgeDraftFrom ? (
+                  <button className="secondary-button active" onClick={() => setEdgeDraftFrom("")}>Creating edge from {edgeDraftFrom} · cancel</button>
+                ) : selectedNode ? (
+                  <button className="secondary-button" onClick={() => setEdgeDraftFrom(String(selectedNode.name))}>Start edge from selected node</button>
+                ) : null}
+              </div>
+
+              <section className="node-palette" aria-label="Studio node palette">
+                <div>
+                  <span className="eyebrow">Node palette</span>
+                  <p>Click to add downstream of the selected node, or drag a built-in safe node onto the canvas.</p>
+                </div>
+                <div className="node-palette-grid">
+                  {nodeCatalog.map((item: JsonObject) => (
+                    <button
+                      key={item.implementation}
+                      type="button"
+                      className="palette-node-card"
+                      draggable={item.draggable !== false}
+                      onDragStart={(event: React.DragEvent<HTMLButtonElement>) => {
+                        event.dataTransfer.setData("application/xrtm-node-implementation", String(item.implementation || ""));
+                        event.dataTransfer.effectAllowed = "copy";
+                      }}
+                      onClick={() => void addPaletteNode(item)}
+                      disabled={Boolean(busy)}
+                    >
+                      <strong>{item.label || item.name}</strong>
+                      <span>{item.kind}</span>
+                      <small>{item.summary || item.description}</small>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <WorkflowCanvasSurface
+                canvas={activeCanvas}
+                entry={String(activeGraph.entry || "")}
+                selectedNodeName={inspectorMode === "node" ? selectedNodeName : ""}
+                selectedEdgeId={inspectorMode === "edge" ? selectedEdgeId : ""}
+                localPositions={localPositions}
+                edgeDraftFrom={edgeDraftFrom}
+                onMoveNode={(name, position) => setLocalPositions((current) => ({ ...current, [name]: position }))}
+                onSelectNode={selectNodeInspector}
+                onSelectEdge={selectEdgeInspector}
+                onSelectWorkflow={selectWorkflowInspector}
+                onAddNodeFromPalette={(implementation, position) => void addPaletteNode(implementation, position)}
+                onCreateEdge={(from, to) => void createEdgeFromCanvas(from, to)}
+              />
+
               <div className="three-column-grid authoring-grid">
                 <section className="surface-card section-stack">
                   <div className="surface-header">
                     <div>
-                      <strong>Selected node</strong>
-                      <p>{selectedNode ? `Edit ${selectedNode.name} inline.` : "Select a node from the canvas to edit it."}</p>
+                      <strong>Context inspector</strong>
+                      <p>
+                        {inspectorMode === "workflow"
+                          ? "Workflow config uses the same safe mutation action as the field form above."
+                          : inspectorMode === "edge"
+                            ? selectedEdge ? `Inspect ${selectedEdge.from} → ${selectedEdge.to}.` : "Select an edge from the canvas or list."
+                            : selectedNode ? `Edit ${selectedNode.name} inline.` : "Select a node from the canvas to edit it."}
+                      </p>
                     </div>
-                    {selectedNode ? <StatusPill value={selectedNode.kind || "node"} /> : null}
+                    {inspectorMode === "workflow" ? <StatusPill value="workflow" /> : inspectorMode === "edge" ? <StatusPill value={selectedEdge?.read_only ? "read-only edge" : "edge"} /> : selectedNode ? <StatusPill value={selectedNode.kind || "node"} /> : null}
                   </div>
-                  {selectedNode ? (
+                  {inspectorMode === "workflow" ? (
+                    <>
+                      <dl className="context-list compact-context-list">
+                        <div><dt>Workflow</dt><dd>{activeDraft?.draft_workflow_name || activeWorkflow?.name || "—"}</dd></div>
+                        <div><dt>Entry</dt><dd>{activeGraph.entry || "—"}</dd></div>
+                        <div><dt>Revision</dt><dd>{activeDraft?.revision ?? "—"}</dd></div>
+                      </dl>
+                      <button className="secondary-button" onClick={() => document.getElementById("workflow-config-fields")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Jump to workflow config</button>
+                    </>
+                  ) : inspectorMode === "edge" ? (
+                    selectedEdge ? (
+                      <>
+                        <dl className="context-list compact-context-list">
+                          <div><dt>From</dt><dd>{selectedEdge.from || selectedEdge.source || "—"}</dd></div>
+                          <div><dt>To</dt><dd>{selectedEdge.to || selectedEdge.target || "—"}</dd></div>
+                          <div><dt>Kind</dt><dd>{selectedEdge.kind || "edge"}</dd></div>
+                          <div><dt>Editable</dt><dd>{selectedEdge.read_only ? "No" : "Yes"}</dd></div>
+                        </dl>
+                        <button className="secondary-button" onClick={() => void removeEdge(String(selectedEdge.from), String(selectedEdge.to))} disabled={Boolean(busy) || Boolean(selectedEdge.read_only)}>Remove selected edge</button>
+                      </>
+                    ) : (
+                      <EmptyState title="No edge selected" body="Pick an edge from the canvas curve or edge list to inspect it." />
+                    )
+                  ) : selectedNode ? (
                     <>
                       <dl className="context-list compact-context-list">
                         <div><dt>Implementation</dt><dd>{selectedNode.implementation || "—"}</dd></div>
@@ -2487,6 +3002,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                       <div className="button-row">
                         <button className="primary-button" onClick={applyNodeUpdates} disabled={Boolean(busy)}>Apply node changes</button>
                         <button className="secondary-button" onClick={() => void setEntry(String(selectedNode.name))} disabled={Boolean(busy) || selectedNode.is_entry}>Set as entry</button>
+                        <button className="secondary-button" onClick={() => setEdgeDraftFrom(String(selectedNode.name))} disabled={Boolean(busy)}>Start edge here</button>
                         <button className="secondary-button" onClick={removeSelectedNode} disabled={Boolean(busy)}>Remove node</button>
                       </div>
                     </>
@@ -2499,7 +3015,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                   <div className="surface-header">
                     <div>
                       <strong>Add safe node</strong>
-                      <p>Pick a built-in safe node implementation, then connect it with basic graph edges.</p>
+                      <p>Palette click/drop uses the same add-node mutation; this form gives explicit names and edge wiring.</p>
                     </div>
                   </div>
                   <label>
@@ -2547,7 +3063,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                       </select>
                     </label>
                   </div>
-                  <button className="primary-button" onClick={addNode} disabled={Boolean(busy) || !addNodeForm.node_name || !addNodeForm.implementation}>Add node</button>
+                  <button className="primary-button" onClick={() => void addNode()} disabled={Boolean(busy) || !addNodeForm.node_name || !addNodeForm.implementation}>Add node</button>
                 </section>
 
                 <section className="surface-card section-stack">
@@ -2573,10 +3089,10 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                       </select>
                     </label>
                   </div>
-                  <button className="primary-button" onClick={addEdge} disabled={Boolean(busy) || !addEdgeForm.from_node || !addEdgeForm.to_node}>Add edge</button>
+                  <button className="primary-button" onClick={() => void addEdge()} disabled={Boolean(busy) || !addEdgeForm.from_node || !addEdgeForm.to_node}>Add edge</button>
                   <div className="edge-list">
-                    {((activeGraph.edges || []) as JsonObject[]).map((edge: JsonObject, index: number) => (
-                      <div key={`${edge.from}-${edge.to}-${index}`} className="edge-row">
+                    {graphEdges.map((edge: JsonObject, index: number) => (
+                      <div key={`${edge.from}-${edge.to}-${index}`} className={studioEdgeKey(edge) === selectedEdgeId ? "edge-row selected" : "edge-row"} onClick={() => selectEdgeInspector(edge)}>
                         <div>
                           <strong>{edge.from}</strong>
                           <span>{edge.to}</span>
@@ -2618,10 +3134,10 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         <section className="panel">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">4. Validate + run</span>
-              <h3>Validate inline, then run only when the authored draft is safe</h3>
+              <span className="eyebrow">4. Save, validate + run</span>
+              <h3>Save/validate inline, then run only when the authored draft is safe</h3>
             </div>
-            <p className="section-copy">Validation stays inside the authoring loop so you can fix problems without losing the current graph state.</p>
+            <p className="section-copy">Studio mutations preview validation immediately; this save/validate action persists the reusable workflow before run readiness is unlocked.</p>
           </div>
           {!draftId ? (
             <EmptyState title="No draft to validate yet" body="Create or open a draft session first. Then this panel will keep validation, fixes, and run readiness together." />
@@ -2634,7 +3150,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 </ul>
               ) : null}
               <div className="button-row">
-                <button className="primary-button" onClick={validateDraft} disabled={Boolean(busy)}>Validate draft</button>
+                <button className="primary-button" onClick={validateDraft} disabled={Boolean(busy)}>Save + validate draft</button>
                 <button className="primary-button" disabled={Boolean(busy) || runDisabled} onClick={runDraft}>Run candidate</button>
               </div>
             </>
@@ -2705,25 +3221,79 @@ function WorkflowCanvasSurface({
   canvas,
   entry,
   selectedNodeName,
-  onSelect,
+  selectedEdgeId,
+  localPositions,
+  edgeDraftFrom,
+  onMoveNode,
+  onSelectNode,
+  onSelectEdge,
+  onSelectWorkflow,
+  onAddNodeFromPalette,
+  onCreateEdge,
 }: {
   canvas: JsonObject | null;
   entry: string;
   selectedNodeName: string;
-  onSelect: (name: string) => void;
+  selectedEdgeId: string;
+  localPositions: Record<string, { x: number; y: number }>;
+  edgeDraftFrom: string;
+  onMoveNode: (name: string, position: { x: number; y: number }) => void;
+  onSelectNode: (name: string) => void;
+  onSelectEdge: (edge: JsonObject) => void;
+  onSelectWorkflow: () => void;
+  onAddNodeFromPalette: (implementation: string, position: { x: number; y: number }) => void;
+  onCreateEdge: (from: string, to: string) => void;
 }): React.ReactElement {
+  const stageRef = React.useRef<HTMLDivElement | null>(null);
+  const dragRef = React.useRef<{ nodeName: string; offsetX: number; offsetY: number; pointerId: number } | null>(null);
+  const suppressClickRef = React.useRef(false);
   const nodes = ((canvas?.nodes || []) as JsonObject[]).filter((node) => typeof node?.name === "string");
   const edges = (canvas?.edges || []) as JsonObject[];
   if (!nodes.length) {
     return <EmptyState title="No graph nodes yet" body="Add a node or load another workflow to populate the visual graph surface." />;
   }
-  const width = Math.max(360, ...nodes.map((node) => Number(node.x || 0) + 220));
-  const height = Math.max(220, ...nodes.map((node) => Number(node.y || 0) + 120));
-  const positions = Object.fromEntries(nodes.map((node) => [String(node.name), { x: Number(node.x || 0), y: Number(node.y || 0) }]));
+  const positionForNode = (node: JsonObject) => {
+    const name = String(node.name);
+    return localPositions[name] || { x: Number(node.x || 0), y: Number(node.y || 0) };
+  };
+  const width = Math.max(680, ...nodes.map((node) => positionForNode(node).x + 240));
+  const height = Math.max(360, ...nodes.map((node) => positionForNode(node).y + 150));
+  const positions = Object.fromEntries(nodes.map((node) => [String(node.name), positionForNode(node)]));
+  const relativePoint = (event: { clientX: number; clientY: number }) => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+  const clampPosition = (x: number, y: number) => ({
+    x: Math.max(0, Math.min(width - 180, Math.round(x))),
+    y: Math.max(0, Math.min(height - 90, Math.round(y))),
+  });
   return (
-    <div className="workflow-canvas-shell">
-      <div className="workflow-canvas-stage" style={{ height: `${height}px` }}>
-        <svg className="workflow-canvas-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMinYMin meet">
+    <div
+      className="workflow-canvas-shell"
+      onDragOver={(event) => {
+        if (Array.from(event.dataTransfer.types).includes("application/xrtm-node-implementation")) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+        }
+      }}
+      onDrop={(event) => {
+        const implementation = event.dataTransfer.getData("application/xrtm-node-implementation");
+        if (!implementation) return;
+        event.preventDefault();
+        const point = relativePoint(event);
+        onAddNodeFromPalette(implementation, clampPosition(point.x - 82, point.y - 34));
+      }}
+    >
+      <div
+        ref={stageRef}
+        className="workflow-canvas-stage"
+        style={{ height: `${height}px`, width: `${width}px` }}
+        onClick={(event) => {
+          if (event.currentTarget === event.target) onSelectWorkflow();
+        }}
+      >
+        <svg className="workflow-canvas-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMinYMin meet" onClick={onSelectWorkflow}>
           <defs>
             <marker id="workflow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
               <path d="M0,0 L8,4 L0,8 z" fill="#91a5ca" />
@@ -2739,27 +3309,140 @@ function WorkflowCanvasSurface({
             const y2 = to.y + 34;
             const midX = (x1 + x2) / 2;
             const midY = (y1 + y2) / 2;
+            const edgeId = studioEdgeKey(edge);
             return (
-              <g key={`${edge.from}-${edge.to}-${index}`}>
-                <path className="workflow-canvas-edge" d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`} markerEnd="url(#workflow-arrow)" />
+              <g key={`${edge.from}-${edge.to}-${index}`} className="workflow-canvas-edge-hit" onClick={(event) => { event.stopPropagation(); onSelectEdge(edge); }}>
+                <path className={`workflow-canvas-edge ${edgeId === selectedEdgeId ? "selected" : ""} ${edge.read_only ? "readonly" : ""}`} d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`} markerEnd="url(#workflow-arrow)" />
                 {edge.label ? <text className="workflow-canvas-label" x={midX} y={midY - 6}>{String(edge.label)}</text> : null}
               </g>
             );
           })}
         </svg>
-        {nodes.map((node) => (
-          <button
-            key={node.name}
-            type="button"
-            className={`workflow-canvas-node ${selectedNodeName === node.name ? "selected" : ""} ${entry === node.name ? "entry" : ""}`}
-            style={{ left: `${Number(node.x || 0)}px`, top: `${Number(node.y || 0)}px` }}
-            onClick={() => onSelect(String(node.name))}
-          >
-            <strong>{node.name}</strong>
-            <span>{node.kind}</span>
-            <StatusPill value={node.status || (entry === node.name ? "entry" : "ready")} />
-          </button>
-        ))}
+        {nodes.map((node) => {
+          const name = String(node.name);
+          const position = positionForNode(node);
+          return (
+            <button
+              key={name}
+              type="button"
+              className={`workflow-canvas-node ${selectedNodeName === name ? "selected" : ""} ${entry === name ? "entry" : ""} ${edgeDraftFrom === name ? "edge-source" : ""}`}
+              style={{ left: `${position.x}px`, top: `${position.y}px` }}
+              onPointerDown={(event) => {
+                const point = relativePoint(event);
+                dragRef.current = { nodeName: name, offsetX: point.x - position.x, offsetY: point.y - position.y, pointerId: event.pointerId };
+                suppressClickRef.current = false;
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                const drag = dragRef.current;
+                if (!drag || drag.nodeName !== name) return;
+                const point = relativePoint(event);
+                suppressClickRef.current = true;
+                onMoveNode(name, clampPosition(point.x - drag.offsetX, point.y - drag.offsetY));
+              }}
+              onPointerUp={(event) => {
+                if (dragRef.current?.pointerId === event.pointerId) {
+                  dragRef.current = null;
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (suppressClickRef.current) {
+                  suppressClickRef.current = false;
+                  return;
+                }
+                if (edgeDraftFrom && edgeDraftFrom !== name) {
+                  onCreateEdge(edgeDraftFrom, name);
+                } else {
+                  onSelectNode(name);
+                }
+              }}
+            >
+              <strong>{name}</strong>
+              <span>{node.kind}</span>
+              <StatusPill value={node.status || (entry === name ? "entry" : "ready")} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PlaygroundGraphTracePreview({
+  canvas,
+  traceItems,
+  activeNodeId,
+  onSelectNode,
+}: {
+  canvas: JsonObject | null;
+  traceItems: JsonObject[];
+  activeNodeId: string;
+  onSelectNode: (nodeId: string) => void;
+}): React.ReactElement {
+  const nodes = ((canvas?.nodes || []) as JsonObject[]).filter((node) => typeof node?.name === "string");
+  const edges = (canvas?.edges || []) as JsonObject[];
+  const traceByNode = Object.fromEntries(traceItems.map((item: JsonObject) => [String(item.node_id), item]));
+  if (!nodes.length) {
+    return <EmptyState title="No graph preview" body="This context did not expose canvas-ready graph nodes." />;
+  }
+  const width = Math.max(360, ...nodes.map((node) => Number(node.x || 0) + 220));
+  const height = Math.max(220, ...nodes.map((node) => Number(node.y || 0) + 120));
+  const positions = Object.fromEntries(nodes.map((node) => [String(node.name), { x: Number(node.x || 0), y: Number(node.y || 0) }]));
+  return (
+    <div className="workflow-canvas-shell playground-trace-canvas">
+      <div className="workflow-canvas-stage" style={{ height: `${height}px` }}>
+        <svg className="workflow-canvas-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMinYMin meet">
+          <defs>
+            <marker id="playground-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" fill="#91a5ca" />
+            </marker>
+          </defs>
+          {edges.map((edge, index) => {
+            const from = positions[String(edge.from || "")];
+            const to = positions[String(edge.to || "")];
+            if (!from || !to) return null;
+            const sourceTrace = traceByNode[String(edge.from || "")];
+            const targetTrace = traceByNode[String(edge.to || "")];
+            const traced = sourceTrace && targetTrace && Number(sourceTrace.order || 0) <= Number(targetTrace.order || 0);
+            const x1 = from.x + 164;
+            const y1 = from.y + 34;
+            const x2 = to.x;
+            const y2 = to.y + 34;
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2;
+            return (
+              <g key={`${edge.from}-${edge.to}-${index}`}>
+                <path
+                  className={`workflow-canvas-edge ${traced ? "executed" : ""}`}
+                  d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
+                  markerEnd="url(#playground-arrow)"
+                />
+                {edge.label ? <text className="workflow-canvas-label" x={midX} y={midY - 6}>{String(edge.label)}</text> : null}
+              </g>
+            );
+          })}
+        </svg>
+        {nodes.map((node) => {
+          const trace = traceByNode[String(node.name)];
+          const executed = Boolean(trace || node.executed);
+          const active = activeNodeId === String(node.name);
+          return (
+            <button
+              key={node.name}
+              type="button"
+              className={`workflow-canvas-node playground-trace-node ${executed ? "executed" : "not-executed"} ${active ? "active" : ""} ${node.is_entry ? "entry" : ""}`}
+              style={{ left: `${Number(node.x || 0)}px`, top: `${Number(node.y || 0)}px` }}
+              onClick={() => onSelectNode(String(node.name))}
+            >
+              <strong>{node.name}</strong>
+              <span>{node.kind || node.node_type || "node"}</span>
+              <span className="trace-chip">{executed ? `#${formatValue(trace?.order || node.trace_order)}` : "Not run"}</span>
+              <StatusPill value={String(trace?.status || node.status || (node.is_entry ? "entry" : "ready"))} />
+            </button>
+          );
+        })}
       </div>
     </div>
   );

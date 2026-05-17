@@ -233,32 +233,92 @@ def workflow_canvas(blueprint: WorkflowBlueprint | None, run_detail: dict[str, A
     nodes = []
     for name in node_names:
         node = blueprint.graph.nodes.get(name)
+        node_type = "parallel-group" if node is None else "node"
         kind = "parallel-group" if node is None else node.kind
         implementation = None if node is None else node.implementation
         description = "Parallel group: " + ", ".join(blueprint.graph.parallel_groups[name].nodes) if node is None else node.description
         depth = depths.get(name, 0)
         row = rows_by_depth.get(depth, 0)
         rows_by_depth[depth] = row + 1
+        x = 30 + depth * 230
+        y = 30 + row * 115
+        canvas_id = _canvas_target_id(name, node_type=node_type)
         nodes.append(
             {
+                "id": canvas_id,
+                "canvas_id": canvas_id,
                 "name": name,
+                "label": name,
+                "target_id": name,
+                "node_type": node_type,
                 "kind": kind,
                 "implementation": implementation,
+                "runtime": None if node is None else node.runtime,
+                "config": {} if node is None else dict(node.config),
                 "description": description or "",
                 "status": status_by_node.get(name, "not-run"),
-                "x": 30 + depth * 230,
-                "y": 30 + row * 115,
+                "is_entry": blueprint.graph.entry == name,
+                "x": x,
+                "y": y,
+                "position": {
+                    "x": x,
+                    "y": y,
+                    "source": "deterministic-dag",
+                    "persisted": False,
+                },
+                "position_persisted": False,
             }
         )
-    edges = [{"from": edge.from_node, "to": edge.to_node} for edge in blueprint.graph.edges]
+    target_types = {node["name"]: node["node_type"] for node in nodes}
+    edges = [
+        {
+            "id": _canvas_edge_id("edge", edge.from_node, edge.to_node),
+            "kind": "edge",
+            "from": edge.from_node,
+            "to": edge.to_node,
+            "source": _canvas_target_id(edge.from_node, node_type=target_types.get(edge.from_node, "node")),
+            "target": _canvas_target_id(edge.to_node, node_type=target_types.get(edge.to_node, "node")),
+            "read_only": False,
+        }
+        for edge in blueprint.graph.edges
+    ]
     for source, route in blueprint.graph.conditional_routes.items():
         for label, target in route.routes.items():
-            edges.append({"from": source, "to": target, "label": label})
+            edges.append(
+                {
+                    "id": _canvas_edge_id("conditional", source, target, label=label),
+                    "kind": "conditional-route",
+                    "from": source,
+                    "to": target,
+                    "source": _canvas_target_id(source, node_type=target_types.get(source, "node")),
+                    "target": _canvas_target_id(target, node_type=target_types.get(target, "node")),
+                    "label": label,
+                    "route_field": route.route_field,
+                    "read_only": True,
+                }
+            )
     return {
+        "schema_version": "xrtm.studio.canvas.v1",
+        "workflow_name": blueprint.name,
+        "entry": blueprint.graph.entry,
+        "entry_id": _canvas_target_id(blueprint.graph.entry, node_type=target_types.get(blueprint.graph.entry, "node")),
         "nodes": nodes,
         "edges": edges,
         "parallel_groups": {name: list(group.nodes) for name, group in blueprint.graph.parallel_groups.items()},
         "conditional_routes": {name: route.to_json_dict() for name, route in blueprint.graph.conditional_routes.items()},
+        "layout": {
+            "strategy": "deterministic-dag",
+            "positions_persisted": False,
+            "position_source": "derived",
+            "note": "Canvas positions are derived deterministically from graph topology and are not persisted yet.",
+        },
+        "editable": {
+            "nodes": True,
+            "edges": True,
+            "entry": True,
+            "parallel_groups": False,
+            "conditional_routes": False,
+        },
     }
 
 
@@ -304,7 +364,9 @@ def workbench_authoring_catalog(registry: WorkflowRegistry) -> dict[str, Any]:
     """Describe supported workflow creation and visual-authoring primitives."""
 
     service = WorkflowAuthoringService(registry)
+    node_catalog = _node_catalog()
     return {
+        "schema_version": "xrtm.studio.catalog.v1",
         "creation_modes": [
             {
                 "key": "scratch",
@@ -323,7 +385,16 @@ def workbench_authoring_catalog(registry: WorkflowRegistry) -> dict[str, Any]:
             },
         ],
         "templates": [template.__dict__ for template in service.list_starter_templates()],
-        "node_catalog": _node_catalog(),
+        "node_catalog": node_catalog,
+        "node_palette": {
+            "schema_version": "xrtm.studio.node-palette.v1",
+            "items": node_catalog,
+            "drag_drop": {
+                "enabled": True,
+                "payload_field": "implementation",
+                "default_action": "add-node",
+            },
+        },
         "workflow_kind_options": list(WORKFLOW_KIND_OPTIONS),
         "runtime_provider_options": list(RUNTIME_PROVIDER_OPTIONS),
         "limits": {"max_questions": MAX_SAFE_QUESTION_LIMIT},
@@ -492,11 +563,13 @@ def apply_workbench_authoring_action(blueprint: WorkflowBlueprint, *, action: Ma
         )
     elif action_type == "update-node":
         node_name = _required_name(str(action.get("node_name") or ""), "node")
-        kwargs: dict[str, Any] = {
-            "description": _string_or_none(action.get("description")),
-            "optional": _bool_value(action.get("optional"), field="optional", default=False),
-            "runtime": _optional_string_value(action.get("runtime")),
-        }
+        kwargs: dict[str, Any] = {}
+        if "description" in action:
+            kwargs["description"] = _string_or_none(action.get("description"))
+        if "optional" in action:
+            kwargs["optional"] = _bool_value(action.get("optional"), field="optional", default=False)
+        if "runtime" in action:
+            kwargs["runtime"] = _optional_string_value(action.get("runtime"))
         raw_weights = _mapping_or_none(action.get("weights"))
         if raw_weights:
             contributors = {
@@ -504,6 +577,11 @@ def apply_workbench_authoring_action(blueprint: WorkflowBlueprint, *, action: Ma
                 for name, value in raw_weights.items()
             }
             kwargs["config"] = {"weights": _normalize_weights(contributors)}
+        raw_config = _mapping_or_none(action.get("config"))
+        if raw_config:
+            if "config" in kwargs:
+                raise WorkbenchInputError("pass either weights or config, not both")
+            kwargs["config"] = _safe_node_config_update(updated, node_name, raw_config)
         updated = update_workflow_node(updated, node_name, **kwargs)
     elif action_type == "remove-node":
         updated = remove_workflow_node(updated, _required_name(str(action.get("node_name") or ""), "node"))
@@ -701,11 +779,19 @@ def _string_list(value: Any) -> tuple[str, ...]:
 def _node_catalog() -> list[dict[str, Any]]:
     return [
         {
+            "id": f"palette:{definition.implementation}",
             "name": definition.name,
+            "label": definition.name.replace("-", " ").title(),
             "kind": definition.kind,
             "implementation": definition.implementation,
             "summary": definition.summary,
+            "description": definition.summary,
             "default_runtime": _DEFAULT_NODE_RUNTIMES.get(definition.implementation),
+            "safe_offline": definition.safe_offline,
+            "real_runtime_ready": definition.real_runtime_ready,
+            "draggable": True,
+            "supported_actions": ["add-node"],
+            "config_schema": _node_config_schema(definition.implementation),
         }
         for definition in list_builtin_workflow_nodes()
     ]
@@ -716,6 +802,45 @@ def _node_catalog_entry(implementation: str) -> dict[str, Any]:
         if item["implementation"] == implementation:
             return item
     raise WorkbenchInputError(f"unsupported node implementation: {implementation}")
+
+
+def _node_config_schema(implementation: str) -> dict[str, Any]:
+    if implementation == AGGREGATE_CANDIDATES_IMPLEMENTATION:
+        return {
+            "type": "object",
+            "properties": {
+                "weights": {
+                    "type": "object",
+                    "additionalProperties": {"type": "number", "minimum": 0},
+                    "description": "Contributor weights keyed by upstream candidate node name.",
+                }
+            },
+            "additionalProperties": False,
+        }
+    return {"type": "object", "properties": {}, "additionalProperties": False}
+
+
+def _safe_node_config_update(
+    blueprint: WorkflowBlueprint,
+    node_name: str,
+    raw_config: Mapping[str, Any],
+) -> dict[str, Any]:
+    node = blueprint.graph.nodes.get(node_name)
+    if node is None:
+        raise WorkbenchInputError(f"workflow node does not exist: {node_name}")
+    if node.implementation != AGGREGATE_CANDIDATES_IMPLEMENTATION:
+        raise WorkbenchInputError(f"node config editing is not supported for {node_name}")
+    unexpected = sorted(set(raw_config) - {"weights"})
+    if unexpected:
+        raise WorkbenchInputError("unsupported node config field(s): " + ", ".join(unexpected))
+    raw_weights = _mapping_or_none(raw_config.get("weights"))
+    if raw_weights is None:
+        return {}
+    contributors = {
+        str(name): _parse_weight(value, node=node_name, contributor=str(name))
+        for name, value in raw_weights.items()
+    }
+    return {"weights": _normalize_weights(contributors)}
 
 
 def _graph_targets(blueprint: WorkflowBlueprint) -> list[dict[str, Any]]:
@@ -731,6 +856,16 @@ def authoring_limitations() -> list[str]:
         "Parallel-group and conditional-route editing remain read-only in this pass.",
         "API keys are not persisted as authored workflow fields from the WebUI.",
     ]
+
+
+def _canvas_target_id(name: str, *, node_type: str) -> str:
+    prefix = "group" if node_type == "parallel-group" else "node"
+    return f"{prefix}:{name}"
+
+
+def _canvas_edge_id(kind: str, source: str, target: str, *, label: str | None = None) -> str:
+    suffix = f":{label}" if label is not None else ""
+    return f"{kind}:{source}->{target}{suffix}"
 
 
 def _ensure_local_workflow(registry: WorkflowRegistry, workflow_name: str) -> None:
