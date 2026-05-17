@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xrtm"
-version = "0.8.3"
+version = "0.8.4"
 description = "The xRtm Framework (Generative Forecasting)."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"

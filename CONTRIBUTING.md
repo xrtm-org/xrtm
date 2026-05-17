@@ -76,9 +76,9 @@ If your change touches one of them:
 2. link the upstream/downstream coordination record when sibling repos are involved
 3. update `xrtm.org` only after the product or governance source of truth is settled
 
-## WebUI design language for the 0.8.3 polish train
+## WebUI design language for the 0.8.x product train
 
-When changing the WebUI during the `0.8.3` train, keep the style contract
+When changing the WebUI during the `0.8.x` train, keep the style contract
 explicit instead of reinterpreting it from scratch each time:
 
 > **muted and postal, monochromatic muted plate, neo minimalism, card-based
@@ -97,8 +97,8 @@ Practical guidance:
 6. Treat visible version/release cues as part of the trust model, not optional
    decoration.
 
-This `0.8.3` train is for bug fixes, code review, and UX/UI polish only. Do not
-smuggle new capability families into the release under the label of design work.
+Keep capability claims tied to their release gates. Do not smuggle new
+capability families into a release under the label of design work.
 
 ## Validation before opening a PR
 

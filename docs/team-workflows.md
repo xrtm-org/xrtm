@@ -22,7 +22,7 @@ This guide documents realistic multi-user and desk-style workflows for XRTM, bas
 
 **Team deployment reality:** Teams can productively use XRTM today by combining existing features with conventions and modest custom integration. This requires 2-4 weeks of initial engineering for institutional deployment, but the foundation is solid.
 
-> **Released sandbox note:** `xrtm==0.8.3` now includes a bounded
+> **Released sandbox note:** `xrtm==0.8.4` now includes a bounded
 > playground/sandbox lane. Treat it as a bounded exploratory tool:
 > one custom question first, optional tiny follow-up batches of at most 5,
 > read-only step inspection, and explicit save-back to workflow/profile only.
@@ -65,7 +65,7 @@ Each analyst works in the same Python environment or uses identical virtual envi
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install xrtm==0.8.3
+pip install xrtm==0.8.4
 xrtm doctor
 ```
 
@@ -167,7 +167,7 @@ This shows differences in:
 
 ### Individual Run Export
 
-Released `xrtm runs export` supports both JSON and CSV in `0.8.3`:
+Released `xrtm runs export` supports both JSON and CSV in `0.8.4`:
 
 ```bash
 xrtm runs export runs/20260501T101710Z-d8967e54 --output exports/jane-2026-05-01.json
@@ -833,7 +833,7 @@ xrtm runs export runs/20260501T101710Z-d8967e54 --output full-data.json
 - Cross-run audit queries
 - Cost tracking per user
 
-**Current status:** User attribution and built-in multi-user control-plane features are still not in XRTM v0.8.3. Teams must use the patterns documented above.
+**Current status:** User attribution and built-in multi-user control-plane features are still not in XRTM v0.8.4. Teams must use the patterns documented above.
 
 ---
 
