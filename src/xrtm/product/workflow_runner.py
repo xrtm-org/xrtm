@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,7 @@ from xrtm.product.pipeline import (
 )
 from xrtm.product.providers import provider_snapshot
 from xrtm.product.reports import render_html_report
-from xrtm.product.workflow_graph import WorkflowGraphState, compile_workflow_blueprint, graph_trace_rows
+from xrtm.product.workflow_graph import CompiledGraph, WorkflowGraphState, compile_workflow_blueprint, graph_trace_rows
 from xrtm.product.workflows import (
     ArtifactPolicy,
     EdgeSpec,
@@ -28,6 +29,16 @@ from xrtm.product.workflows import (
     RuntimeProfileSpec,
     WorkflowBlueprint,
 )
+
+
+@dataclass(frozen=True)
+class WorkflowExecutionResult:
+    """Shared workflow execution result with runtime inspection state."""
+
+    pipeline_result: PipelineResult
+    compiled: CompiledGraph
+    state: WorkflowGraphState
+    options: PipelineOptions
 
 
 def build_demo_workflow_blueprint(
@@ -81,6 +92,8 @@ def workflow_to_pipeline_options(
     runs_dir: Path,
     user: str | None,
     limit: int | None = None,
+    questions: tuple[Any, ...] | None = None,
+    corpus_id: str | None = None,
     provider: str | None = None,
     base_url: str | None = None,
     model: str | None = None,
@@ -88,10 +101,13 @@ def workflow_to_pipeline_options(
     max_tokens: int | None = None,
     write_report: bool | None = None,
 ) -> PipelineOptions:
+    resolved_questions = tuple(questions) if questions is not None else None
+    resolved_limit = limit if limit is not None else len(resolved_questions) if resolved_questions is not None else blueprint.questions.limit
     return PipelineOptions(
         provider=provider or blueprint.runtime.provider,
-        limit=limit or blueprint.questions.limit,
-        corpus_id=blueprint.questions.corpus_id,
+        limit=resolved_limit,
+        questions=resolved_questions,
+        corpus_id=corpus_id or blueprint.questions.corpus_id,
         runs_dir=runs_dir,
         base_url=base_url or blueprint.runtime.base_url,
         model=model or blueprint.runtime.model,
@@ -103,13 +119,15 @@ def workflow_to_pipeline_options(
     )
 
 
-def run_workflow_blueprint(
+def execute_workflow_blueprint(
     blueprint: WorkflowBlueprint,
     *,
     command: str,
     runs_dir: Path,
     user: str | None = None,
     limit: int | None = None,
+    questions: tuple[Any, ...] | None = None,
+    corpus_id: str | None = None,
     provider: str | None = None,
     base_url: str | None = None,
     model: str | None = None,
@@ -117,13 +135,15 @@ def run_workflow_blueprint(
     max_tokens: int | None = None,
     write_report: bool | None = None,
     node_callables: dict[str, Any] | None = None,
-) -> PipelineResult:
+) -> WorkflowExecutionResult:
     options = workflow_to_pipeline_options(
         blueprint,
         command=command,
         runs_dir=runs_dir,
         user=user,
         limit=limit,
+        questions=questions,
+        corpus_id=corpus_id,
         provider=provider,
         base_url=base_url,
         model=model,
@@ -150,7 +170,7 @@ def run_workflow_blueprint(
         _finalize_failure(store=store, run=run, provider=options.provider, started_at=start, error=exc)
         raise
     total_seconds = time.perf_counter() - start
-    return _finalize_graph_success(
+    pipeline_result = _finalize_graph_success(
         blueprint=blueprint,
         compiled=compiled,
         state=state,
@@ -159,6 +179,47 @@ def run_workflow_blueprint(
         options=options,
         total_seconds=total_seconds,
     )
+    return WorkflowExecutionResult(
+        pipeline_result=pipeline_result,
+        compiled=compiled,
+        state=state,
+        options=options,
+    )
+
+
+def run_workflow_blueprint(
+    blueprint: WorkflowBlueprint,
+    *,
+    command: str,
+    runs_dir: Path,
+    user: str | None = None,
+    limit: int | None = None,
+    questions: tuple[Any, ...] | None = None,
+    corpus_id: str | None = None,
+    provider: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    max_tokens: int | None = None,
+    write_report: bool | None = None,
+    node_callables: dict[str, Any] | None = None,
+) -> PipelineResult:
+    return execute_workflow_blueprint(
+        blueprint,
+        command=command,
+        runs_dir=runs_dir,
+        user=user,
+        limit=limit,
+        questions=questions,
+        corpus_id=corpus_id,
+        provider=provider,
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        write_report=write_report,
+        node_callables=node_callables,
+    ).pipeline_result
 
 
 def _finalize_graph_success(
@@ -240,6 +301,8 @@ def _attach_workflow_artifacts(
 
 __all__ = [
     "build_demo_workflow_blueprint",
+    "execute_workflow_blueprint",
     "run_workflow_blueprint",
+    "WorkflowExecutionResult",
     "workflow_to_pipeline_options",
 ]

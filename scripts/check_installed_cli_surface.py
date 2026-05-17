@@ -11,6 +11,7 @@ from pathlib import Path
 REQUIRED_TOP_LEVEL_COMMANDS = (
     "doctor",
     "start",
+    "playground",
     "artifacts",
     "runs",
     "report",

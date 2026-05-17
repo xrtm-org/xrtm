@@ -57,7 +57,7 @@ def test_validate_cli_surface_accepts_required_commands(tmp_path: Path) -> None:
     module = _load_module()
     fake_xrtm = _write_fake_xrtm(
         tmp_path,
-        help_output="doctor start artifacts runs report web workflow",
+        help_output="doctor start playground artifacts runs report web workflow",
         workflow_list_output="demo-provider-free flagship-benchmark",
         workflow_show_output="demo-provider-free Runtime provider",
     )
@@ -69,7 +69,7 @@ def test_validate_cli_surface_rejects_missing_workflow_command(tmp_path: Path) -
     module = _load_module()
     fake_xrtm = _write_fake_xrtm(
         tmp_path,
-        help_output="doctor start artifacts runs report web",
+        help_output="doctor start playground artifacts runs report web",
         workflow_list_output="demo-provider-free flagship-benchmark",
         workflow_show_output="demo-provider-free Runtime provider",
     )
@@ -78,11 +78,24 @@ def test_validate_cli_surface_rejects_missing_workflow_command(tmp_path: Path) -
         module.validate_cli_surface(fake_xrtm)
 
 
-def test_validate_cli_surface_rejects_missing_builtin_workflow(tmp_path: Path) -> None:
+def test_validate_cli_surface_rejects_missing_playground_command(tmp_path: Path) -> None:
     module = _load_module()
     fake_xrtm = _write_fake_xrtm(
         tmp_path,
         help_output="doctor start artifacts runs report web workflow",
+        workflow_list_output="demo-provider-free flagship-benchmark",
+        workflow_show_output="demo-provider-free Runtime provider",
+    )
+
+    with pytest.raises(RuntimeError, match="xrtm --help is missing required entries: playground"):
+        module.validate_cli_surface(fake_xrtm)
+
+
+def test_validate_cli_surface_rejects_missing_builtin_workflow(tmp_path: Path) -> None:
+    module = _load_module()
+    fake_xrtm = _write_fake_xrtm(
+        tmp_path,
+        help_output="doctor start playground artifacts runs report web workflow",
         workflow_list_output="demo-provider-free",
         workflow_show_output="demo-provider-free Runtime provider",
     )

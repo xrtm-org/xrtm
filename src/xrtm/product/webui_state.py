@@ -10,21 +10,27 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from xrtm import __version__
+from xrtm.product import launch as launch_module
 from xrtm.product.history import compare_runs, resolve_run_dir
 from xrtm.product.providers import local_llm_status
 from xrtm.product.read_models import list_run_records, read_run_detail
+from xrtm.product.sandbox import MAX_SANDBOX_QUESTIONS
 from xrtm.product.workbench import (
     WorkbenchInputError,
-    clone_workflow_for_edit,
+    apply_workbench_authoring_action,
+    authoring_model,
+    create_workbench_workflow,
     preview_workbench_edit,
     safe_edit_model,
+    workbench_authoring_catalog,
     workflow_canvas,
 )
-from xrtm.product.workflow_runner import run_workflow_blueprint
+from xrtm.product.workflow_authoring import list_workflow_starter_templates
 from xrtm.product.workflows import WorkflowBlueprint, WorkflowRegistry
 
 DEFAULT_APP_DB_NAME = "app-state.db"
 COMPARE_CACHE_SCHEMA_VERSION = "xrtm.webui.compare.v2"
+PLAYGROUND_SESSION_ID = "playground-default"
 
 
 class WebUIStateStore:
@@ -74,6 +80,11 @@ class WebUIStateStore:
                     value TEXT NOT NULL,
                     PRIMARY KEY (draft_id, key)
                 );
+                CREATE TABLE IF NOT EXISTS draft_blueprints (
+                    draft_id TEXT PRIMARY KEY,
+                    blueprint_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS validation_snapshots (
                     draft_id TEXT PRIMARY KEY,
                     revision INTEGER NOT NULL,
@@ -93,8 +104,23 @@ class WebUIStateStore:
                     value TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS playground_sessions (
+                    id TEXT PRIMARY KEY,
+                    context_type TEXT NOT NULL,
+                    workflow_name TEXT,
+                    template_id TEXT,
+                    question_prompt TEXT NOT NULL DEFAULT '',
+                    question_title TEXT,
+                    resolution_criteria TEXT,
+                    last_run_id TEXT,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
+            self._ensure_column(connection, "draft_sessions", "creation_mode", "TEXT NOT NULL DEFAULT 'clone'")
+            self._ensure_column(connection, "draft_sessions", "template_id", "TEXT")
 
     def refresh_indexes(self, *, runs_dir: Path, registry: WorkflowRegistry) -> None:
         self.ensure_schema()
@@ -159,6 +185,7 @@ class WebUIStateStore:
                     {"label": "Overview", "href": "/"},
                     {"label": "Start", "href": "/start"},
                     {"label": "Runs", "href": "/runs"},
+                    {"label": "Playground", "href": "/playground"},
                     {"label": "Operations", "href": "/operations"},
                     {"label": "Workbench", "href": "/workbench"},
                     {"label": "Advanced", "href": "/advanced"},
@@ -195,6 +222,138 @@ class WebUIStateStore:
             },
         }
 
+    def authoring_catalog(self, *, registry: WorkflowRegistry) -> dict[str, Any]:
+        self.ensure_schema()
+        return workbench_authoring_catalog(registry)
+
+    def playground_snapshot(self, *, runs_dir: Path, registry: WorkflowRegistry) -> dict[str, Any]:
+        self.ensure_schema()
+        self.refresh_indexes(runs_dir=runs_dir, registry=registry)
+        row = self._ensure_playground_session(registry)
+        context_preview, context_error = _playground_context_preview(row=row, registry=registry)
+        last_result = self._playground_result_snapshot(runs_dir=runs_dir, run_id=_string_or_none(row["last_run_id"]))
+        ready_to_run = bool(str(row["question_prompt"]).strip()) and context_error is None
+        session = _playground_session_payload(row)
+        session["ready_to_run"] = ready_to_run
+        self.set_ui_state("last_playground_id", str(row["id"]))
+        return {
+            "session": session,
+            "catalog": _playground_catalog(registry),
+            "context_preview": context_preview,
+            "context_error": context_error,
+            "last_result": last_result,
+            "step_state": _playground_step_state(has_result=last_result is not None, ready_to_run=ready_to_run),
+            "guidance": _playground_guidance(last_result=last_result),
+        }
+
+    def update_playground_session(
+        self,
+        *,
+        registry: WorkflowRegistry,
+        runs_dir: Path,
+        values: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        self.ensure_schema()
+        row = self._ensure_playground_session(registry)
+        context_type = _playground_context_type_or_default(values.get("context_type"), default=str(row["context_type"]))
+        workflow_name = _playground_optional_string(values.get("workflow_name")) or _string_or_none(row["workflow_name"])
+        template_id = _playground_optional_string(values.get("template_id")) or _string_or_none(row["template_id"])
+        if context_type == "workflow":
+            workflow_name = workflow_name or _preferred_playground_workflow(registry)
+            template_id = template_id or _preferred_playground_template()
+        else:
+            template_id = template_id or _preferred_playground_template()
+            workflow_name = workflow_name or _preferred_playground_workflow(registry)
+        existing = _playground_session_payload(row)
+        question_prompt = (
+            _playground_optional_string(values.get("question_prompt"), allow_blank=True)
+            if "question_prompt" in values
+            else str(existing["question_prompt"])
+        )
+        question_title = (
+            _playground_optional_string(values.get("question_title"))
+            if "question_title" in values
+            else existing["question_title"]
+        )
+        resolution_criteria = (
+            _playground_optional_string(values.get("resolution_criteria"))
+            if "resolution_criteria" in values
+            else existing["resolution_criteria"]
+        )
+        changed = any(
+            (
+                context_type != existing["context_type"],
+                workflow_name != existing["workflow_name"],
+                template_id != existing["template_id"],
+                question_prompt != existing["question_prompt"],
+                question_title != existing["question_title"],
+                resolution_criteria != existing["resolution_criteria"],
+            )
+        )
+        timestamp = _utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE playground_sessions
+                SET context_type = ?, workflow_name = ?, template_id = ?, question_prompt = ?, question_title = ?,
+                    resolution_criteria = ?, last_run_id = ?, status = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    context_type,
+                    workflow_name,
+                    template_id,
+                    question_prompt,
+                    question_title,
+                    resolution_criteria,
+                    None if changed else existing["last_run_id"],
+                    "playground-ready",
+                    timestamp,
+                    PLAYGROUND_SESSION_ID,
+                ),
+            )
+        return self.playground_snapshot(runs_dir=runs_dir, registry=registry)
+
+    def run_playground_session(
+        self,
+        *,
+        registry: WorkflowRegistry,
+        runs_dir: Path,
+        values: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if values:
+            self.update_playground_session(registry=registry, runs_dir=runs_dir, values=values)
+        row = self._ensure_playground_session(registry)
+        question_prompt = str(row["question_prompt"]).strip()
+        if not question_prompt:
+            raise WorkbenchInputError("question_prompt is required")
+        context = launch_module.resolve_sandbox_context(
+            workflow_name=_string_or_none(row["workflow_name"]) if row["context_type"] == "workflow" else None,
+            template_id=_string_or_none(row["template_id"]) if row["context_type"] == "template" else None,
+            registry=registry,
+        )
+        session = launch_module.run_sandbox_session(
+            context=context,
+            question=launch_module.SandboxQuestionInput(
+                prompt=question_prompt,
+                title=_string_or_none(row["question_title"]),
+                resolution_criteria=_string_or_none(row["resolution_criteria"]),
+            ),
+            registry=registry,
+            runs_dir=runs_dir,
+            command="xrtm web playground",
+        )
+        timestamp = _utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE playground_sessions SET last_run_id = ?, status = ?, updated_at = ? WHERE id = ?",
+                (session.run_id, "run-succeeded", timestamp, PLAYGROUND_SESSION_ID),
+            )
+        self.refresh_indexes(runs_dir=runs_dir, registry=registry)
+        self.set_ui_state("last_run_id", session.run_id)
+        self.set_ui_state("last_playground_id", PLAYGROUND_SESSION_ID)
+        return self.playground_snapshot(runs_dir=runs_dir, registry=registry)
+
     def list_runs(self, *, status: str | None = None, provider: str | None = None, query: str | None = None) -> list[dict[str, Any]]:
         sql = "SELECT run_json FROM run_index WHERE 1 = 1"
         parameters: list[Any] = []
@@ -224,6 +383,7 @@ class WebUIStateStore:
             "workflow": summary,
             "blueprint": blueprint.to_json_dict(),
             "canvas": workflow_canvas(blueprint),
+            "authoring": authoring_model(blueprint),
             "safe_edit": safe_edit_model(blueprint),
             "editable": summary["source"] == "local",
             "guided_actions": self._workflow_guided_actions(summary),
@@ -308,25 +468,55 @@ class WebUIStateStore:
         *,
         registry: WorkflowRegistry,
         runs_dir: Path,
-        source_workflow_name: str,
+        source_workflow_name: str | None = None,
         baseline_run_id: str | None = None,
         draft_workflow_name: str | None = None,
+        creation_mode: str = "clone",
+        template_id: str | None = None,
+        title: str | None = None,
+        description: str | None = None,
     ) -> dict[str, Any]:
         self.refresh_indexes(runs_dir=runs_dir, registry=registry)
-        summary = self._workflow_summary(registry, source_workflow_name)
         if baseline_run_id:
             resolve_run_dir(runs_dir, baseline_run_id)
-        if summary["source"] == "local" and not draft_workflow_name:
-            effective_name = source_workflow_name
+
+        effective_name: str
+        blueprint: WorkflowBlueprint
+        source_label = source_workflow_name or creation_mode
+        template_name = template_id
+        if creation_mode == "clone":
+            if not source_workflow_name:
+                raise WorkbenchInputError("source_workflow_name is required")
+            summary = self._workflow_summary(registry, source_workflow_name)
+            if summary["source"] == "local" and not draft_workflow_name and not title and not description:
+                effective_name = source_workflow_name
+                blueprint = registry.load(effective_name)
+            else:
+                effective_name = draft_workflow_name or self._unique_draft_name(registry, source_workflow_name)
+                blueprint = create_workbench_workflow(
+                    registry,
+                    creation_mode="clone",
+                    draft_workflow_name=effective_name,
+                    source_workflow_name=source_workflow_name,
+                    title=title,
+                    description=description,
+                )
+                registry.save(blueprint, overwrite=False)
         else:
-            effective_name = draft_workflow_name or self._unique_draft_name(registry, source_workflow_name)
-            clone_workflow_for_edit(
+            base_name = draft_workflow_name or self._unique_draft_name(registry, template_id or creation_mode)
+            blueprint = create_workbench_workflow(
                 registry,
-                source_name=source_workflow_name,
-                target_name=effective_name,
-                overwrite=False,
+                creation_mode=creation_mode,
+                draft_workflow_name=base_name,
+                source_workflow_name=source_workflow_name,
+                template_id=template_id,
+                title=title,
+                description=description,
             )
-        blueprint = registry.load(effective_name)
+            registry.save(blueprint, overwrite=False)
+            effective_name = blueprint.name
+            source_label = template_id or effective_name
+
         draft_id = f"draft-{uuid.uuid4().hex[:12]}"
         timestamp = _utc_now()
         values = _default_draft_values(blueprint)
@@ -334,12 +524,13 @@ class WebUIStateStore:
             connection.execute(
                 """
                 INSERT INTO draft_sessions (
-                    id, source_workflow_name, draft_workflow_name, baseline_run_id, status, last_run_id, revision, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, source_workflow_name, draft_workflow_name, baseline_run_id, status, last_run_id,
+                    revision, created_at, updated_at, creation_mode, template_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     draft_id,
-                    source_workflow_name,
+                    source_label,
                     effective_name,
                     baseline_run_id,
                     "draft-ready",
@@ -347,10 +538,14 @@ class WebUIStateStore:
                     0,
                     timestamp,
                     timestamp,
+                    creation_mode,
+                    template_name,
                 ),
             )
+            self._store_draft_blueprint(connection, draft_id, blueprint, updated_at=timestamp)
             self._replace_draft_values(connection, draft_id, values)
         self.set_ui_state("last_draft_id", draft_id)
+        self.refresh_indexes(runs_dir=runs_dir, registry=registry)
         return self.get_draft_session(draft_id=draft_id, registry=registry, runs_dir=runs_dir)
 
     def get_draft_session(self, *, draft_id: str, registry: WorkflowRegistry, runs_dir: Path) -> dict[str, Any]:
@@ -358,16 +553,17 @@ class WebUIStateStore:
         values = self._draft_values(draft_id)
         summary = self._workflow_summary(registry, row["draft_workflow_name"])
         base_blueprint = registry.load(row["draft_workflow_name"])
+        preview_blueprint = self._draft_blueprint(draft_id) or base_blueprint
         preview_error: str | None = None
-        preview_blueprint = base_blueprint
-        try:
-            preview_blueprint = preview_workbench_edit(
-                registry,
-                workflow_name=row["draft_workflow_name"],
-                values=values,
-            )
-        except (WorkbenchInputError, ValueError) as exc:
-            preview_error = str(exc)
+        if self._draft_blueprint(draft_id) is None:
+            try:
+                preview_blueprint = preview_workbench_edit(
+                    registry,
+                    workflow_name=row["draft_workflow_name"],
+                    values=values,
+                )
+            except (WorkbenchInputError, ValueError) as exc:
+                preview_error = str(exc)
         validation = self._validation_snapshot(draft_id)
         if validation is not None:
             validation["stale"] = validation.get("revision") != row["revision"]
@@ -386,6 +582,8 @@ class WebUIStateStore:
             "id": row["id"],
             "source_workflow_name": row["source_workflow_name"],
             "draft_workflow_name": row["draft_workflow_name"],
+            "creation_mode": row["creation_mode"],
+            "template_id": row["template_id"],
             "baseline_run_id": row["baseline_run_id"],
             "status": row["status"],
             "last_run_id": row["last_run_id"],
@@ -393,6 +591,8 @@ class WebUIStateStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "workflow": summary,
+            "blueprint": preview_blueprint.to_json_dict(),
+            "authoring": authoring_model(preview_blueprint),
             "draft_values": values,
             "safe_edit": safe_edit_model(preview_blueprint),
             "canvas": workflow_canvas(preview_blueprint, read_run_detail(resolve_run_dir(runs_dir, row["baseline_run_id"])) if row["baseline_run_id"] else None),
@@ -408,13 +608,13 @@ class WebUIStateStore:
                 validation=validation,
             ),
             "guidance": {
-                "summary": "Draft values live in SQLite until you validate or run. Canonical reusable workflows stay on disk.",
+                "summary": "Draft blueprint changes live in SQLite until you validate or run. Canonical reusable workflows stay on disk.",
                 "supported_edits": base_safe_edit.get("supported_edits", []),
-                "limitations": base_safe_edit.get("limitations", []),
+                "limitations": authoring_model(preview_blueprint).get("limitations", []),
                 "source_of_truth": [
                     "Built-in workflows stay read-only until you clone them into a local workflow.",
                     "Reusable local workflows remain JSON files on disk.",
-                    "Draft values, validation snapshots, and resume state live in SQLite.",
+                    "Draft blueprint state, validation snapshots, and resume state live in SQLite until validate or run writes the local workflow file.",
                 ],
                 "next_step": _draft_next_step(
                     status=row["status"],
@@ -434,16 +634,27 @@ class WebUIStateStore:
         values: Mapping[str, Any],
     ) -> dict[str, Any]:
         row = self._draft_row(draft_id)
-        blueprint = registry.load(row["draft_workflow_name"])
-        allowed = _allowed_draft_keys(blueprint)
-        unexpected = sorted(set(values) - allowed)
-        if unexpected:
-            raise WorkbenchInputError("unsupported edit field(s): " + ", ".join(unexpected))
-        current = self._draft_values(draft_id)
-        for key, value in values.items():
-            current[key] = str(value)
+        current_blueprint = self._draft_blueprint(draft_id) or registry.load(row["draft_workflow_name"])
+        action = values.get("action")
+        if isinstance(action, Mapping):
+            updated_blueprint = apply_workbench_authoring_action(current_blueprint, action=action)
+            current = _default_draft_values(updated_blueprint)
+        else:
+            allowed = _allowed_draft_keys(current_blueprint)
+            unexpected = sorted(set(values) - allowed)
+            if unexpected:
+                raise WorkbenchInputError("unsupported edit field(s): " + ", ".join(unexpected))
+            current = self._draft_values(draft_id)
+            for key, value in values.items():
+                current[key] = str(value)
+            updated_blueprint = preview_workbench_edit(
+                registry,
+                workflow_name=row["draft_workflow_name"],
+                values=current,
+            )
         timestamp = _utc_now()
         with self._connect() as connection:
+            self._store_draft_blueprint(connection, draft_id, updated_blueprint, updated_at=timestamp)
             self._replace_draft_values(connection, draft_id, current)
             connection.execute(
                 """
@@ -457,27 +668,43 @@ class WebUIStateStore:
 
     def validate_draft_session(self, *, draft_id: str, registry: WorkflowRegistry, runs_dir: Path) -> dict[str, Any]:
         row = self._draft_row(draft_id)
-        values = self._draft_values(draft_id)
+        draft_blueprint = self._draft_blueprint(draft_id)
         timestamp = _utc_now()
-        try:
-            preview_workbench_edit(registry, workflow_name=row["draft_workflow_name"], values=values)
-            payload = {
-                "ok": True,
-                "errors": [],
-                "workflow": row["draft_workflow_name"],
-                "revision": row["revision"],
-                "validated_at": timestamp,
-            }
-            status = "draft-valid"
-        except (WorkbenchInputError, ValueError) as exc:
-            payload = {
-                "ok": False,
-                "errors": [str(exc)],
-                "workflow": row["draft_workflow_name"],
-                "revision": row["revision"],
-                "validated_at": timestamp,
-            }
-            status = "draft-invalid"
+        if draft_blueprint is None:
+            try:
+                draft_blueprint = preview_workbench_edit(
+                    registry,
+                    workflow_name=row["draft_workflow_name"],
+                    values=self._draft_values(draft_id),
+                )
+            except (WorkbenchInputError, ValueError) as exc:
+                payload = {
+                    "ok": False,
+                    "errors": [str(exc)],
+                    "workflow": row["draft_workflow_name"],
+                }
+            else:
+                payload = launch_module.authored_workflow_validation_report(
+                    blueprint=draft_blueprint,
+                    registry=registry,
+                    persist=True,
+                    overwrite=True,
+                )
+        else:
+            payload = launch_module.authored_workflow_validation_report(
+                blueprint=draft_blueprint,
+                registry=registry,
+                persist=True,
+                overwrite=True,
+            )
+        if payload["ok"]:
+            self.refresh_indexes(runs_dir=runs_dir, registry=registry)
+        payload = {
+            **payload,
+            "revision": row["revision"],
+            "validated_at": timestamp,
+        }
+        status = "draft-valid" if payload["ok"] else "draft-invalid"
         with self._connect() as connection:
             connection.execute(
                 """
@@ -512,12 +739,10 @@ class WebUIStateStore:
         if not validation["validation"]["ok"]:
             raise WorkbenchInputError("draft must validate before run")
         row = self._draft_row(draft_id)
-        values = self._draft_values(draft_id)
-        updated = preview_workbench_edit(registry, workflow_name=row["draft_workflow_name"], values=values)
-        registry.save(updated, overwrite=True)
-        result = run_workflow_blueprint(
-            updated,
-            command=f"xrtm web draft run {updated.name}",
+        result = launch_module.run_authored_workflow(
+            workflow_name=row["draft_workflow_name"],
+            registry=registry,
+            command=f"xrtm web draft run {row['draft_workflow_name']}",
             runs_dir=runs_dir,
             user=user,
         )
@@ -636,6 +861,19 @@ class WebUIStateStore:
                     "draft_id": draft_id,
                     "workflow_name": row["draft_workflow_name"],
                 }
+        playground_id = self.get_ui_state("last_playground_id")
+        if playground_id == PLAYGROUND_SESSION_ID:
+            with self._connect() as connection:
+                row = connection.execute("SELECT * FROM playground_sessions WHERE id = ?", (PLAYGROUND_SESSION_ID,)).fetchone()
+            if row is not None:
+                return {
+                    "label": "Resume playground",
+                    "href": "/playground",
+                    "kind": "playground",
+                    "session_id": PLAYGROUND_SESSION_ID,
+                    "workflow_name": row["workflow_name"],
+                    "template_id": row["template_id"],
+                }
         last_run_id = self.get_ui_state("last_run_id")
         if last_run_id:
             return {
@@ -687,6 +925,16 @@ class WebUIStateStore:
                 (draft_id,),
             ).fetchall()
         return {str(row["key"]): str(row["value"]) for row in rows}
+
+    def _draft_blueprint(self, draft_id: str) -> WorkflowBlueprint | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT blueprint_json FROM draft_blueprints WHERE draft_id = ?",
+                (draft_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return WorkflowBlueprint.from_payload(_json_load(row["blueprint_json"]))
 
     def _validation_snapshot(self, draft_id: str) -> dict[str, Any] | None:
         with self._connect() as connection:
@@ -747,11 +995,80 @@ class WebUIStateStore:
             )
         return actions
 
+    def _ensure_playground_session(self, registry: WorkflowRegistry) -> sqlite3.Row:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM playground_sessions WHERE id = ?", (PLAYGROUND_SESSION_ID,)).fetchone()
+            if row is not None:
+                return row
+            timestamp = _utc_now()
+            connection.execute(
+                """
+                INSERT INTO playground_sessions (
+                    id, context_type, workflow_name, template_id, question_prompt, question_title, resolution_criteria,
+                    last_run_id, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    PLAYGROUND_SESSION_ID,
+                    "workflow",
+                    _preferred_playground_workflow(registry),
+                    _preferred_playground_template(),
+                    "",
+                    None,
+                    None,
+                    None,
+                    "playground-ready",
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            row = connection.execute("SELECT * FROM playground_sessions WHERE id = ?", (PLAYGROUND_SESSION_ID,)).fetchone()
+        assert row is not None
+        return row
+
+    def _playground_result_snapshot(self, *, runs_dir: Path, run_id: str | None) -> dict[str, Any] | None:
+        if not run_id:
+            return None
+        run_dir = resolve_run_dir(runs_dir, run_id)
+        detail = read_run_detail(run_dir)
+        sandbox = _mapping(detail.get("sandbox"))
+        if not sandbox:
+            return None
+        run = _mapping(sandbox.get("run"))
+        sandbox["run_href"] = f"/runs/{run_id}"
+        sandbox["report"] = _report_state(run_dir, run_id, run)
+        sandbox["summary_cards"] = [
+            {"label": "Questions", "value": len(sandbox.get("questions", []))},
+            {"label": "Steps", "value": len(sandbox.get("inspection_steps", []))},
+            {"label": "Status", "value": run.get("status") or "unknown"},
+            {"label": "Seconds", "value": sandbox.get("total_seconds")},
+        ]
+        return sandbox
+
     def _replace_draft_values(self, connection: sqlite3.Connection, draft_id: str, values: Mapping[str, str]) -> None:
         connection.execute("DELETE FROM draft_values WHERE draft_id = ?", (draft_id,))
         connection.executemany(
             "INSERT INTO draft_values (draft_id, key, value) VALUES (?, ?, ?)",
             [(draft_id, key, str(value)) for key, value in values.items()],
+        )
+
+    def _store_draft_blueprint(
+        self,
+        connection: sqlite3.Connection,
+        draft_id: str,
+        blueprint: WorkflowBlueprint,
+        *,
+        updated_at: str,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO draft_blueprints (draft_id, blueprint_json, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(draft_id) DO UPDATE SET
+                blueprint_json = excluded.blueprint_json,
+                updated_at = excluded.updated_at
+            """,
+            (draft_id, _json_dump(blueprint.to_json_dict()), updated_at),
         )
 
     def _unique_draft_name(self, registry: WorkflowRegistry, source_workflow_name: str) -> str:
@@ -770,6 +1087,11 @@ class WebUIStateStore:
         connection = sqlite3.connect(self.db_path)
         connection.row_factory = sqlite3.Row
         return connection
+
+    def _ensure_column(self, connection: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+        columns = {str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in columns:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 
@@ -803,6 +1125,149 @@ def _default_draft_values(blueprint: WorkflowBlueprint) -> dict[str, str]:
     return values
 
 
+
+
+def _playground_context_type_or_default(value: Any, *, default: str) -> str:
+    context_type = _playground_optional_string(value) or default
+    if context_type not in {"workflow", "template"}:
+        raise WorkbenchInputError("context_type must be 'workflow' or 'template'")
+    return context_type
+
+
+def _playground_optional_string(value: Any, *, allow_blank: bool = False) -> str | None:
+    if value is None:
+        return "" if allow_blank else None
+    if not isinstance(value, str):
+        raise WorkbenchInputError("playground values must be strings when provided")
+    text = value.strip()
+    if allow_blank:
+        return text
+    return text or None
+
+
+def _preferred_playground_workflow(registry: WorkflowRegistry) -> str:
+    workflows = registry.list_workflows()
+    preferred = next((workflow.name for workflow in workflows if workflow.name == "demo-provider-free"), None)
+    if preferred is not None:
+        return preferred
+    if workflows:
+        return workflows[0].name
+    raise WorkbenchInputError("no workflows available for playground")
+
+
+def _preferred_playground_template() -> str:
+    templates = list_workflow_starter_templates()
+    preferred = next((template.template_id for template in templates if template.template_id == "provider-free-demo"), None)
+    if preferred is not None:
+        return preferred
+    if templates:
+        return templates[0].template_id
+    raise WorkbenchInputError("no starter templates available for playground")
+
+
+def _playground_catalog(registry: WorkflowRegistry) -> dict[str, Any]:
+    return {
+        "workflows": [workflow.__dict__ for workflow in registry.list_workflows()],
+        "templates": [template.__dict__ for template in list_workflow_starter_templates()],
+        "limits": {"max_questions": MAX_SANDBOX_QUESTIONS, "single_run_questions": 1},
+    }
+
+
+def _playground_session_payload(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "context_type": str(row["context_type"]),
+        "workflow_name": _string_or_none(row["workflow_name"]),
+        "template_id": _string_or_none(row["template_id"]),
+        "question_prompt": str(row["question_prompt"] or ""),
+        "question_title": _string_or_none(row["question_title"]),
+        "resolution_criteria": _string_or_none(row["resolution_criteria"]),
+        "last_run_id": _string_or_none(row["last_run_id"]),
+        "status": str(row["status"]),
+        "created_at": str(row["created_at"]),
+        "updated_at": str(row["updated_at"]),
+    }
+
+
+def _playground_context_preview(row: sqlite3.Row, registry: WorkflowRegistry) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        context = launch_module.resolve_sandbox_context(
+            workflow_name=_string_or_none(row["workflow_name"]) if row["context_type"] == "workflow" else None,
+            template_id=_string_or_none(row["template_id"]) if row["context_type"] == "template" else None,
+            registry=registry,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        return None, str(exc)
+    blueprint = context.blueprint
+    description = blueprint.description
+    if context.context_type == "template":
+        template = next(
+            (item for item in list_workflow_starter_templates() if item.template_id == context.template_id),
+            None,
+        )
+        if template is not None:
+            description = template.description
+    return (
+        {
+            "context_type": context.context_type,
+            "reference_name": context.reference_name,
+            "workflow_name": context.workflow_name,
+            "template_id": context.template_id,
+            "source": context.source,
+            "title": blueprint.title,
+            "description": description,
+            "workflow_kind": blueprint.workflow_kind,
+            "runtime": {
+                "provider": blueprint.runtime.provider,
+                "base_url": blueprint.runtime.base_url,
+                "model": blueprint.runtime.model,
+                "max_tokens": blueprint.runtime.max_tokens,
+            },
+            "questions_limit": blueprint.questions.limit,
+            "entry": blueprint.graph.entry,
+            "node_count": len(blueprint.graph.nodes),
+            "canvas": workflow_canvas(blueprint),
+        },
+        None,
+    )
+
+
+def _playground_step_state(*, has_result: bool, ready_to_run: bool) -> list[dict[str, Any]]:
+    return [
+        {"key": "context", "label": "Context", "locked": False, "description": "Choose one workflow or starter template."},
+        {"key": "question", "label": "Question", "locked": False, "description": "Enter one bounded exploratory question."},
+        {
+            "key": "run",
+            "label": "Run",
+            "locked": not ready_to_run,
+            "description": "Run the bounded sandbox session." if ready_to_run else "Add a context and question to unlock run.",
+        },
+        {
+            "key": "inspect",
+            "label": "Inspect",
+            "locked": not has_result,
+            "description": "Review ordered read-only node outputs." if has_result else "Run once to inspect ordered node output.",
+        },
+    ]
+
+
+def _playground_guidance(*, last_result: dict[str, Any] | None) -> dict[str, Any]:
+    return {
+        "summary": "The playground is a bounded exploratory loop. It reuses the shared sandbox backend and stays distinct from the authoring workbench.",
+        "limitations": [
+            f"This WebUI flow launches one question at a time even though the shared sandbox contract stays bounded to {MAX_SANDBOX_QUESTIONS} questions or fewer.",
+            "Inspection is read-only: node identity, order, status, previews, and normalized artifact-backed payloads only.",
+            "Save-back stays explicit and is handled through dedicated follow-up routes rather than automatic persistence during a run.",
+        ],
+        "next_step": {
+            "title": "Inspect the exploratory run" if last_result else "Run one exploratory session",
+            "detail": (
+                "Review step previews and normalized payloads before deciding whether the workflow belongs back in the workbench."
+                if last_result
+                else "Choose a workflow or template, ask one question, and inspect the ordered step outputs."
+            ),
+        },
+    }
 
 def _compare_verdict(rows: list[dict[str, Any]]) -> dict[str, Any]:
     improved = sum(1 for row in rows if "right improved" in str(row.get("interpretation")))

@@ -74,6 +74,7 @@
     const nav = shell.data?.app?.nav ?? [
       { label: "Overview", href: "/" },
       { label: "Runs", href: "/runs" },
+      { label: "Playground", href: "/playground" },
       { label: "Workbench", href: "/workbench" }
     ];
     let page;
@@ -83,6 +84,8 @@
       page = /* @__PURE__ */ React.createElement(StartPage, { shell: shell.data, navigate, onMutate: refreshShell });
     } else if (route.path === "/runs") {
       page = /* @__PURE__ */ React.createElement(RunsPage, { route, navigate });
+    } else if (route.path === "/playground") {
+      page = /* @__PURE__ */ React.createElement(PlaygroundPage, { shell: shell.data, navigate, onMutate: refreshShell });
     } else if (route.path === "/operations") {
       page = /* @__PURE__ */ React.createElement(OperationsPage, { navigate, onMutate: refreshShell });
     } else if (route.path === "/advanced") {
@@ -97,7 +100,7 @@
     } else {
       page = /* @__PURE__ */ React.createElement(WorkbenchPage, { route, shell: shell.data, navigate, onMutate: refreshShell });
     }
-    return /* @__PURE__ */ React.createElement("div", { className: "app-shell" }, /* @__PURE__ */ React.createElement("header", { className: "topbar" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "XRTM WebUI"), /* @__PURE__ */ React.createElement("h1", null, "Local forecasting workbench")), /* @__PURE__ */ React.createElement("nav", { className: "topnav", "aria-label": "Primary" }, nav.map((item) => /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement("div", { className: "app-shell" }, /* @__PURE__ */ React.createElement("header", { className: "topbar" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "title-row" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "XRTM WebUI"), shell.data?.app?.version ? /* @__PURE__ */ React.createElement("span", { className: "version-pill" }, "v", String(shell.data.app.version)) : null), /* @__PURE__ */ React.createElement("h1", null, "Local forecasting cockpit")), /* @__PURE__ */ React.createElement("nav", { className: "topnav", "aria-label": "Primary" }, nav.map((item) => /* @__PURE__ */ React.createElement(
       "a",
       {
         key: item.href,
@@ -109,7 +112,7 @@
         }
       },
       item.label
-    )))), bootstrap.initial_error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Initial error", body: bootstrap.initial_error }) : null, shell.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "App shell error", body: shell.error }) : null, shell.loading && !shell.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading app shell" }) : null, shell.data ? /* @__PURE__ */ React.createElement("section", { className: "environment-strip" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Runs"), /* @__PURE__ */ React.createElement("span", null, shell.data.environment?.runs_dir)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Workflows"), /* @__PURE__ */ React.createElement("span", null, shell.data.environment?.workflows_dir)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Local LLM"), /* @__PURE__ */ React.createElement("span", null, String(shell.data.environment?.local_llm?.healthy))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "App DB"), /* @__PURE__ */ React.createElement("span", null, shell.data.environment?.app_db))) : null, page);
+    )))), bootstrap.initial_error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Initial error", body: bootstrap.initial_error }) : null, shell.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "App shell error", body: shell.error }) : null, shell.loading && !shell.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading app shell" }) : null, shell.data ? /* @__PURE__ */ React.createElement("section", { className: "environment-strip" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Version"), /* @__PURE__ */ React.createElement("span", null, shell.data.app?.version ? `xrtm ${String(shell.data.app.version)}` : "unknown")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Runs"), /* @__PURE__ */ React.createElement("span", null, shell.data.environment?.runs_dir)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Workflows"), /* @__PURE__ */ React.createElement("span", null, shell.data.environment?.workflows_dir)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Local LLM"), /* @__PURE__ */ React.createElement("span", null, String(shell.data.environment?.local_llm?.healthy))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "App DB"), /* @__PURE__ */ React.createElement("span", null, shell.data.environment?.app_db))) : null, page);
   }
   function OverviewPage({ shell, navigate }) {
     const overview = shell?.overview;
@@ -511,88 +514,404 @@
     const compare = resource.data;
     return /* @__PURE__ */ React.createElement("main", { className: "page-grid compare-shell" }, /* @__PURE__ */ React.createElement("section", { className: `panel hero-panel compare-hero ${compare.verdict?.tone || "neutral"}` }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Compare"), /* @__PURE__ */ React.createElement("h2", null, compare.verdict?.headline || compare.verdict?.label || "Comparison ready"), /* @__PURE__ */ React.createElement("p", null, compare.verdict?.summary || "Review grouped metrics and question-level changes before choosing the next step."), /* @__PURE__ */ React.createElement("div", { className: "compare-run-grid" }, /* @__PURE__ */ React.createElement(CompareRunCard, { label: "Candidate", run: compare.run_pair?.candidate }), /* @__PURE__ */ React.createElement(CompareRunCard, { label: "Baseline", run: compare.run_pair?.baseline })), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${candidateRunId}`) }, "Inspect candidate run"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${baselineRunId}`) }, "Inspect baseline run"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate("/workbench") }, "Back to workbench"))), /* @__PURE__ */ React.createElement("section", { className: "stats-grid" }, (compare.summary_cards || []).map((card) => /* @__PURE__ */ React.createElement(MetricCard, { key: card.label, label: card.label, value: card.value }))), /* @__PURE__ */ React.createElement("div", { className: "compare-grid" }, /* @__PURE__ */ React.createElement("div", { className: "compare-main" }, /* @__PURE__ */ React.createElement("section", { className: `panel verdict-panel ${compare.verdict?.tone || "neutral"}` }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Verdict"), /* @__PURE__ */ React.createElement("h3", null, compare.verdict?.label || "No verdict yet"), /* @__PURE__ */ React.createElement("p", null, compare.verdict?.next_step || "Open the run detail pages to continue reviewing."), /* @__PURE__ */ React.createElement("div", { className: "action-list" }, (compare.next_actions || []).map((action) => /* @__PURE__ */ React.createElement("button", { key: action.label, className: "secondary-button action-button", onClick: () => navigate(action.href) }, /* @__PURE__ */ React.createElement("span", null, action.label), action.description ? /* @__PURE__ */ React.createElement("small", null, action.description) : null)))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Metric comparison"), /* @__PURE__ */ React.createElement("p", null, "High-level metrics grouped by profile, coverage, efficiency, and quality."))), (compare.row_groups || []).map((group) => /* @__PURE__ */ React.createElement("section", { key: group.title, className: "compare-group" }, /* @__PURE__ */ React.createElement("h4", null, group.title), /* @__PURE__ */ React.createElement("table", { className: "data-table" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", null, "Metric"), /* @__PURE__ */ React.createElement("th", null, "Baseline"), /* @__PURE__ */ React.createElement("th", null, "Candidate"), /* @__PURE__ */ React.createElement("th", null, "Interpretation"))), /* @__PURE__ */ React.createElement("tbody", null, (group.rows || []).map((row) => /* @__PURE__ */ React.createElement("tr", { key: row.metric, className: `tone-${row.tone || "neutral"}` }, /* @__PURE__ */ React.createElement("td", null, row.label || row.metric), /* @__PURE__ */ React.createElement("td", null, formatValue(row.left)), /* @__PURE__ */ React.createElement("td", null, formatValue(row.right)), /* @__PURE__ */ React.createElement("td", null, row.interpretation)))))))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Question-level changes"), /* @__PURE__ */ React.createElement("p", null, "Question titles stay visible so coverage gaps and score shifts are easy to read."))), /* @__PURE__ */ React.createElement(CompareQuestionTable, { rows: compare.question_rows || [] }))), /* @__PURE__ */ React.createElement("aside", { className: "compare-sidebar" }, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h3", null, "Report availability"), /* @__PURE__ */ React.createElement("p", null, "Open each run report directly when it exists."))), /* @__PURE__ */ React.createElement(ReportCard, { report: compare.run_pair?.candidate?.report }), /* @__PURE__ */ React.createElement(ReportCard, { report: compare.run_pair?.baseline?.report })))));
   }
+  function PlaygroundPage({
+    shell,
+    navigate,
+    onMutate
+  }) {
+    const resource = useJsonResource(`${bootstrap.api_root}/playground`, []);
+    const [contextType, setContextType] = useState("workflow");
+    const [workflowName, setWorkflowName] = useState("");
+    const [templateId, setTemplateId] = useState("");
+    const [questionPrompt, setQuestionPrompt] = useState("");
+    const [questionTitle, setQuestionTitle] = useState("");
+    const [resolutionCriteria, setResolutionCriteria] = useState("");
+    const [selectedStepKey, setSelectedStepKey] = useState("");
+    const [busy, setBusy] = useState(null);
+    const [notice, setNotice] = useState(null);
+    const session = resource.data?.session;
+    const catalog = resource.data?.catalog || {};
+    const workflows = catalog.workflows || [];
+    const templates = catalog.templates || [];
+    const contextPreview = resource.data?.context_preview;
+    const lastResult = resource.data?.last_result;
+    const steps = (lastResult?.inspection_steps || []).filter((step) => typeof step?.node_id === "string");
+    const activeStep = steps.find((step) => playgroundStepKey(step) === selectedStepKey) || steps[0] || null;
+    const readyToRun = Boolean(questionPrompt.trim() && (contextType === "workflow" ? workflowName : templateId));
+    const latestRun = shell?.overview?.latest_run;
+    useEffect(() => {
+      if (!session) return;
+      setContextType(String(session.context_type || "workflow"));
+      setWorkflowName(String(session.workflow_name || workflows[0]?.name || ""));
+      setTemplateId(String(session.template_id || templates[0]?.template_id || ""));
+      setQuestionPrompt(String(session.question_prompt || ""));
+      setQuestionTitle(String(session.question_title || ""));
+      setResolutionCriteria(String(session.resolution_criteria || ""));
+    }, [session?.updated_at, session?.context_type, session?.workflow_name, session?.template_id, session?.question_prompt, session?.question_title, session?.resolution_criteria, workflows, templates]);
+    useEffect(() => {
+      if (!steps.length) {
+        setSelectedStepKey("");
+        return;
+      }
+      if (!selectedStepKey || !steps.some((step) => playgroundStepKey(step) === selectedStepKey)) {
+        setSelectedStepKey(playgroundStepKey(steps[0]));
+      }
+    }, [selectedStepKey, steps]);
+    const payload = () => ({
+      context_type: contextType,
+      workflow_name: workflowName || void 0,
+      template_id: templateId || void 0,
+      question_prompt: questionPrompt,
+      question_title: questionTitle || void 0,
+      resolution_criteria: resolutionCriteria || void 0
+    });
+    async function persistPlaygroundState() {
+      setBusy("Updating playground state");
+      setNotice(null);
+      try {
+        await requestJson(`${bootstrap.api_root}/playground`, {
+          method: "PATCH",
+          body: JSON.stringify(payload())
+        });
+        resource.reload();
+        onMutate();
+        setNotice({
+          tone: "success",
+          title: "Playground state updated",
+          body: "The current exploratory context is saved locally in the WebUI state store."
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setNotice({
+          tone: "error",
+          title: "Couldn't update playground state",
+          body: `${message} Stay inside the bounded workflow/template + single-question playground contract.`
+        });
+      } finally {
+        setBusy(null);
+      }
+    }
+    async function runPlayground() {
+      setBusy("Running playground session");
+      setNotice(null);
+      try {
+        await requestJson(`${bootstrap.api_root}/playground/run`, {
+          method: "POST",
+          body: JSON.stringify(payload())
+        });
+        resource.reload();
+        onMutate();
+        setNotice({
+          tone: "success",
+          title: "Exploratory run finished",
+          body: "Inspect the ordered step outputs below. The playground keeps node inspection read-only."
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setNotice({
+          tone: "error",
+          title: "Couldn't run playground session",
+          body: `${message} The playground only runs one bounded custom question at a time.`
+        });
+      } finally {
+        setBusy(null);
+      }
+    }
+    return /* @__PURE__ */ React.createElement("main", { className: "page-grid playground-shell" }, resource.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Playground unavailable", body: resource.error }) : null, notice ? /* @__PURE__ */ React.createElement(Message, { tone: notice.tone, title: notice.title, body: notice.body }) : null, resource.loading && !resource.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading playground" }) : null, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel playground-hero" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Playground"), /* @__PURE__ */ React.createElement("h2", null, "Run one bounded exploratory question without opening the workbench canvas"), /* @__PURE__ */ React.createElement("p", null, "Choose a workflow or starter template, ask one custom question, then inspect ordered step outputs from the shared sandbox backend. This surface is for exploratory execution only; safe authoring still lives in the workbench."), /* @__PURE__ */ React.createElement("div", { className: "meta-row" }, /* @__PURE__ */ React.createElement("span", null, lastResult?.labeling?.display_label || "Exploratory playground session"), /* @__PURE__ */ React.createElement(StatusPill, { value: String(lastResult?.run?.status || session?.status || "playground-ready") }), /* @__PURE__ */ React.createElement("span", null, contextPreview?.title || contextPreview?.reference_name || "Choose a context")), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: runPlayground, disabled: Boolean(busy) || !readyToRun }, busy === "Running playground session" ? busy : "Run exploratory session"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: persistPlaygroundState, disabled: Boolean(busy) }, busy === "Updating playground state" ? busy : "Update playground state"), lastResult?.run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${lastResult.run_id}`) }, "Inspect full run") : latestRun?.run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${latestRun.run_id}`) }, "Inspect latest run") : null, /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate("/workbench") }, "Open workbench"))), /* @__PURE__ */ React.createElement("section", { className: "playground-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "1. Context"), /* @__PURE__ */ React.createElement("h3", null, "Choose workflow or starter template")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "The playground reuses the same workflow registry and starter templates as the shared authoring stack.")), /* @__PURE__ */ React.createElement("div", { className: "creation-mode-row" }, [
+      { key: "workflow", label: "Workflow", detail: "Reuse a saved workflow directly." },
+      { key: "template", label: "Template", detail: "Start from a starter template without opening the workbench." }
+    ].map((item) => /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        key: item.key,
+        type: "button",
+        className: contextType === item.key ? "workflow-tile active" : "workflow-tile",
+        onClick: () => setContextType(item.key)
+      },
+      /* @__PURE__ */ React.createElement("strong", null, item.label),
+      /* @__PURE__ */ React.createElement("span", { className: "workflow-note" }, item.detail)
+    ))), contextType === "workflow" ? /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Workflow"), /* @__PURE__ */ React.createElement("select", { value: workflowName, onChange: (event) => setWorkflowName(event.target.value) }, workflows.map((item) => /* @__PURE__ */ React.createElement("option", { key: item.name, value: item.name }, item.title || item.name)))) : /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Starter template"), /* @__PURE__ */ React.createElement("select", { value: templateId, onChange: (event) => setTemplateId(event.target.value) }, templates.map((item) => /* @__PURE__ */ React.createElement("option", { key: item.template_id, value: item.template_id }, item.title))))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "2. Question"), /* @__PURE__ */ React.createElement("h3", null, "Enter one custom question")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Keep the loop bounded: one custom exploratory question only in this WebUI pass.")), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Question prompt"), /* @__PURE__ */ React.createElement("textarea", { className: "text-area-input", value: questionPrompt, onChange: (event) => setQuestionPrompt(event.target.value), placeholder: "Will the exploratory workflow produce a useful answer for this question?" })), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Optional title"), /* @__PURE__ */ React.createElement("input", { value: questionTitle, onChange: (event) => setQuestionTitle(event.target.value), placeholder: "Auto-derived from the prompt when blank" })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Optional resolution criteria"), /* @__PURE__ */ React.createElement("input", { value: resolutionCriteria, onChange: (event) => setResolutionCriteria(event.target.value), placeholder: "Short read-only context for later inspection" }))))), /* @__PURE__ */ React.createElement("section", { className: "playground-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "3. Preview"), /* @__PURE__ */ React.createElement("h3", null, "Selected playground context"))), resource.data?.context_error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Context unavailable", body: resource.data.context_error }) : contextPreview ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "surface-card" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, contextPreview.title || contextPreview.reference_name), /* @__PURE__ */ React.createElement("p", null, contextPreview.description || "No context description available.")), /* @__PURE__ */ React.createElement("span", { className: "source-pill local" }, contextPreview.context_type)), /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Reference"), /* @__PURE__ */ React.createElement("dd", null, contextPreview.reference_name)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Runtime"), /* @__PURE__ */ React.createElement("dd", null, contextPreview.runtime?.provider || "mock")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Question limit"), /* @__PURE__ */ React.createElement("dd", null, formatValue(contextPreview.questions_limit))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Entry node"), /* @__PURE__ */ React.createElement("dd", null, contextPreview.entry || "\u2014")))), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "Playground contract"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, (resource.data?.guidance?.limitations || []).map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item))))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "Choose a context", body: "Select a workflow or starter template to preview the playground context." })), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "4. Status"), /* @__PURE__ */ React.createElement("h3", null, "Journey + next step"))), /* @__PURE__ */ React.createElement("ol", { className: "step-list step-rail" }, (resource.data?.step_state || []).map((step) => /* @__PURE__ */ React.createElement("li", { key: step.key, className: `step-item${step.locked ? " locked" : ""}` }, /* @__PURE__ */ React.createElement("div", { className: "step-head" }, /* @__PURE__ */ React.createElement("strong", null, step.label), /* @__PURE__ */ React.createElement("span", { className: `step-status ${step.locked ? "locked" : "current"}` }, step.locked ? "Locked" : "Ready")), /* @__PURE__ */ React.createElement("span", null, step.description)))), /* @__PURE__ */ React.createElement("section", { className: "next-step-card" }, /* @__PURE__ */ React.createElement("strong", null, resource.data?.guidance?.next_step?.title || "Run one exploratory session"), /* @__PURE__ */ React.createElement("p", null, resource.data?.guidance?.next_step?.detail || "Update the playground state, then run one exploratory question.")), lastResult?.save_back ? /* @__PURE__ */ React.createElement("details", { className: "artifact-preview" }, /* @__PURE__ */ React.createElement("summary", null, "Prepared save-back state (read-only)"), /* @__PURE__ */ React.createElement(ArtifactPreview, { label: "Workflow state", value: lastResult.save_back.workflow }), /* @__PURE__ */ React.createElement(ArtifactPreview, { label: "Profile state", value: lastResult.save_back.profile })) : null)), lastResult ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("section", { className: "stats-grid" }, (lastResult.summary_cards || []).map((card) => /* @__PURE__ */ React.createElement(MetricCard, { key: String(card.label), label: String(card.label), value: card.value }))), /* @__PURE__ */ React.createElement("section", { className: "playground-grid" }, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "5. Inspect"), /* @__PURE__ */ React.createElement("h3", null, "Ordered step outputs")), /* @__PURE__ */ React.createElement("span", { className: "section-count" }, steps.length, " steps")), /* @__PURE__ */ React.createElement("div", { className: "playground-step-list" }, steps.map((step) => /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        key: playgroundStepKey(step),
+        type: "button",
+        className: playgroundStepKey(step) === playgroundStepKey(activeStep || {}) ? "playground-step-button active" : "playground-step-button",
+        onClick: () => setSelectedStepKey(playgroundStepKey(step))
+      },
+      /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("strong", null, formatValue(step.order), ". ", step.label || step.node_id), /* @__PURE__ */ React.createElement(StatusPill, { value: String(step.status || "completed") })),
+      /* @__PURE__ */ React.createElement("span", { className: "workflow-note" }, step.node_id, " \xB7 ", step.node_type || "node"),
+      /* @__PURE__ */ React.createElement("span", null, step.output_preview || "No preview available.")
+    )))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Selected step"), /* @__PURE__ */ React.createElement("h3", null, activeStep?.label || activeStep?.node_id || "Read-only step detail"))), activeStep ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Node ID"), /* @__PURE__ */ React.createElement("dd", null, activeStep.node_id)), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Node type"), /* @__PURE__ */ React.createElement("dd", null, activeStep.node_type || "node")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Status"), /* @__PURE__ */ React.createElement("dd", null, activeStep.status || "completed")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Order"), /* @__PURE__ */ React.createElement("dd", null, formatValue(activeStep.order))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Latency (seconds)"), /* @__PURE__ */ React.createElement("dd", null, formatValue(activeStep.latency_seconds))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Route"), /* @__PURE__ */ React.createElement("dd", null, formatValue(activeStep.route)))), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, activeStep.output_preview || "No step preview available."), /* @__PURE__ */ React.createElement(ArtifactPreview, { label: "Structured output", value: activeStep.output }), /* @__PURE__ */ React.createElement(ArtifactList, { items: (activeStep.artifacts || []).map((item) => ({ ...item, label: item.name, available: true })) }), /* @__PURE__ */ React.createElement("div", { className: "json-stack" }, Object.entries(activeStep.artifact_payloads || {}).map(([key, value]) => /* @__PURE__ */ React.createElement(ArtifactPreview, { key, label: key, value })))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No step output yet", body: "Run the playground session to inspect ordered node outputs here." }))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Latest exploratory run"), /* @__PURE__ */ React.createElement("h3", null, lastResult.run_id))), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, lastResult.run_summary?.summary || lastResult.labeling?.notes?.[0] || "Use the playground for exploratory local analysis, not release-grade evidence."), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => navigate(`/runs/${lastResult.run_id}`) }, "Open run detail"), lastResult.report?.available ? /* @__PURE__ */ React.createElement("a", { className: "secondary-link", href: lastResult.report.href, target: "_blank", rel: "noreferrer" }, "Open report") : null))) : null);
+  }
   function WorkbenchPage({ route, shell, navigate, onMutate }) {
     const params = useMemo(() => new URLSearchParams(route.search), [route.search]);
     const draftId = params.get("draft");
     const selectedWorkflow = params.get("workflow") || shell?.overview?.latest_run?.workflow?.name || "demo-provider-free";
     const workflows = useJsonResource(`${bootstrap.api_root}/workflows`, [route.search]);
+    const authoringCatalog = useJsonResource(`${bootstrap.api_root}/authoring/catalog`, []);
     const draft = useJsonResource(draftId ? `${bootstrap.api_root}/drafts/${draftId}` : null, [draftId]);
     const workflow = useJsonResource(!draftId ? `${bootstrap.api_root}/workflows/${selectedWorkflow}` : null, [selectedWorkflow, draftId]);
-    const [formValues, setFormValues] = useState({});
     const [busy, setBusy] = useState(null);
     const [actionNotice, setActionNotice] = useState(null);
-    useEffect(() => {
-      if (draft.data?.draft_values) {
-        setFormValues(draft.data.draft_values);
-      }
-    }, [draft.data]);
-    useEffect(() => {
-      setActionNotice(null);
-    }, [draftId, selectedWorkflow]);
+    const [creationMode, setCreationMode] = useState("clone");
+    const [createForm, setCreateForm] = useState({
+      source_workflow_name: "",
+      template_id: "",
+      draft_workflow_name: "",
+      title: "",
+      description: ""
+    });
+    const [coreForm, setCoreForm] = useState({});
+    const [selectedNodeName, setSelectedNodeName] = useState("");
+    const [nodeForm, setNodeForm] = useState({});
+    const [addNodeForm, setAddNodeForm] = useState({
+      node_name: "",
+      implementation: "",
+      incoming_from: "",
+      outgoing_to: "",
+      description: "",
+      optional: "false",
+      runtime: ""
+    });
+    const [addEdgeForm, setAddEdgeForm] = useState({ from_node: "", to_node: "" });
     const activeDraft = draft.data;
     const activeWorkflow = activeDraft ? activeDraft.workflow : workflow.data?.workflow;
-    const activeSafeEdit = activeDraft ? activeDraft.safe_edit : workflow.data?.safe_edit;
+    const activeAuthoring = activeDraft ? activeDraft.authoring : workflow.data?.authoring;
     const activeCanvas = activeDraft ? activeDraft.canvas : workflow.data?.canvas;
+    const activeGraph = activeAuthoring?.graph || {};
+    const graphNodes = (activeGraph.nodes || []).filter((node) => typeof node?.name === "string");
+    const graphTargets = (activeGraph.targets || []).filter((target) => typeof target?.name === "string");
+    const selectedNode = graphNodes.find((node) => node.name === selectedNodeName) || null;
     const overviewLatestRun = shell?.overview?.latest_run || null;
-    const safeEditSupport = activeDraft?.guidance?.supported_edits || activeSafeEdit?.supported_edits || [];
-    const safeEditLimitations = activeDraft?.guidance?.limitations || activeSafeEdit?.limitations || [];
+    const safeEditSupport = activeDraft?.guidance?.supported_edits || activeDraft?.safe_edit?.supported_edits || workflow.data?.safe_edit?.supported_edits || [];
+    const safeEditLimitations = activeDraft?.guidance?.limitations || activeAuthoring?.limitations || defaultAuthoringLimitations();
     const sourceOfTruth = activeDraft?.guidance?.source_of_truth || defaultSourceOfTruth();
     const nextStep = activeDraft?.guidance?.next_step || buildDraftlessNextStep(activeWorkflow, overviewLatestRun);
     const stepState = draftId ? decorateStepState(activeDraft?.step_state || defaultStepState(), activeDraft, true) : decorateStepState(draftlessStepState(activeWorkflow), null, false);
     const validationStatus = buildValidationStatus(activeDraft);
     const validationFixes = buildValidationFixes(activeDraft);
     const runDisabled = !(activeDraft?.validation?.ok && !activeDraft?.validation?.stale);
-    const draftActionLabel = activeWorkflow?.source === "local" ? "Open local draft session" : "Clone into local draft";
-    const draftActionSummary = activeWorkflow?.source === "local" ? "This workflow already lives in your local workspace, but edits still flow through a draft session so validation and resume state stay explicit." : "Built-in workflows are reference blueprints. Clone one into a local draft before editing any field.";
-    async function createDraft(sourceWorkflowName) {
-      setBusy("Creating local draft");
+    const templates = authoringCatalog.data?.templates || [];
+    const nodeCatalog = authoringCatalog.data?.node_catalog || [];
+    const creationModes = authoringCatalog.data?.creation_modes || [];
+    const creationDisabled = !createForm.draft_workflow_name || creationMode === "clone" && !(createForm.source_workflow_name || activeWorkflow?.name) || creationMode === "template" && !createForm.template_id;
+    useEffect(() => {
+      setActionNotice(null);
+    }, [draftId, selectedWorkflow]);
+    useEffect(() => {
+      setCreateForm((current) => ({
+        ...current,
+        source_workflow_name: current.source_workflow_name || selectedWorkflow,
+        template_id: current.template_id || String(templates[0]?.template_id || "")
+      }));
+      setAddNodeForm((current) => ({
+        ...current,
+        implementation: current.implementation || String(nodeCatalog[0]?.implementation || "")
+      }));
+    }, [selectedWorkflow, templates, nodeCatalog]);
+    useEffect(() => {
+      if (activeAuthoring?.core_form) {
+        const nextCore = {};
+        Object.entries(activeAuthoring.core_form).forEach(([key, value]) => {
+          nextCore[key] = value == null ? "" : String(value);
+        });
+        setCoreForm(nextCore);
+      }
+    }, [activeAuthoring]);
+    useEffect(() => {
+      if (!graphNodes.length) {
+        setSelectedNodeName("");
+        return;
+      }
+      if (!selectedNodeName || !graphNodes.some((node) => node.name === selectedNodeName)) {
+        setSelectedNodeName(String(graphNodes[0].name));
+      }
+    }, [graphNodes, selectedNodeName]);
+    useEffect(() => {
+      if (!selectedNode) {
+        setNodeForm({});
+        return;
+      }
+      const nextNodeForm = {
+        description: String(selectedNode.description || ""),
+        runtime: String(selectedNode.runtime || ""),
+        optional: selectedNode.optional ? "true" : "false"
+      };
+      (selectedNode.aggregate_weights || []).forEach((item) => {
+        nextNodeForm[`weight:${String(item.name)}`] = String(item.percent ?? "");
+      });
+      setNodeForm(nextNodeForm);
+    }, [selectedNode]);
+    async function createDraftFromMode() {
+      setBusy("Creating authoring draft");
       setActionNotice(null);
       try {
-        const payload = { source_workflow_name: sourceWorkflowName };
-        if (shell?.overview?.latest_run?.run_id) {
-          payload.baseline_run_id = shell.overview.latest_run.run_id;
+        const payload = {
+          creation_mode: creationMode,
+          draft_workflow_name: createForm.draft_workflow_name,
+          title: normalizeText(createForm.title) || void 0,
+          description: normalizeText(createForm.description) || void 0
+        };
+        if (overviewLatestRun?.run_id) {
+          payload.baseline_run_id = overviewLatestRun.run_id;
+        }
+        if (creationMode === "clone") {
+          payload.source_workflow_name = createForm.source_workflow_name || activeWorkflow?.name || selectedWorkflow;
+        } else if (creationMode === "template") {
+          payload.template_id = createForm.template_id;
         }
         const created = await requestJson(`${bootstrap.api_root}/drafts`, { method: "POST", body: JSON.stringify(payload) });
         onMutate();
         navigate(`/workbench?draft=${created.id}`);
       } catch (error) {
-        setActionNotice(buildActionErrorNotice("clone", error));
+        setActionNotice(buildActionErrorNotice("create", error));
       } finally {
         setBusy(null);
       }
     }
-    async function persistDraft(nextValues) {
+    async function applyDraftAction(stage, action, successTitle, successBody) {
       if (!draftId) return null;
-      return requestJson(`${bootstrap.api_root}/drafts/${draftId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ values: nextValues })
-      });
-    }
-    async function saveDraft() {
-      if (!draftId) return;
-      setBusy("Saving safe edit");
+      setBusy(successTitle);
       setActionNotice(null);
       try {
-        await persistDraft(formValues);
+        const updated = await requestJson(`${bootstrap.api_root}/drafts/${draftId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ action })
+        });
         draft.reload();
         onMutate();
-        setActionNotice({
-          tone: "success",
-          title: "Draft saved",
-          body: "Safe-edit values are stored in SQLite. Next: validate the cloned workflow before running a candidate."
-        });
+        setActionNotice({ tone: "success", title: successTitle, body: successBody });
+        return updated;
       } catch (error) {
-        setActionNotice(buildActionErrorNotice("save", error));
+        setActionNotice(buildActionErrorNotice(stage, error));
+        return null;
       } finally {
         setBusy(null);
       }
+    }
+    async function applyCoreFields() {
+      if (!draftId) return;
+      await applyDraftAction(
+        "workflow",
+        {
+          type: "update-core",
+          metadata: {
+            title: coreForm.title,
+            description: coreForm.description,
+            workflow_kind: coreForm.workflow_kind,
+            tags: (coreForm.tags || "").split(",").map((item) => item.trim()).filter(Boolean)
+          },
+          questions: { limit: Number(coreForm.questions_limit || 0) },
+          runtime: {
+            provider: coreForm.runtime_provider,
+            base_url: normalizeText(coreForm.runtime_base_url),
+            model: normalizeText(coreForm.runtime_model),
+            max_tokens: Number(coreForm.runtime_max_tokens || 0)
+          },
+          artifacts: {
+            write_report: parseBooleanString(coreForm.artifacts_write_report),
+            write_blueprint_copy: parseBooleanString(coreForm.artifacts_write_blueprint_copy),
+            write_graph_trace: parseBooleanString(coreForm.artifacts_write_graph_trace)
+          },
+          scoring: {
+            write_eval: parseBooleanString(coreForm.scoring_write_eval),
+            write_train_backtest: parseBooleanString(coreForm.scoring_write_train_backtest)
+          }
+        },
+        "Workflow fields updated",
+        "Core workflow fields now reflect the latest authored state. Validate when you're ready to run."
+      );
+    }
+    async function applyNodeUpdates() {
+      if (!draftId || !selectedNode) return;
+      const weights = {};
+      Object.entries(nodeForm).forEach(([key, value]) => {
+        if (key.startsWith("weight:")) {
+          weights[key.replace(/^weight:/, "")] = value;
+        }
+      });
+      await applyDraftAction(
+        "node",
+        {
+          type: "update-node",
+          node_name: selectedNode.name,
+          description: nodeForm.description || "",
+          runtime: normalizeText(nodeForm.runtime),
+          optional: parseBooleanString(nodeForm.optional),
+          weights: Object.keys(weights).length ? weights : void 0
+        },
+        "Node updated",
+        `The visual editor saved changes for ${selectedNode.name}.`
+      );
+    }
+    async function removeSelectedNode() {
+      if (!draftId || !selectedNode) return;
+      const removedName = String(selectedNode.name);
+      const updated = await applyDraftAction(
+        "node",
+        { type: "remove-node", node_name: removedName },
+        "Node removed",
+        `${removedName} was removed from the draft graph.`
+      );
+      const nextNode = updated?.authoring?.graph?.nodes?.[0]?.name;
+      setSelectedNodeName(nextNode ? String(nextNode) : "");
+    }
+    async function setEntry(entryName) {
+      if (!draftId || !entryName) return;
+      await applyDraftAction(
+        "entry",
+        { type: "set-entry", entry: entryName },
+        "Entry updated",
+        `${entryName} is now the workflow entry for this draft.`
+      );
+    }
+    async function addNode() {
+      if (!draftId) return;
+      const action = {
+        type: "add-node",
+        node_name: addNodeForm.node_name,
+        implementation: addNodeForm.implementation,
+        description: normalizeText(addNodeForm.description),
+        runtime: normalizeText(addNodeForm.runtime),
+        optional: parseBooleanString(addNodeForm.optional)
+      };
+      if (addNodeForm.incoming_from) action.incoming_from = [addNodeForm.incoming_from];
+      if (addNodeForm.outgoing_to) action.outgoing_to = [addNodeForm.outgoing_to];
+      const addedName = addNodeForm.node_name;
+      const updated = await applyDraftAction(
+        "node",
+        action,
+        "Node added",
+        `${addedName} is now part of the authored workflow graph.`
+      );
+      if (updated) {
+        setSelectedNodeName(addedName);
+        setAddNodeForm((current) => ({ ...current, node_name: "", description: "", runtime: "", incoming_from: "", outgoing_to: "" }));
+      }
+    }
+    async function addEdge() {
+      if (!draftId) return;
+      await applyDraftAction(
+        "edge",
+        { type: "add-edge", from_node: addEdgeForm.from_node, to_node: addEdgeForm.to_node },
+        "Edge added",
+        `${addEdgeForm.from_node} now connects to ${addEdgeForm.to_node}.`
+      );
+    }
+    async function removeEdge(fromNode, toNode) {
+      if (!draftId) return;
+      await applyDraftAction(
+        "edge",
+        { type: "remove-edge", from_node: fromNode, to_node: toNode },
+        "Edge removed",
+        `${fromNode} no longer connects to ${toNode}.`
+      );
     }
     async function validateDraft() {
       if (!draftId) return;
-      setBusy("Validating safe edit");
+      setBusy("Validating draft");
       setActionNotice(null);
       try {
-        await persistDraft(formValues);
         const result = await requestJson(`${bootstrap.api_root}/drafts/${draftId}/validate`, { method: "POST", body: JSON.stringify({}) });
         draft.reload();
         onMutate();
@@ -601,7 +920,7 @@
           validation?.ok ? {
             tone: validation.stale ? "warning" : "success",
             title: validation.stale ? "Validation needs a refresh" : "Validation passed",
-            body: validation.stale ? "A newer edit changed the draft after validation. Validate once more before you run." : "The latest safe edits validated successfully. Next: run a candidate and compare it with the baseline."
+            body: validation.stale ? "A newer edit changed the draft after validation. Validate once more before you run." : "The latest authored draft validated successfully. Next: run a candidate and compare it with the baseline."
           } : {
             tone: "warning",
             title: "Validation found issues",
@@ -619,7 +938,6 @@
       setBusy("Running candidate");
       setActionNotice(null);
       try {
-        await persistDraft(formValues);
         const response = await requestJson(`${bootstrap.api_root}/drafts/${draftId}/run`, { method: "POST", body: JSON.stringify({}) });
         onMutate();
         if (response.compare) {
@@ -633,65 +951,86 @@
         setBusy(null);
       }
     }
-    function updateFormValue(key, value) {
-      setActionNotice(null);
-      setFormValues((current) => ({ ...current, [key]: value }));
-    }
-    return /* @__PURE__ */ React.createElement("main", { className: "workbench-layout" }, /* @__PURE__ */ React.createElement("aside", { className: "panel step-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Journey"), /* @__PURE__ */ React.createElement("h2", null, "Inspect \u2192 clone \u2192 safe edit"), /* @__PURE__ */ React.createElement("ol", { className: "step-list step-rail" }, stepState.map((step) => /* @__PURE__ */ React.createElement("li", { key: step.key, className: `step-item step-${step.state || "upcoming"}${step.locked ? " locked" : ""}` }, /* @__PURE__ */ React.createElement("div", { className: "step-head" }, /* @__PURE__ */ React.createElement("strong", null, step.label), /* @__PURE__ */ React.createElement("span", { className: `step-status ${step.state || "upcoming"}` }, stepBadgeLabel(step))), /* @__PURE__ */ React.createElement("span", null, step.description))))), /* @__PURE__ */ React.createElement("section", { className: "workbench-main" }, workflow.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Workflow unavailable", body: workflow.error }) : null, draft.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Draft unavailable", body: draft.error }) : null, workflows.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Workflow catalog unavailable", body: workflows.error }) : null, actionNotice ? /* @__PURE__ */ React.createElement(Message, { tone: actionNotice.tone, title: actionNotice.title, body: actionNotice.body }) : null, busy ? /* @__PURE__ */ React.createElement(LoadingCard, { label: busy }) : null, draftId && draft.loading && !draft.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading draft" }) : null, !draftId && workflow.loading && !workflow.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading workflow" }) : null, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel workbench-hero" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Workbench"), /* @__PURE__ */ React.createElement("h2", null, draftId ? "Guide one safe draft from inspection to comparison" : "Choose a workflow, then unlock safe edits with a local draft"), /* @__PURE__ */ React.createElement("p", null, draftId ? "Stay in context while you inspect the baseline, validate inline, run a candidate, and decide what to do next." : "Built-in workflows stay read-only until you clone them. Draft values live in SQLite so you can validate and iterate without losing context."), /* @__PURE__ */ React.createElement("div", { className: "meta-row" }, /* @__PURE__ */ React.createElement(SourceBadge, { source: activeWorkflow?.source || "builtin" }), activeDraft?.draft_workflow_name ? /* @__PURE__ */ React.createElement("span", null, "Draft: ", activeDraft.draft_workflow_name) : null, activeDraft?.baseline_run_id ? /* @__PURE__ */ React.createElement("span", null, "Baseline: ", activeDraft.baseline_run_id) : overviewLatestRun?.run_id ? /* @__PURE__ */ React.createElement("span", null, "Suggested baseline: ", overviewLatestRun.run_id) : null, activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement("span", null, "Candidate: ", activeDraft.last_run_id) : null), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, !draftId ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => createDraft(activeWorkflow?.name || selectedWorkflow) }, draftActionLabel), overviewLatestRun?.run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${overviewLatestRun.run_id}`) }, "Inspect latest run") : /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate("/runs") }, "Browse runs")) : /* @__PURE__ */ React.createElement(React.Fragment, null, activeDraft?.baseline_run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${activeDraft.baseline_run_id}`) }, "Inspect baseline") : /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate("/runs") }, "Choose a baseline"), activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${activeDraft.last_run_id}`) }, "Inspect candidate run") : null))), /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "1. Inspect + clone"), /* @__PURE__ */ React.createElement("h3", null, "Pick a workflow and keep the baseline in view")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, draftActionSummary)), /* @__PURE__ */ React.createElement("div", { className: "inspect-grid" }, /* @__PURE__ */ React.createElement("article", { className: "surface-card" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, activeWorkflow?.title || activeWorkflow?.name || selectedWorkflow), /* @__PURE__ */ React.createElement("p", null, activeWorkflow?.description || "Select a workflow from the catalog.")), /* @__PURE__ */ React.createElement(SourceBadge, { source: activeWorkflow?.source || "builtin" })), /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, draftActionSummary), !draftId ? /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => createDraft(activeWorkflow?.name || selectedWorkflow) }, draftActionLabel) : /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Source"), /* @__PURE__ */ React.createElement("dd", null, activeDraft?.source_workflow_name || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Local draft"), /* @__PURE__ */ React.createElement("dd", null, activeDraft?.draft_workflow_name || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Status"), /* @__PURE__ */ React.createElement("dd", null, activeDraft?.status || "\u2014")))), /* @__PURE__ */ React.createElement("article", { className: "surface-card" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Baseline context"), /* @__PURE__ */ React.createElement("p", null, "Inspect first so the next edit has a clear comparison target."))), activeDraft?.baseline_run || overviewLatestRun ? /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Run"), /* @__PURE__ */ React.createElement("dd", null, formatRunContext(activeDraft?.baseline_run || overviewLatestRun))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Workflow"), /* @__PURE__ */ React.createElement("dd", null, activeDraft?.baseline_run?.workflow?.title || activeDraft?.baseline_run?.workflow?.name || overviewLatestRun?.workflow?.title || overviewLatestRun?.workflow?.name || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Action"), /* @__PURE__ */ React.createElement("dd", null, activeDraft?.baseline_run_id ? "Compare against this baseline after your candidate run." : "Use the latest run as a suggested baseline when you clone."))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No baseline yet", body: "Run history is empty. You can still create a draft, then inspect the first candidate run after it completes." }))), /* @__PURE__ */ React.createElement("div", { className: "workflow-list workflow-catalog" }, (workflows.data?.items || []).map((item) => /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement("main", { className: "workbench-layout" }, /* @__PURE__ */ React.createElement("aside", { className: "panel step-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Journey"), /* @__PURE__ */ React.createElement("h2", null, "Inspect \u2192 create \u2192 author"), /* @__PURE__ */ React.createElement("ol", { className: "step-list step-rail" }, stepState.map((step) => /* @__PURE__ */ React.createElement("li", { key: step.key, className: `step-item step-${step.state || "upcoming"}${step.locked ? " locked" : ""}` }, /* @__PURE__ */ React.createElement("div", { className: "step-head" }, /* @__PURE__ */ React.createElement("strong", null, step.label), /* @__PURE__ */ React.createElement("span", { className: `step-status ${step.state || "upcoming"}` }, stepBadgeLabel(step))), /* @__PURE__ */ React.createElement("span", null, step.description))))), /* @__PURE__ */ React.createElement("section", { className: "workbench-main" }, workflow.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Workflow unavailable", body: workflow.error }) : null, draft.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Draft unavailable", body: draft.error }) : null, workflows.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Workflow catalog unavailable", body: workflows.error }) : null, authoringCatalog.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Authoring catalog unavailable", body: authoringCatalog.error }) : null, actionNotice ? /* @__PURE__ */ React.createElement(Message, { tone: actionNotice.tone, title: actionNotice.title, body: actionNotice.body }) : null, busy ? /* @__PURE__ */ React.createElement(LoadingCard, { label: busy }) : null, draftId && draft.loading && !draft.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading draft" }) : null, !draftId && (workflow.loading || authoringCatalog.loading) && !workflow.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading workflow authoring surface" }) : null, /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel workbench-hero" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Workbench"), /* @__PURE__ */ React.createElement("h2", null, draftId ? "Author workflow fields and graph visually" : "Create a new authored workflow or clone one into a local draft"), /* @__PURE__ */ React.createElement("p", null, draftId ? "Use the shared backend authoring layer to change supported workflow fields, add or remove safe graph nodes and edges, validate inline, then run and compare without leaving the workbench." : "Start from scratch, a template, or an existing workflow. Draft state stays local and resumable while the reusable workflow file remains coherent on disk."), /* @__PURE__ */ React.createElement("div", { className: "meta-row" }, /* @__PURE__ */ React.createElement(SourceBadge, { source: activeWorkflow?.source || "builtin" }), activeDraft?.creation_mode ? /* @__PURE__ */ React.createElement("span", null, "Mode: ", activeDraft.creation_mode) : null, activeDraft?.draft_workflow_name ? /* @__PURE__ */ React.createElement("span", null, "Draft: ", activeDraft.draft_workflow_name) : null, activeDraft?.baseline_run_id ? /* @__PURE__ */ React.createElement("span", null, "Baseline: ", activeDraft.baseline_run_id) : overviewLatestRun?.run_id ? /* @__PURE__ */ React.createElement("span", null, "Suggested baseline: ", overviewLatestRun.run_id) : null, activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement("span", null, "Candidate: ", activeDraft.last_run_id) : null), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, overviewLatestRun?.run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${overviewLatestRun.run_id}`) }, "Inspect latest run") : /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate("/runs") }, "Browse runs"), activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${activeDraft.last_run_id}`) }, "Inspect candidate run") : null)), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "1. Create draft"), /* @__PURE__ */ React.createElement("h3", null, "Start from scratch, template, or clone")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Creation routes all flow through the shared backend authoring service and still land in the local draft + workflow file model.")), /* @__PURE__ */ React.createElement("div", { className: "creation-mode-row" }, creationModes.map((mode) => /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        key: mode.key,
+        className: creationMode === mode.key ? "workflow-tile active" : "workflow-tile",
+        onClick: () => setCreationMode(String(mode.key || "clone")),
+        type: "button"
+      },
+      /* @__PURE__ */ React.createElement("strong", null, mode.label),
+      /* @__PURE__ */ React.createElement("span", { className: "workflow-note" }, mode.detail)
+    ))), /* @__PURE__ */ React.createElement("div", { className: "split-grid" }, /* @__PURE__ */ React.createElement("section", { className: "surface-card section-stack" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Draft workflow name"), /* @__PURE__ */ React.createElement("input", { value: createForm.draft_workflow_name || "", onChange: (event) => setCreateForm((current) => ({ ...current, draft_workflow_name: event.target.value })), placeholder: "my-authored-workflow" })), creationMode === "clone" ? /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Source workflow"), /* @__PURE__ */ React.createElement("select", { value: createForm.source_workflow_name || selectedWorkflow, onChange: (event) => setCreateForm((current) => ({ ...current, source_workflow_name: event.target.value })) }, (workflows.data?.items || []).map((item) => /* @__PURE__ */ React.createElement("option", { key: item.name, value: item.name }, item.title || item.name)))) : null, creationMode === "template" ? /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Starter template"), /* @__PURE__ */ React.createElement("select", { value: createForm.template_id || "", onChange: (event) => setCreateForm((current) => ({ ...current, template_id: event.target.value })) }, templates.map((item) => /* @__PURE__ */ React.createElement("option", { key: item.template_id, value: item.template_id }, item.title)))) : null, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Title"), /* @__PURE__ */ React.createElement("input", { value: createForm.title || "", onChange: (event) => setCreateForm((current) => ({ ...current, title: event.target.value })), placeholder: "Optional display title" })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Description"), /* @__PURE__ */ React.createElement("textarea", { className: "text-area-input", value: createForm.description || "", onChange: (event) => setCreateForm((current) => ({ ...current, description: event.target.value })), placeholder: "Optional authoring summary" })), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: createDraftFromMode, disabled: Boolean(busy) || creationDisabled }, "Create draft"), !draftId && activeWorkflow?.name ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/workflows/${encodeURIComponent(activeWorkflow.name)}`) }, "Open workflow detail") : null)), /* @__PURE__ */ React.createElement("section", { className: "surface-card section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, activeWorkflow?.title || activeWorkflow?.name || selectedWorkflow), /* @__PURE__ */ React.createElement("p", null, activeWorkflow?.description || "Select a workflow or choose a starter mode.")), /* @__PURE__ */ React.createElement(SourceBadge, { source: activeWorkflow?.source || "builtin" })), activeDraft ? /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Draft mode"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.creation_mode || "clone")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Source"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.source_workflow_name || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Local workflow"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.draft_workflow_name || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Status"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.status || "\u2014"))) : activeWorkflow ? /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Workflow kind"), /* @__PURE__ */ React.createElement("dd", null, activeWorkflow.workflow_kind || activeWorkflow.kind || "workflow")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Questions"), /* @__PURE__ */ React.createElement("dd", null, activeWorkflow.question_limit || workflow.data?.blueprint?.questions?.limit || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Runtime"), /* @__PURE__ */ React.createElement("dd", null, activeWorkflow.runtime_provider || workflow.data?.blueprint?.runtime?.provider || "mock")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Action"), /* @__PURE__ */ React.createElement("dd", null, creationMode === "clone" ? "Clone this workflow into a local authored draft." : creationMode === "template" ? "Create a new workflow from the selected starter template." : "Create a fresh safe starter workflow and begin authoring."))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "Select a workflow", body: "The workbench will show the current workflow summary here before you create a draft." }))), /* @__PURE__ */ React.createElement("div", { className: "workflow-list workflow-catalog" }, (workflows.data?.items || []).map((item) => /* @__PURE__ */ React.createElement(
       "button",
       {
         key: item.name,
         className: item.name === activeWorkflow?.name ? "workflow-tile active" : "workflow-tile",
-        onClick: () => navigate(`/workbench?workflow=${encodeURIComponent(item.name)}`)
+        onClick: () => navigate(`/workbench?workflow=${encodeURIComponent(item.name)}`),
+        type: "button"
       },
       /* @__PURE__ */ React.createElement("div", { className: "workflow-tile-head" }, /* @__PURE__ */ React.createElement("strong", null, item.title), /* @__PURE__ */ React.createElement(SourceBadge, { source: item.source })),
       /* @__PURE__ */ React.createElement("span", null, item.name),
-      /* @__PURE__ */ React.createElement("span", { className: "workflow-note" }, item.source === "builtin" ? "Read-only until cloned" : "Local workflow available for a draft session")
-    )))), /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "2. Safe edit"), /* @__PURE__ */ React.createElement("h3", null, "Change only the fields this product contract supports")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Question limits, report output, and supported aggregate weights are editable. No arbitrary JSON editor is exposed.")), /* @__PURE__ */ React.createElement("div", { className: "supported-edit-list" }, safeEditSupport.map((edit) => /* @__PURE__ */ React.createElement("article", { key: edit.key, className: "supported-edit-card" }, /* @__PURE__ */ React.createElement("strong", null, edit.label), /* @__PURE__ */ React.createElement("p", null, edit.detail)))), !draftId ? /* @__PURE__ */ React.createElement(
-      EmptyState,
+      /* @__PURE__ */ React.createElement("span", { className: "workflow-note" }, item.source === "builtin" ? "Clone to author visually" : "Open a draft session for this local workflow")
+    )))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "2. Workflow fields"), /* @__PURE__ */ React.createElement("h3", null, "Edit supported core fields through the shared authoring layer")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Title, description, workflow kind, bounded runtime settings, scoring, and artifact toggles stay inside the safe product contract.")), !draftId ? /* @__PURE__ */ React.createElement(EmptyState, { title: "Create a draft to unlock field editing", body: "Once a draft exists, this form edits the authored workflow fields that the shared backend service supports." }) : /* @__PURE__ */ React.createElement("div", { className: "form-grid guided-form" }, /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Title"), /* @__PURE__ */ React.createElement("input", { value: coreForm.title || "", onChange: (event) => setCoreForm((current) => ({ ...current, title: event.target.value })) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Workflow kind"), /* @__PURE__ */ React.createElement("input", { value: coreForm.workflow_kind || "", onChange: (event) => setCoreForm((current) => ({ ...current, workflow_kind: event.target.value })), list: "workflow-kind-options" }))), /* @__PURE__ */ React.createElement("datalist", { id: "workflow-kind-options" }, (authoringCatalog.data?.workflow_kind_options || []).map((item) => /* @__PURE__ */ React.createElement("option", { key: item, value: item }))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Description"), /* @__PURE__ */ React.createElement("textarea", { className: "text-area-input", value: coreForm.description || "", onChange: (event) => setCoreForm((current) => ({ ...current, description: event.target.value })) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Tags"), /* @__PURE__ */ React.createElement("input", { value: coreForm.tags || "", onChange: (event) => setCoreForm((current) => ({ ...current, tags: event.target.value })), placeholder: "starter, local, benchmark" })), /* @__PURE__ */ React.createElement("div", { className: "three-column-grid compact-form-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Questions limit"), /* @__PURE__ */ React.createElement("input", { type: "number", min: 1, max: 25, value: coreForm.questions_limit || "", onChange: (event) => setCoreForm((current) => ({ ...current, questions_limit: event.target.value })) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Runtime provider"), /* @__PURE__ */ React.createElement("select", { value: coreForm.runtime_provider || "mock", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_provider: event.target.value })) }, (authoringCatalog.data?.runtime_provider_options || []).map((item) => /* @__PURE__ */ React.createElement("option", { key: item, value: item }, item)))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Max tokens"), /* @__PURE__ */ React.createElement("input", { type: "number", min: 1, value: coreForm.runtime_max_tokens || "", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_max_tokens: event.target.value })) }))), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Runtime base URL"), /* @__PURE__ */ React.createElement("input", { value: coreForm.runtime_base_url || "", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_base_url: event.target.value })), placeholder: "http://127.0.0.1:11434/v1" })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Runtime model"), /* @__PURE__ */ React.createElement("input", { value: coreForm.runtime_model || "", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_model: event.target.value })), placeholder: "phi-4-mini" }))), /* @__PURE__ */ React.createElement("div", { className: "three-column-grid compact-form-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write HTML report"), /* @__PURE__ */ React.createElement("select", { value: coreForm.artifacts_write_report || "true", onChange: (event) => setCoreForm((current) => ({ ...current, artifacts_write_report: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write blueprint copy"), /* @__PURE__ */ React.createElement("select", { value: coreForm.artifacts_write_blueprint_copy || "true", onChange: (event) => setCoreForm((current) => ({ ...current, artifacts_write_blueprint_copy: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write graph trace"), /* @__PURE__ */ React.createElement("select", { value: coreForm.artifacts_write_graph_trace || "true", onChange: (event) => setCoreForm((current) => ({ ...current, artifacts_write_graph_trace: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false")))), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write eval"), /* @__PURE__ */ React.createElement("select", { value: coreForm.scoring_write_eval || "true", onChange: (event) => setCoreForm((current) => ({ ...current, scoring_write_eval: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write train backtest"), /* @__PURE__ */ React.createElement("select", { value: coreForm.scoring_write_train_backtest || "true", onChange: (event) => setCoreForm((current) => ({ ...current, scoring_write_train_backtest: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false")))), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: applyCoreFields, disabled: Boolean(busy) }, "Apply workflow fields")))), /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "3. Visual graph authoring"), /* @__PURE__ */ React.createElement("h3", null, "Edit nodes, edges, and entry against the rendered workflow graph")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Basic node, edge, and entry changes are editable here. Parallel groups and conditional routes stay visible but read-only for now.")), !draftId ? /* @__PURE__ */ React.createElement(EmptyState, { title: "Create a draft to unlock graph authoring", body: "The canvas becomes editable as soon as you open a draft session." }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(WorkflowCanvasSurface, { canvas: activeCanvas, entry: String(activeGraph.entry || ""), selectedNodeName, onSelect: setSelectedNodeName }), /* @__PURE__ */ React.createElement("div", { className: "three-column-grid authoring-grid" }, /* @__PURE__ */ React.createElement("section", { className: "surface-card section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Selected node"), /* @__PURE__ */ React.createElement("p", null, selectedNode ? `Edit ${selectedNode.name} inline.` : "Select a node from the canvas to edit it.")), selectedNode ? /* @__PURE__ */ React.createElement(StatusPill, { value: selectedNode.kind || "node" }) : null), selectedNode ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("dl", { className: "context-list compact-context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Implementation"), /* @__PURE__ */ React.createElement("dd", null, selectedNode.implementation || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Runtime"), /* @__PURE__ */ React.createElement("dd", null, selectedNode.runtime || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Entry"), /* @__PURE__ */ React.createElement("dd", null, selectedNode.is_entry ? "Yes" : "No"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Description"), /* @__PURE__ */ React.createElement("textarea", { className: "text-area-input", value: nodeForm.description || "", onChange: (event) => setNodeForm((current) => ({ ...current, description: event.target.value })) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Runtime label"), /* @__PURE__ */ React.createElement("input", { value: nodeForm.runtime || "", onChange: (event) => setNodeForm((current) => ({ ...current, runtime: event.target.value })), placeholder: "Optional runtime tag" })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Optional"), /* @__PURE__ */ React.createElement("select", { value: nodeForm.optional || "false", onChange: (event) => setNodeForm((current) => ({ ...current, optional: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "false" }, "false"), /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"))), (selectedNode.aggregate_weights || []).map((item) => {
+      const key = `weight:${String(item.name)}`;
+      return /* @__PURE__ */ React.createElement("label", { key }, /* @__PURE__ */ React.createElement("span", null, item.name, " weight"), /* @__PURE__ */ React.createElement("input", { type: "number", min: 0, max: 100, value: nodeForm[key] || "", onChange: (event) => setNodeForm((current) => ({ ...current, [key]: event.target.value })) }));
+    }), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: applyNodeUpdates, disabled: Boolean(busy) }, "Apply node changes"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => void setEntry(String(selectedNode.name)), disabled: Boolean(busy) || selectedNode.is_entry }, "Set as entry"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: removeSelectedNode, disabled: Boolean(busy) }, "Remove node"))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No node selected", body: "Pick a node from the canvas to edit its supported fields." })), /* @__PURE__ */ React.createElement("section", { className: "surface-card section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Add safe node"), /* @__PURE__ */ React.createElement("p", null, "Pick a built-in safe node implementation, then connect it with basic graph edges."))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Node name"), /* @__PURE__ */ React.createElement("input", { value: addNodeForm.node_name || "", onChange: (event) => setAddNodeForm((current) => ({ ...current, node_name: event.target.value })), placeholder: "question_context_2" })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Implementation"), /* @__PURE__ */ React.createElement("select", { value: addNodeForm.implementation || "", onChange: (event) => setAddNodeForm((current) => ({ ...current, implementation: event.target.value })) }, nodeCatalog.map((item) => /* @__PURE__ */ React.createElement("option", { key: item.implementation, value: item.implementation }, item.name, " \xB7 ", item.kind)))), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Incoming from"), /* @__PURE__ */ React.createElement("select", { value: addNodeForm.incoming_from || "", onChange: (event) => setAddNodeForm((current) => ({ ...current, incoming_from: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "None"), graphTargets.map((target) => /* @__PURE__ */ React.createElement("option", { key: target.name, value: target.name }, target.name)))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Outgoing to"), /* @__PURE__ */ React.createElement("select", { value: addNodeForm.outgoing_to || "", onChange: (event) => setAddNodeForm((current) => ({ ...current, outgoing_to: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "None"), graphTargets.map((target) => /* @__PURE__ */ React.createElement("option", { key: target.name, value: target.name }, target.name))))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Description"), /* @__PURE__ */ React.createElement("textarea", { className: "text-area-input", value: addNodeForm.description || "", onChange: (event) => setAddNodeForm((current) => ({ ...current, description: event.target.value })) })), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Runtime label"), /* @__PURE__ */ React.createElement("input", { value: addNodeForm.runtime || "", onChange: (event) => setAddNodeForm((current) => ({ ...current, runtime: event.target.value })), placeholder: "Optional runtime tag" })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Optional"), /* @__PURE__ */ React.createElement("select", { value: addNodeForm.optional || "false", onChange: (event) => setAddNodeForm((current) => ({ ...current, optional: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "false" }, "false"), /* @__PURE__ */ React.createElement("option", { value: "true" }, "true")))), /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: addNode, disabled: Boolean(busy) || !addNodeForm.node_name || !addNodeForm.implementation }, "Add node")), /* @__PURE__ */ React.createElement("section", { className: "surface-card section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Edges + advanced graph context"), /* @__PURE__ */ React.createElement("p", null, "Add or remove simple edges here. Parallel groups and routes stay visible for review."))), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "From"), /* @__PURE__ */ React.createElement("select", { value: addEdgeForm.from_node || "", onChange: (event) => setAddEdgeForm((current) => ({ ...current, from_node: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "Select"), graphTargets.map((target) => /* @__PURE__ */ React.createElement("option", { key: target.name, value: target.name }, target.name)))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "To"), /* @__PURE__ */ React.createElement("select", { value: addEdgeForm.to_node || "", onChange: (event) => setAddEdgeForm((current) => ({ ...current, to_node: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "Select"), graphTargets.map((target) => /* @__PURE__ */ React.createElement("option", { key: target.name, value: target.name }, target.name))))), /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: addEdge, disabled: Boolean(busy) || !addEdgeForm.from_node || !addEdgeForm.to_node }, "Add edge"), /* @__PURE__ */ React.createElement("div", { className: "edge-list" }, (activeGraph.edges || []).map((edge, index) => /* @__PURE__ */ React.createElement("div", { key: `${edge.from}-${edge.to}-${index}`, className: "edge-row" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, edge.from), /* @__PURE__ */ React.createElement("span", null, edge.to)), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => void removeEdge(String(edge.from), String(edge.to)), disabled: Boolean(busy) }, "Remove")))), Object.keys(activeGraph.parallel_groups || {}).length || Object.keys(activeGraph.conditional_routes || {}).length ? /* @__PURE__ */ React.createElement("div", { className: "guidance-section minor-divider" }, Object.keys(activeGraph.parallel_groups || {}).length ? /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Parallel groups"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list compact-list" }, Object.entries(activeGraph.parallel_groups).map(([name, members]) => /* @__PURE__ */ React.createElement("li", { key: name }, /* @__PURE__ */ React.createElement("strong", null, name), /* @__PURE__ */ React.createElement("span", null, Array.isArray(members) ? members.join(", ") : ""))))) : null, Object.keys(activeGraph.conditional_routes || {}).length ? /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Conditional routes"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list compact-list" }, Object.entries(activeGraph.conditional_routes).map(([name, route2]) => /* @__PURE__ */ React.createElement("li", { key: name }, /* @__PURE__ */ React.createElement("strong", null, name), /* @__PURE__ */ React.createElement("span", null, JSON.stringify(route2)))))) : null) : null)))), /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "4. Validate + run"), /* @__PURE__ */ React.createElement("h3", null, "Validate inline, then run only when the authored draft is safe")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Validation stays inside the authoring loop so you can fix problems without losing the current graph state.")), !draftId ? /* @__PURE__ */ React.createElement(EmptyState, { title: "No draft to validate yet", body: "Create or open a draft session first. Then this panel will keep validation, fixes, and run readiness together." }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Message, { tone: validationStatus.tone, title: validationStatus.title, body: validationStatus.body }), validationFixes.length ? /* @__PURE__ */ React.createElement("ul", { className: "teaching-list" }, validationFixes.map((note) => /* @__PURE__ */ React.createElement("li", { key: note }, note))) : null, /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: validateDraft, disabled: Boolean(busy) }, "Validate draft"), /* @__PURE__ */ React.createElement("button", { className: "primary-button", disabled: Boolean(busy) || runDisabled, onClick: runDraft }, "Run candidate")))), /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "5. Compare + next step"), /* @__PURE__ */ React.createElement("h3", null, "Keep validate, run, and compare inside the same authoring loop")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Once the candidate finishes, compare it immediately or jump into the run detail from the same workbench surface.")), activeDraft?.compare ? /* @__PURE__ */ React.createElement("div", { className: "compare-outcome" }, /* @__PURE__ */ React.createElement(Message, { tone: "success", title: `Compare verdict: ${activeDraft.compare.verdict?.label || "ready"}`, body: activeDraft.compare.verdict?.summary || "Open the comparison to inspect detailed metric deltas." }), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, (activeDraft.compare.next_actions || []).map((action, index) => /* @__PURE__ */ React.createElement("button", { key: action.href || action.label || index, className: index === 0 ? "primary-button" : "secondary-button", onClick: () => navigate(action.href) }, action.label)))) : activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement(Message, { tone: "success", title: "Candidate run completed", body: "Inspect the candidate run now. Add a baseline if you want to compare it before deciding on the next edit." }) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No candidate run yet", body: "Once validation passes and you run a candidate, this panel will explain whether to compare, iterate, or stop." }))), /* @__PURE__ */ React.createElement("aside", { className: "panel guidance-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Next step"), /* @__PURE__ */ React.createElement("section", { className: "next-step-card" }, /* @__PURE__ */ React.createElement("strong", null, nextStep.title), /* @__PURE__ */ React.createElement("p", null, nextStep.detail)), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "Authoring contract"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, safeEditLimitations.map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item)))), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "Supported safe edits"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list compact-list" }, safeEditSupport.map((item) => /* @__PURE__ */ React.createElement("li", { key: item.key }, /* @__PURE__ */ React.createElement("strong", null, item.label), /* @__PURE__ */ React.createElement("span", null, item.detail))))), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "What stays authoritative"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, sourceOfTruth.map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item))))));
+  }
+  function WorkflowCanvasSurface({
+    canvas,
+    entry,
+    selectedNodeName,
+    onSelect
+  }) {
+    const nodes = (canvas?.nodes || []).filter((node) => typeof node?.name === "string");
+    const edges = canvas?.edges || [];
+    if (!nodes.length) {
+      return /* @__PURE__ */ React.createElement(EmptyState, { title: "No graph nodes yet", body: "Add a node or load another workflow to populate the visual graph surface." });
+    }
+    const width = Math.max(360, ...nodes.map((node) => Number(node.x || 0) + 220));
+    const height = Math.max(220, ...nodes.map((node) => Number(node.y || 0) + 120));
+    const positions = Object.fromEntries(nodes.map((node) => [String(node.name), { x: Number(node.x || 0), y: Number(node.y || 0) }]));
+    return /* @__PURE__ */ React.createElement("div", { className: "workflow-canvas-shell" }, /* @__PURE__ */ React.createElement("div", { className: "workflow-canvas-stage", style: { height: `${height}px` } }, /* @__PURE__ */ React.createElement("svg", { className: "workflow-canvas-svg", viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: "xMinYMin meet" }, /* @__PURE__ */ React.createElement("defs", null, /* @__PURE__ */ React.createElement("marker", { id: "workflow-arrow", markerWidth: "8", markerHeight: "8", refX: "7", refY: "4", orient: "auto" }, /* @__PURE__ */ React.createElement("path", { d: "M0,0 L8,4 L0,8 z", fill: "#91a5ca" }))), edges.map((edge, index) => {
+      const from = positions[String(edge.from || "")];
+      const to = positions[String(edge.to || "")];
+      if (!from || !to) return null;
+      const x1 = from.x + 164;
+      const y1 = from.y + 34;
+      const x2 = to.x;
+      const y2 = to.y + 34;
+      const midX = (x1 + x2) / 2;
+      const midY = (y1 + y2) / 2;
+      return /* @__PURE__ */ React.createElement("g", { key: `${edge.from}-${edge.to}-${index}` }, /* @__PURE__ */ React.createElement("path", { className: "workflow-canvas-edge", d: `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`, markerEnd: "url(#workflow-arrow)" }), edge.label ? /* @__PURE__ */ React.createElement("text", { className: "workflow-canvas-label", x: midX, y: midY - 6 }, String(edge.label)) : null);
+    })), nodes.map((node) => /* @__PURE__ */ React.createElement(
+      "button",
       {
-        title: "Editing stays locked until you create a draft",
-        body: "Choose Clone into local draft first. Built-in workflows remain read-only reference blueprints until the clone step succeeds."
-      }
-    ) : /* @__PURE__ */ React.createElement(React.Fragment, null, activeDraft?.preview_error ? /* @__PURE__ */ React.createElement(Message, { tone: "warning", title: "Safe edit needs attention", body: `${activeDraft.preview_error} Fix the supported fields below; your draft session is still preserved in SQLite.` }) : null, /* @__PURE__ */ React.createElement("div", { className: "form-grid guided-form" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Questions limit"), /* @__PURE__ */ React.createElement("span", { className: "field-help" }, "Safe range ", activeSafeEdit?.questions_limit?.min || 1, "\u2013", activeSafeEdit?.questions_limit?.max || 25, ". This only changes the cloned workflow."), /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        type: "number",
-        min: activeSafeEdit?.questions_limit?.min || 1,
-        max: activeSafeEdit?.questions_limit?.max || 25,
-        value: formValues.questions_limit || "",
-        onChange: (event) => updateFormValue("questions_limit", event.target.value)
-      }
-    )), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write HTML report"), /* @__PURE__ */ React.createElement("span", { className: "field-help" }, "Choose whether the candidate run writes report.html."), /* @__PURE__ */ React.createElement(
-      "select",
-      {
-        value: formValues.artifacts_write_report || "true",
-        onChange: (event) => updateFormValue("artifacts_write_report", event.target.value)
+        key: node.name,
+        type: "button",
+        className: `workflow-canvas-node ${selectedNodeName === node.name ? "selected" : ""} ${entry === node.name ? "entry" : ""}`,
+        style: { left: `${Number(node.x || 0)}px`, top: `${Number(node.y || 0)}px` },
+        onClick: () => onSelect(String(node.name))
       },
-      /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"),
-      /* @__PURE__ */ React.createElement("option", { value: "false" }, "false")
-    )), (activeSafeEdit?.aggregate_weight_editors || []).map((editor) => /* @__PURE__ */ React.createElement("div", { key: editor.node, className: "weight-editor" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h4", null, editor.node), /* @__PURE__ */ React.createElement("p", { className: "field-help" }, "Adjust upstream candidate weights only. Weights are normalized when the draft is validated.")), editor.contributors.map((contributor) => {
-      const key = `weight:${editor.node}:${contributor.name}`;
-      return /* @__PURE__ */ React.createElement("label", { key }, /* @__PURE__ */ React.createElement("span", null, contributor.name), /* @__PURE__ */ React.createElement(
-        "input",
-        {
-          type: "number",
-          min: 0,
-          max: 100,
-          value: formValues[key] || "",
-          onChange: (event) => updateFormValue(key, event.target.value)
-        }
-      ));
-    })))))), /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "3. Validate + run"), /* @__PURE__ */ React.createElement("h3", null, "Validate inline, then run only when the latest draft is safe")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Validation stays inside the edit flow so you can fix problems without losing the current draft context.")), !draftId ? /* @__PURE__ */ React.createElement(EmptyState, { title: "No draft to validate yet", body: "Clone or reopen a local draft session first. Then this panel will keep validation, fixes, and run readiness together." }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Message, { tone: validationStatus.tone, title: validationStatus.title, body: validationStatus.body }), validationFixes.length ? /* @__PURE__ */ React.createElement("ul", { className: "teaching-list" }, validationFixes.map((note) => /* @__PURE__ */ React.createElement("li", { key: note }, note))) : null, /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: saveDraft }, "Save draft"), /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: validateDraft }, "Save + validate"), /* @__PURE__ */ React.createElement("button", { className: "primary-button", disabled: runDisabled, onClick: runDraft }, "Run candidate")))), /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "4. Compare + next step"), /* @__PURE__ */ React.createElement("h3", null, "Use the outcome to decide what happens next")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Success states should teach the next action: inspect the candidate, compare it with the baseline, or keep iterating.")), activeDraft?.compare ? /* @__PURE__ */ React.createElement("div", { className: "compare-outcome" }, /* @__PURE__ */ React.createElement(Message, { tone: "success", title: `Compare verdict: ${activeDraft.compare.verdict?.label || "ready"}`, body: activeDraft.compare.verdict?.summary || "Open the comparison to inspect detailed metric deltas." }), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, (activeDraft.compare.next_actions || []).map((action, index) => /* @__PURE__ */ React.createElement("button", { key: action.href || action.label || index, className: index === 0 ? "primary-button" : "secondary-button", onClick: () => navigate(action.href) }, action.label)))) : activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement(Message, { tone: "success", title: "Candidate run completed", body: "Inspect the candidate run now. Add a baseline if you want to compare it before deciding on the next edit." }) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No candidate run yet", body: "Once validation passes and you run a candidate, this panel will explain whether to compare, iterate, or stop." })), /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Canvas"), /* @__PURE__ */ React.createElement("h3", null, "See the workflow before you change it")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "The canvas stays visible so inspection and editing happen against the same workflow structure.")), /* @__PURE__ */ React.createElement("div", { className: "canvas-grid" }, (activeCanvas?.nodes || []).map((node) => /* @__PURE__ */ React.createElement("article", { key: node.name, className: "canvas-node" }, /* @__PURE__ */ React.createElement("strong", null, node.name), /* @__PURE__ */ React.createElement("span", null, node.kind), /* @__PURE__ */ React.createElement("span", null, node.description || node.implementation || "No description"), /* @__PURE__ */ React.createElement(StatusPill, { value: node.status || "not-run" })))))), /* @__PURE__ */ React.createElement("aside", { className: "panel guidance-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Next step"), /* @__PURE__ */ React.createElement("section", { className: "next-step-card" }, /* @__PURE__ */ React.createElement("strong", null, nextStep.title), /* @__PURE__ */ React.createElement("p", null, nextStep.detail)), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "Safe-edit contract"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, safeEditLimitations.map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item)))), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "Supported fields"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list compact-list" }, safeEditSupport.map((item) => /* @__PURE__ */ React.createElement("li", { key: item.key }, /* @__PURE__ */ React.createElement("strong", null, item.label), /* @__PURE__ */ React.createElement("span", null, item.detail))))), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "What stays authoritative"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, sourceOfTruth.map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item))))));
+      /* @__PURE__ */ React.createElement("strong", null, node.name),
+      /* @__PURE__ */ React.createElement("span", null, node.kind),
+      /* @__PURE__ */ React.createElement(StatusPill, { value: node.status || (entry === node.name ? "entry" : "ready") })
+    ))));
+  }
+  function normalizeText(value) {
+    const text = String(value || "").trim();
+    return text ? text : null;
+  }
+  function parseBooleanString(value) {
+    return String(value || "false").toLowerCase() === "true";
   }
   function draftlessStepState(activeWorkflow) {
     const source = activeWorkflow?.source || "builtin";
-    const cloneDescription = source === "local" ? "Open a draft session for the local workflow." : "Clone the built-in workflow before editing.";
+    const cloneDescription = source === "local" ? "Open a draft session for the local workflow." : "Create a draft from scratch, template, or clone before editing.";
     return [
       { key: "inspect", label: "Inspect", locked: false, description: "Review the workflow and choose a baseline run." },
-      { key: "clone", label: "Clone", locked: false, description: cloneDescription },
-      { key: "edit", label: "Safe edit", locked: true, description: "Locked until a draft session exists." },
-      { key: "validate", label: "Validate", locked: true, description: "Locked until the safe edit can be checked inline." },
+      { key: "clone", label: "Create", locked: false, description: cloneDescription },
+      { key: "edit", label: "Author", locked: true, description: "Locked until a draft session exists." },
+      { key: "validate", label: "Validate", locked: true, description: "Locked until the authored draft can be checked inline." },
       { key: "run", label: "Run", locked: true, description: "Locked until validation passes." },
       { key: "compare", label: "Compare", locked: true, description: "Locked until a candidate run exists." },
       { key: "next-step", label: "Next step", locked: false, description: "The workbench will explain what to do after each step." }
@@ -730,10 +1069,14 @@
   function buildActionErrorNotice(stage, error) {
     const message = error instanceof Error ? error.message : String(error);
     const hints = {
-      clone: "Built-in workflows remain read-only until the clone step succeeds.",
-      save: "Only the supported safe-edit fields can be stored in the draft session.",
+      clone: "Built-in workflows remain read-only until the draft creation step succeeds.",
+      create: "Use one of the supported scratch, template, or clone modes to create a safe authored draft.",
+      workflow: "Only the supported authored workflow fields can be changed from this surface.",
+      node: "Stay inside the built-in safe node catalog and keep the graph connected when you change nodes.",
+      edge: "Basic edge edits must keep the graph reachable and acyclic.",
+      entry: "Choose an existing node or group as the workflow entry.",
       validate: "Fix the supported fields below, then validate again without losing the current draft context.",
-      run: "The draft stays loaded. Re-validate the latest safe edit before you try another run."
+      run: "The draft stays loaded. Re-validate the latest authored graph before you try another run."
     };
     return {
       tone: "error",
@@ -754,7 +1097,7 @@
       return {
         tone: "warning",
         title: "Validate before run",
-        body: "Save and validate inline before you run this draft. The run step stays locked until the latest validation passes."
+        body: "Validate inline before you run this draft. The run step stays locked until the latest validation passes."
       };
     }
     if (validation.ok && validation.stale) {
@@ -768,7 +1111,7 @@
       return {
         tone: "success",
         title: "Validation passed",
-        body: "The latest safe edit is runnable. Next: run a candidate and compare it with the baseline."
+        body: "The latest authored workflow is runnable. Next: run a candidate and compare it with the baseline."
       };
     }
     return {
@@ -792,7 +1135,7 @@
         notes.add("Enter every supported weight as a number from 0 to 100; the workbench will normalize them after validation.");
       }
       if (lower.includes("unsupported edit field")) {
-        notes.add("Stay inside the listed safe-edit fields. The workbench does not expose arbitrary JSON or implementation edits.");
+        notes.add("Stay inside the listed authoring controls. The workbench does not expose arbitrary JSON or unsupported implementation edits.");
       }
       if (lower.includes("clone this workflow")) {
         notes.add("Clone the workflow into a local draft first. Built-ins remain read-only reference blueprints.");
@@ -811,27 +1154,33 @@
     if (latestRun?.run_id) {
       return {
         key: "inspect",
-        title: "Inspect the latest run, then clone",
-        detail: "Review the baseline context first, then clone the built-in workflow into a local draft before making a safe edit."
+        title: "Inspect the latest run, then create a draft",
+        detail: "Review the baseline context first, then create a local authored draft before making visual changes."
       };
     }
     return {
       key: "clone",
-      title: "Clone a workflow to begin",
-      detail: "Choose a workflow from the catalog and create a local draft. Safe edits only unlock after that step succeeds."
+      title: "Create a draft to begin",
+      detail: "Choose a workflow from the catalog or starter modes, then create a local draft. Visual authoring unlocks after that step succeeds."
     };
   }
   function defaultSourceOfTruth() {
     return [
       "Built-in workflows stay read-only until you clone them into a local workflow.",
       "Reusable local workflows remain JSON files on disk.",
-      "Draft values, validation snapshots, and resume state live in SQLite."
+      "Draft blueprint state, validation snapshots, and resume state live in SQLite until validate or run writes the local workflow file."
     ];
   }
-  function formatRunContext(run) {
-    if (!run) return "\u2014";
-    const workflow = run.workflow?.title || run.workflow?.name;
-    return [run.run_id, workflow, run.status].filter(Boolean).join(" \xB7 ");
+  function defaultAuthoringLimitations() {
+    return [
+      "Only shared safe-product workflow fields and graph mutations are exposed.",
+      "Node implementations stay inside the built-in product workflow node catalog.",
+      "Parallel-group and conditional-route editing stay read-only in this pass.",
+      "API keys are not persisted as authored workflow fields from the WebUI."
+    ];
+  }
+  function playgroundStepKey(step) {
+    return String(step.order || step.node_id || "step");
   }
   function SourceBadge({ source }) {
     const normalized = String(source || "unknown").toLowerCase();
@@ -943,8 +1292,8 @@
   function defaultStepState() {
     return [
       { key: "inspect", label: "Inspect", locked: false, description: "Review the workflow and baseline context." },
-      { key: "clone", label: "Clone", locked: false, description: "Create or reopen a local draft session." },
-      { key: "edit", label: "Safe edit", locked: true, description: "Locked until a draft exists." },
+      { key: "clone", label: "Create", locked: false, description: "Create or reopen a local draft session." },
+      { key: "edit", label: "Author", locked: true, description: "Locked until a draft exists." },
       { key: "validate", label: "Validate", locked: true, description: "Validate inline before the run step unlocks." },
       { key: "run", label: "Run", locked: true, description: "Locked until validation passes." },
       { key: "compare", label: "Compare", locked: true, description: "Locked until a candidate run exists." },

@@ -37,7 +37,7 @@ full-fidelity export; CSV is the spreadsheet-friendly summary.
 The WebUI run detail page exposes the same report generation plus JSON/CSV
 export actions from the browser.
 
-## 3. Reopen the WebUI shell and guided workbench
+## 3. Reopen the WebUI shell and guided authoring surface
 
 ```bash
 xrtm web --runs-dir runs --workflows-dir .xrtm/workflows
@@ -54,11 +54,26 @@ stored in `.xrtm/webui/app-state.db`.
 
 `/start` launches quickstart, demo, and named workflow runs. `/operations`
 covers profiles, monitor lifecycle, artifact inventory, and cleanup
-preview/confirm. `/workbench` guides inspect → clone → safe edit → validate →
-run → compare.
-Safe edits stay bounded to `questions.limit`, report writing, and supported
-aggregate weights. It is not an arbitrary graph, JSON, implementation, or code
-editor.
+preview/confirm. `/workbench` guides inspect → scratch/template/clone → author
+shared core workflow fields plus safe node/edge/entry changes → validate → run
+→ compare.
+Authoring stays inside the released schema and built-in product node library.
+Parallel-group and conditional-route editing remain thin/read-only, and the
+surface is not an arbitrary graph, JSON, implementation, or code editor.
+
+The terminal exposes the same shared backend through `xrtm workflow create ...`
+and `xrtm workflow edit ...` when you prefer text-led authoring.
+
+In `0.8.2`, the same released shell also exposes `/playground` for a bounded
+exploratory sandbox: one custom question first, optional tiny follow-up batches
+capped at 5, read-only ordered step inspection, and explicit save-back to
+workflow/profile only. Keep playground runs exploratory and separate from
+benchmark or release evidence by default, and keep the released runtime wording
+provider-free unless wider validation is published separately.
+
+```bash
+xrtm playground --workflow demo-provider-free --question "Will the released 0.8.2 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
+```
 
 Use the terminal TUI when you only need read-only review:
 
@@ -94,6 +109,6 @@ work.
 
 - Profile commands need a writable workspace because `.xrtm/profiles/` is created locally.
 - If `xrtm runs compare` is noisy or confusing, confirm both runs are meant to be compared before drawing conclusions.
-- If the workbench rejects an edit, keep the change inside the released safe fields: `questions.limit`, report writing, and supported aggregate weights.
+- If the workbench rejects an edit, keep the change inside the released safe authoring contract: shared core workflow fields plus node/edge/entry edits within the built-in node library. Parallel-group and conditional-route edits still need the thinner path.
 - If `xrtm artifacts inspect --latest` fails, confirm `runs/` still contains at least one canonical run.
 - If you need the canonical install and first-run path again, return to [getting-started.md](getting-started.md).

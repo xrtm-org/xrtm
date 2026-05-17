@@ -1,19 +1,19 @@
 # Getting Started with XRTM
 
 This is the authoritative first-success path for the published
-`xrtm==0.8.0` package.
+`xrtm==0.8.2` package.
 
 You will install XRTM, choose either a CLI-led or WebUI-led first-success path,
 inspect the latest run, use report/export actions, open the local WebUI shell,
-make one safe workflow edit in Workbench, validate it, run it, compare the
-result, and then choose the next guide that matches your job.
+author one safe workflow draft in Workbench or CLI, validate it, run it,
+compare the result, and then choose the next guide that matches your job.
 
 ## 1. Install
 
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.8.0
+pip install xrtm==0.8.2
 ```
 
 **Supported Python versions:** `>=3.11,<3.13`
@@ -76,14 +76,42 @@ resume state stay in `.xrtm/webui/app-state.db`.
 Use `http://127.0.0.1:8765/start` when you want to launch first-success or
 named workflow runs, `http://127.0.0.1:8765/operations` when you want profile,
 monitor, or cleanup controls, and `http://127.0.0.1:8765/workbench` when you
-are ready to edit. The guided workbench keeps the baseline in view, creates a
-local draft, validates inline, runs a candidate, and links straight into run
-detail and compare pages. Its released editor is intentionally constrained: it
-can change `questions.limit` within the released bounds, toggle report writing,
-and adjust supported aggregate weights. It is not an arbitrary graph, JSON, or
-code editor.
+are ready to edit. The guided workbench keeps the baseline in view, starts a
+local draft from scratch, a released starter template, or a clone, and then
+lets you author shared workflow fields plus safe graph changes inside the
+released schema and built-in node library. In `0.8.2`, that includes metadata,
+questions, runtime, artifact/scoring settings, and node/edge/entry edits.
+Parallel-group and conditional-route editing remain thin/read-only, and this is
+not an arbitrary JSON, implementation, or code editor.
 
-## 5. Run from Start, then clone, safely edit, validate, run, and compare
+If you prefer the terminal, the same shared backend authoring layer also powers
+`xrtm workflow create scratch|template|clone ...`, `xrtm workflow edit ...`,
+`xrtm workflow validate ...`, `xrtm workflow explain ...`, and
+`xrtm workflow run ...`.
+
+```bash
+xrtm workflow create scratch my-workflow --workflows-dir .xrtm/workflows
+xrtm workflow validate my-workflow --workflows-dir .xrtm/workflows
+xrtm workflow explain my-workflow --workflows-dir .xrtm/workflows
+xrtm workflow run my-workflow --workflows-dir .xrtm/workflows --runs-dir runs
+```
+
+`xrtm==0.8.2` also releases the bounded Playground lane. Open
+`http://127.0.0.1:8765/playground` from the same local shell when you want one
+custom question first, optional tiny follow-up batches capped at 5, read-only
+ordered step inspection, and explicit save-back to workflow/profile only. Keep
+those runs exploratory and separate from benchmark or release evidence by
+default, and keep the released runtime wording provider-free unless wider
+validation is published separately.
+
+```bash
+xrtm playground --workflow demo-provider-free --question "Will the released 0.8.2 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
+```
+
+That released Playground command uses the provider-free baseline path and the
+same shared sandbox contract as the WebUI route.
+
+## 5. Run from Start, then author safely, validate, run, and compare
 
 From `/start` or `/workflows/<name>`:
 
@@ -96,8 +124,8 @@ From `/start` or `/workflows/<name>`:
 From the workbench:
 
 1. use Overview or Runs to inspect the baseline you want to keep in view
-2. clone `demo-provider-free` into a local draft
-3. change `questions.limit`, the report toggle, or supported aggregate weights
+2. start from scratch, a starter template, or a clone of `demo-provider-free`
+3. edit shared core workflow fields or safe node/edge/entry changes inside the released product schema/node library
 4. save and validate the draft inline
 5. run a candidate
 6. review `/runs/<candidate-run-id>` or `/runs/<candidate-run-id>/compare/<baseline-run-id>` before choosing the next step
