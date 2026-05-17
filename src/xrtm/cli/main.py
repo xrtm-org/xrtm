@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from shlex import quote as shell_quote
+from typing import Any
 
 import click
 from rich.console import Console
@@ -28,6 +30,12 @@ from xrtm.cli.presenters import (
     print_validation_report,
     profiles_dir_command_arg,
     runs_dir_command_arg,
+)
+from xrtm.product import (
+    WorkflowAuthoringError,
+    WorkflowAuthoringService,
+    list_builtin_workflow_nodes,
+    list_workflow_starter_templates,
 )
 from xrtm.product import launch as launch_module
 from xrtm.product.artifacts import ArtifactStore
@@ -80,10 +88,16 @@ from xrtm.product.validation import (
 from xrtm.product.web import create_web_server, web_snapshot
 from xrtm.product.workbench import workbench_snapshot as workflow_workbench_snapshot
 from xrtm.product.workflow_runner import run_workflow_blueprint
-from xrtm.product.workflows import DEFAULT_LOCAL_WORKFLOWS_DIR, WorkflowBlueprint, WorkflowRegistry
+from xrtm.product.workflows import DEFAULT_LOCAL_WORKFLOWS_DIR, NodeSpec, WorkflowBlueprint, WorkflowRegistry
 from xrtm.version import __version__
 
 console = Console()
+_WORKFLOW_PROVIDER_CHOICES = ("mock", "local-llm")
+_WORKFLOW_KIND_CHOICES = ("workflow", "benchmark")
+_WORKFLOW_TEMPLATES = list_workflow_starter_templates()
+_WORKFLOW_TEMPLATE_CHOICES = tuple(template.template_id for template in _WORKFLOW_TEMPLATES)
+_BUILTIN_WORKFLOW_NODES = {definition.name: definition for definition in list_builtin_workflow_nodes()}
+_BUILTIN_WORKFLOW_NODE_CHOICES = tuple(_BUILTIN_WORKFLOW_NODES)
 
 
 @click.group()
@@ -221,11 +235,19 @@ def _profile_write_permission_message(profiles_dir: Path, exc: PermissionError) 
     )
 
 
+def _workflow_destination_root(workflows_dir: Path) -> Path:
+    return workflows_dir if workflows_dir.is_absolute() else Path.cwd() / workflows_dir
+
+
 def _workflow_registry(workflows_dir: Path | None = None) -> WorkflowRegistry:
     if workflows_dir is None:
         return WorkflowRegistry()
     root = workflows_dir if workflows_dir.is_absolute() else Path.cwd() / workflows_dir
     return WorkflowRegistry(local_roots=(root,))
+
+
+def _workflow_authoring_service(workflows_dir: Path) -> WorkflowAuthoringService:
+    return WorkflowAuthoringService(_workflow_registry(workflows_dir))
 
 
 def _load_workflow(name: str, *, workflows_dir: Path | None = None) -> WorkflowBlueprint:
@@ -341,7 +363,10 @@ def _print_workflow_show(blueprint: WorkflowBlueprint, *, source_path: str | Non
 
 def _print_workflow_explain(name: str, *, workflows_dir: Path | None = None) -> None:
     try:
-        explanation = _workflow_registry(workflows_dir).explain(name)
+        explanation = launch_module.explain_registered_workflow(
+            name,
+            workflows_dir=workflows_dir or DEFAULT_LOCAL_WORKFLOWS_DIR,
+        )
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -357,6 +382,83 @@ def _print_workflow_explain(name: str, *, workflows_dir: Path | None = None) -> 
     for node in explanation["nodes"]:
         nodes.add_row(node["name"], node["kind"], node["runtime"], node["summary"])
     console.print(nodes)
+
+
+def _workflow_json_object_callback(
+    _: click.Context,
+    param: click.Parameter,
+    value: str | None,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise click.BadParameter(f"{param.name} must be valid JSON: {exc.msg}") from exc
+    if not isinstance(payload, dict):
+        raise click.BadParameter(f"{param.name} must decode to a JSON object")
+    return payload
+
+
+def _workflow_update_value(value: Any, *, clear: bool, label: str) -> tuple[bool, Any]:
+    if value is not None and clear:
+        raise click.ClickException(f"Cannot combine {label} with its clear flag.")
+    if clear:
+        return True, None
+    if value is not None:
+        return True, value
+    return False, None
+
+
+def _require_workflow_updates(updates: dict[str, Any], *, hint: str) -> None:
+    if not updates:
+        raise click.ClickException(f"No changes requested. {hint}")
+
+
+def _persist_authored_workflow(
+    service: WorkflowAuthoringService,
+    blueprint: WorkflowBlueprint,
+    *,
+    workflows_dir: Path,
+    overwrite: bool,
+) -> Path:
+    try:
+        return service.persist_workflow(
+            blueprint,
+            overwrite=overwrite,
+            destination_root=_workflow_destination_root(workflows_dir),
+        )
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _workflow_dir_flag(workflows_dir: Path) -> str:
+    return shell_quote(workflows_dir.as_posix())
+
+
+def _print_workflow_authoring_success(
+    *,
+    action: str,
+    name: str,
+    path: Path,
+    workflows_dir: Path,
+    include_run: bool = True,
+) -> None:
+    workflows_flag = _workflow_dir_flag(workflows_dir)
+    console.print(f"[green]Workflow {action}:[/green] {path}")
+    console.print(f"[blue]Show:[/blue] xrtm workflow show {name} --workflows-dir {workflows_flag}")
+    console.print(f"[blue]Explain:[/blue] xrtm workflow explain {name} --workflows-dir {workflows_flag}")
+    console.print(f"[blue]Validate:[/blue] xrtm workflow validate {name} --workflows-dir {workflows_flag}")
+    if include_run:
+        console.print(f"[blue]Run:[/blue] xrtm workflow run {name} --workflows-dir {workflows_flag} --runs-dir runs")
+
+
+def _load_workflow_for_authoring(name: str, *, workflows_dir: Path) -> WorkflowBlueprint:
+    return _load_workflow(name, workflows_dir=workflows_dir)
+
+
+def _builtin_node_definition(name: str):
+    return _BUILTIN_WORKFLOW_NODES[name]
 
 
 def _benchmark_arm_options(
@@ -427,6 +529,290 @@ def _show_local_llm_status(*, base_url: str | None, fail_on_unhealthy: bool) -> 
             f"For setup help, see: docs/getting-started.md"
         )
         raise click.ClickException(error_msg)
+
+
+def _prompt_line(label: str, *, default: str | None = None) -> str | None:
+    prompt = label
+    if default:
+        prompt = f"{prompt} [{default}]"
+    click.echo(f"{prompt}: ", nl=False)
+    line = click.get_text_stream("stdin").readline()
+    if line == "":
+        return default
+    value = line.strip()
+    if value:
+        return value
+    return default
+
+
+def _playground_default_selector(*, registry: WorkflowRegistry) -> str:
+    workflows = registry.list_workflows()
+    if any(workflow.name == "demo-provider-free" for workflow in workflows):
+        return "workflow:demo-provider-free"
+    if workflows:
+        return f"workflow:{workflows[0].name}"
+    if _WORKFLOW_TEMPLATES:
+        return f"template:{_WORKFLOW_TEMPLATES[0].template_id}"
+    raise click.ClickException("no workflows or starter templates are available for xrtm playground")
+
+
+def _print_playground_context_choices(*, registry: WorkflowRegistry) -> None:
+    workflows = registry.list_workflows()
+    workflow_table = Table(title="Workflow contexts")
+    workflow_table.add_column("Selector", style="cyan")
+    workflow_table.add_column("Runtime", style="green")
+    workflow_table.add_column("Source")
+    workflow_table.add_column("Title")
+    for workflow in workflows:
+        workflow_table.add_row(
+            f"workflow:{workflow.name}",
+            workflow.runtime_provider,
+            workflow.source,
+            workflow.title,
+        )
+    console.print(workflow_table)
+
+    template_table = Table(title="Starter template contexts")
+    template_table.add_column("Selector", style="cyan")
+    template_table.add_column("Kind", style="green")
+    template_table.add_column("Title")
+    for template in _WORKFLOW_TEMPLATES:
+        template_table.add_row(f"template:{template.template_id}", template.workflow_kind, template.title)
+    console.print(template_table)
+
+
+def _resolve_playground_context(
+    *,
+    workflow: str | None,
+    template: str | None,
+    workflows_dir: Path,
+    registry: WorkflowRegistry,
+) -> launch_module.SandboxContext:
+    try:
+        return launch_module.resolve_sandbox_context(
+            workflow_name=workflow,
+            template_id=template,
+            workflows_dir=workflows_dir,
+            registry=registry,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _select_playground_context(
+    *,
+    workflow: str | None,
+    template: str | None,
+    workflows_dir: Path,
+    registry: WorkflowRegistry,
+) -> launch_module.SandboxContext:
+    if workflow and template:
+        raise click.ClickException("pass either --workflow or --template, not both")
+    if workflow or template:
+        return _resolve_playground_context(
+            workflow=workflow,
+            template=template,
+            workflows_dir=workflows_dir,
+            registry=registry,
+        )
+
+    _print_playground_context_choices(registry=registry)
+    default_selector = _playground_default_selector(registry=registry)
+    while True:
+        selection = _prompt_line(
+            "Choose a playground context as workflow:<name> or template:<id>",
+            default=default_selector,
+        )
+        if not selection:
+            selection = default_selector
+        selector_type, separator, selector_name = selection.partition(":")
+        selector_type = selector_type.strip().lower()
+        selector_name = selector_name.strip()
+        if not separator or not selector_name or selector_type not in {"workflow", "template"}:
+            console.print("[yellow]Use workflow:<name> or template:<id>.[/yellow]")
+            continue
+        try:
+            return _resolve_playground_context(
+                workflow=selector_name if selector_type == "workflow" else None,
+                template=selector_name if selector_type == "template" else None,
+                workflows_dir=workflows_dir,
+                registry=registry,
+            )
+        except click.ClickException as exc:
+            console.print(f"[yellow]{exc.format_message()}[/yellow]")
+
+
+def _prompt_playground_question(*, seed_question: str | None = None, required: bool) -> str | None:
+    if seed_question is not None:
+        return seed_question
+    question = _prompt_line("Enter one exploratory playground question")
+    if question:
+        return question
+    if required:
+        raise click.ClickException("playground question is required; pass --question or enter one at the prompt")
+    return None
+
+
+def _playground_json(value: Any, *, limit: int = 1800) -> str:
+    payload = json.dumps(value, indent=2, sort_keys=True)
+    if len(payload) <= limit:
+        return payload
+    return f"{payload[: limit - 15].rstrip()}\n... [truncated]"
+
+
+def _print_playground_session(session: launch_module.SandboxSessionResult, *, runs_dir: Path) -> None:
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    session.labeling["display_label"],
+                    *session.labeling["notes"],
+                ]
+            ),
+            title="XRTM Playground",
+            border_style="yellow",
+        )
+    )
+
+    context_table = Table(title="Playground session")
+    context_table.add_column("Field", style="cyan")
+    context_table.add_column("Value", style="green")
+    context_table.add_row("Context", f"{session.context.context_type}:{session.context.reference_name}")
+    context_table.add_row("Workflow title", session.workflow.get("title", session.context.blueprint.title))
+    context_table.add_row("Runtime provider", str(session.run.get("provider", session.context.blueprint.runtime.provider)))
+    context_table.add_row("Run id", session.run_id)
+    context_table.add_row("Run dir", str(session.run_dir))
+    context_table.add_row("Status", str(session.run.get("status", "")))
+    context_table.add_row("Questions", str(len(session.questions)))
+    context_table.add_row("Duration (s)", f"{session.total_seconds:.3f}")
+    token_counts = session.run_summary.get("token_counts", {})
+    if token_counts:
+        context_table.add_row("Total tokens", str(token_counts.get("total_tokens", 0)))
+    console.print(context_table)
+
+    question_panel = []
+    for index, question in enumerate(session.questions, start=1):
+        question_panel.append(f"{index}. {question.get('title') or question.get('description')}")
+        description = question.get("description")
+        if description and description != question.get("title"):
+            question_panel.append(f"   prompt: {description}")
+        if question.get("resolution_criteria"):
+            question_panel.append(f"   resolution criteria: {question['resolution_criteria']}")
+    console.print(Panel("\n".join(question_panel), title="Exploratory question", border_style="blue"))
+
+    steps = Table(title="Step inspection")
+    steps.add_column("#", style="cyan", justify="right")
+    steps.add_column("Node", style="green")
+    steps.add_column("Type")
+    steps.add_column("Status")
+    steps.add_column("Preview")
+    steps.add_column("Artifacts")
+    for step in session.inspection_steps:
+        artifacts = ", ".join(artifact["name"] for artifact in step["artifacts"]) or "—"
+        steps.add_row(
+            str(step["order"]),
+            f"{step['node_id']} ({step['label']})" if step["label"] != step["node_id"] else step["node_id"],
+            str(step["node_type"]),
+            str(step["status"]),
+            str(step["output_preview"]),
+            artifacts,
+        )
+    console.print(steps)
+
+    for step in session.inspection_steps:
+        detail_payload = {"output": step["output"]}
+        if step["artifact_payloads"]:
+            detail_payload["artifact_payloads"] = step["artifact_payloads"]
+        if step["artifacts"]:
+            detail_payload["artifacts"] = step["artifacts"]
+        console.print(
+            Panel(
+                _playground_json(detail_payload),
+                title=f"Step {step['order']}: {step['node_id']}",
+                border_style="magenta",
+            )
+        )
+
+    workflow_state = session.save_back["workflow"]
+    profile_state = session.save_back["profile"]
+    save_back_lines = [
+        f"Workflow save-back: {workflow_state['status']} ({workflow_state['recommended_name']})",
+        f"Profile save-back: {profile_state['status']}",
+        "Explicit save-back actions stay outside this todo; this loop only reports readiness.",
+    ]
+    console.print(Panel("\n".join(save_back_lines), title="Explicit save-back readiness", border_style="green"))
+
+    runs_dir_arg = runs_dir_command_arg(runs_dir)
+    run_dir_arg = shell_quote(session.run_dir.as_posix())
+    artifact_lines = [
+        f"Read sandbox artifact: {session.run_dir / 'sandbox_session.json'}",
+        f"Inspect later: xrtm artifacts inspect {run_dir_arg}",
+        f"Show run later: xrtm runs show {session.run_id}{runs_dir_arg}",
+    ]
+    console.print(Panel("\n".join(artifact_lines), title="Inspectable artifacts", border_style="blue"))
+
+
+@cli.command()
+@click.option("--workflow", default=None, help="Seed the playground with an existing workflow name.")
+@click.option("--template", type=click.Choice(_WORKFLOW_TEMPLATE_CHOICES), default=None, help="Seed the playground with a starter template id.")
+@click.option("--question", default=None, help="Seed the first exploratory question.")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+@click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
+def playground(workflow: str | None, template: str | None, question: str | None, workflows_dir: Path, runs_dir: Path) -> None:
+    """Run the interactive exploratory sandbox loop for one custom question at a time."""
+
+    registry = _workflow_registry(workflows_dir)
+    active_context = _select_playground_context(
+        workflow=workflow,
+        template=template,
+        workflows_dir=workflows_dir,
+        registry=registry,
+    )
+    next_question = question
+    require_question = True
+
+    while True:
+        question_text = _prompt_playground_question(seed_question=next_question, required=require_question)
+        if question_text is None:
+            console.print("[yellow]No exploratory question entered; leaving playground.[/yellow]")
+            break
+        try:
+            session = launch_module.run_sandbox_session(
+                context=active_context,
+                runs_dir=runs_dir,
+                question=question_text,
+                registry=registry,
+                workflows_dir=workflows_dir,
+                command="xrtm playground",
+            )
+        except Exception as exc:
+            raise click.ClickException(str(exc)) from exc
+
+        _print_playground_session(session, runs_dir=runs_dir)
+        next_question = None
+        require_question = False
+
+        action = (_prompt_line("Next action [r=rerun, c=change context, q=quit]", default="q") or "q").strip().lower()
+        if action in {"q", "quit", "exit"}:
+            return
+        if action in {"c", "change", "context"}:
+            active_context = _select_playground_context(
+                workflow=None,
+                template=None,
+                workflows_dir=workflows_dir,
+                registry=registry,
+            )
+            require_question = True
+            continue
+        if action in {"r", "rerun", "again"}:
+            continue
+        console.print("[yellow]Unknown action; leaving playground.[/yellow]")
+        return
 
 
 @cli.command()
@@ -521,7 +907,654 @@ def demo(
 
 @cli.group("workflow")
 def workflow_group() -> None:
-    """List, inspect, validate, and run named workflow blueprints."""
+    """Author, inspect, validate, explain, and run named workflow blueprints."""
+
+
+@workflow_group.group("create")
+def workflow_create_group() -> None:
+    """Create local workflows without making raw JSON edits the primary path."""
+
+
+@workflow_create_group.command("scratch")
+@click.argument("name")
+@click.option("--title", default=None, help="Optional display title for the authored workflow.")
+@click.option("--description", default=None, help="Optional description for the authored workflow.")
+@click.option(
+    "--workflow-kind",
+    type=click.Choice(_WORKFLOW_KIND_CHOICES),
+    default="workflow",
+    show_default=True,
+    help="Workflow category to store in the safe shared schema.",
+)
+@click.option("--question-limit", type=int, default=2, show_default=True, help="Default question limit for authored runs.")
+@click.option("--max-tokens", type=int, default=768, show_default=True, help="Default max token budget for authored runs.")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+@click.option("--overwrite", is_flag=True, help="Replace an existing local workflow with the same name.")
+def workflow_create_scratch(
+    name: str,
+    title: str | None,
+    description: str | None,
+    workflow_kind: str,
+    question_limit: int,
+    max_tokens: int,
+    workflows_dir: Path,
+    overwrite: bool,
+) -> None:
+    """Create a provider-free starter workflow from scratch."""
+
+    service = _workflow_authoring_service(workflows_dir)
+    try:
+        blueprint = service.create_workflow_from_scratch(
+            name,
+            title=title,
+            description=description,
+            workflow_kind=workflow_kind,
+            question_limit=question_limit,
+            max_tokens=max_tokens,
+        )
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, blueprint, workflows_dir=workflows_dir, overwrite=overwrite)
+    _print_workflow_authoring_success(action="created", name=blueprint.name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_create_group.command("template")
+@click.argument("template_id", type=click.Choice(_WORKFLOW_TEMPLATE_CHOICES))
+@click.argument("name")
+@click.option("--title", default=None, help="Optional display title override for the starter template.")
+@click.option("--description", default=None, help="Optional description override for the starter template.")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+@click.option("--overwrite", is_flag=True, help="Replace an existing local workflow with the same name.")
+def workflow_create_template(
+    template_id: str,
+    name: str,
+    title: str | None,
+    description: str | None,
+    workflows_dir: Path,
+    overwrite: bool,
+) -> None:
+    """Create a local workflow from a released safe starter template."""
+
+    service = _workflow_authoring_service(workflows_dir)
+    try:
+        blueprint = service.create_workflow_from_template(
+            template_id,
+            name,
+            title=title,
+            description=description,
+        )
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, blueprint, workflows_dir=workflows_dir, overwrite=overwrite)
+    _print_workflow_authoring_success(action="created", name=blueprint.name, path=path, workflows_dir=workflows_dir)
+
+
+def _workflow_clone_command(
+    source_name: str,
+    target_name: str,
+    title: str | None,
+    description: str | None,
+    workflows_dir: Path,
+    overwrite: bool,
+) -> None:
+    """Clone a workflow into a local editable blueprint."""
+
+    service = _workflow_authoring_service(workflows_dir)
+    try:
+        blueprint = service.clone_workflow(
+            source_name,
+            target_name=target_name,
+            title=title,
+            description=description,
+        )
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, blueprint, workflows_dir=workflows_dir, overwrite=overwrite)
+    _print_workflow_authoring_success(action="cloned", name=target_name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_group.command("clone")
+@click.argument("source_name")
+@click.argument("target_name")
+@click.option("--title", default=None, help="Optional title override for the cloned workflow.")
+@click.option("--description", default=None, help="Optional description override for the cloned workflow.")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+@click.option("--overwrite", is_flag=True, help="Replace an existing cloned workflow with the same name.")
+def workflow_clone(
+    source_name: str,
+    target_name: str,
+    title: str | None,
+    description: str | None,
+    workflows_dir: Path,
+    overwrite: bool,
+) -> None:
+    """Clone a workflow into a local editable blueprint."""
+
+    _workflow_clone_command(source_name, target_name, title, description, workflows_dir, overwrite)
+
+
+@workflow_create_group.command("clone")
+@click.argument("source_name")
+@click.argument("target_name")
+@click.option("--title", default=None, help="Optional title override for the cloned workflow.")
+@click.option("--description", default=None, help="Optional description override for the cloned workflow.")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+@click.option("--overwrite", is_flag=True, help="Replace an existing cloned workflow with the same name.")
+def workflow_create_clone(
+    source_name: str,
+    target_name: str,
+    title: str | None,
+    description: str | None,
+    workflows_dir: Path,
+    overwrite: bool,
+) -> None:
+    """Clone a workflow into a local editable blueprint."""
+
+    _workflow_clone_command(source_name, target_name, title, description, workflows_dir, overwrite)
+
+
+@workflow_group.group("edit")
+def workflow_edit_group() -> None:
+    """Safely edit workflow blueprints through the shared backend authoring layer."""
+
+
+@workflow_edit_group.command("metadata")
+@click.argument("name")
+@click.option("--title", default=None, help="Update the workflow title.")
+@click.option("--description", default=None, help="Update the workflow description.")
+@click.option("--workflow-kind", type=click.Choice(_WORKFLOW_KIND_CHOICES), default=None, help="Update the workflow kind.")
+@click.option("--tag", "tags", multiple=True, help="Replace workflow tags. Repeat to set multiple tags in order.")
+@click.option("--clear-tags", is_flag=True, help="Remove all workflow tags.")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_edit_metadata(
+    name: str,
+    title: str | None,
+    description: str | None,
+    workflow_kind: str | None,
+    tags: tuple[str, ...],
+    clear_tags: bool,
+    workflows_dir: Path,
+) -> None:
+    """Edit top-level workflow metadata."""
+
+    if tags and clear_tags:
+        raise click.ClickException("Cannot combine --tag with --clear-tags.")
+    updates: dict[str, Any] = {}
+    if title is not None:
+        updates["title"] = title
+    if description is not None:
+        updates["description"] = description
+    if workflow_kind is not None:
+        updates["workflow_kind"] = workflow_kind
+    if clear_tags:
+        updates["tags"] = ()
+    elif tags:
+        updates["tags"] = tags
+    _require_workflow_updates(
+        updates,
+        hint="Pass one or more of --title, --description, --workflow-kind, --tag, or --clear-tags.",
+    )
+
+    service = _workflow_authoring_service(workflows_dir)
+    blueprint = _load_workflow_for_authoring(name, workflows_dir=workflows_dir)
+    try:
+        updated = service.update_metadata(blueprint, **updates)
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, updated, workflows_dir=workflows_dir, overwrite=True)
+    _print_workflow_authoring_success(action="updated", name=updated.name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_edit_group.command("questions")
+@click.argument("name")
+@click.option("--source", type=click.Choice(("real-binary-corpus",)), default=None, help="Update the question source id.")
+@click.option("--corpus-id", default=None, help="Update the released corpus identifier.")
+@click.option("--limit", type=int, default=None, help="Update the default workflow question limit.")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_edit_questions(
+    name: str,
+    source: str | None,
+    corpus_id: str | None,
+    limit: int | None,
+    workflows_dir: Path,
+) -> None:
+    """Edit the safe released question-source settings."""
+
+    updates: dict[str, Any] = {}
+    if source is not None:
+        updates["source"] = source
+    if corpus_id is not None:
+        updates["corpus_id"] = corpus_id
+    if limit is not None:
+        updates["limit"] = limit
+    _require_workflow_updates(updates, hint="Pass one or more of --source, --corpus-id, or --limit.")
+
+    service = _workflow_authoring_service(workflows_dir)
+    blueprint = _load_workflow_for_authoring(name, workflows_dir=workflows_dir)
+    try:
+        updated = service.update_questions(blueprint, **updates)
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, updated, workflows_dir=workflows_dir, overwrite=True)
+    _print_workflow_authoring_success(action="updated", name=updated.name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_edit_group.command("runtime")
+@click.argument("name")
+@click.option("--provider", type=click.Choice(_WORKFLOW_PROVIDER_CHOICES), default=None, help="Update the workflow runtime provider.")
+@click.option("--base-url", default=None, help="Set the workflow base URL override.")
+@click.option("--clear-base-url", is_flag=True, help="Clear any workflow base URL override.")
+@click.option("--model", default=None, help="Set the workflow model id.")
+@click.option("--clear-model", is_flag=True, help="Clear any workflow model id.")
+@click.option("--api-key", default=None, help="Set the workflow API key placeholder or env-backed literal.")
+@click.option("--clear-api-key", is_flag=True, help="Clear any workflow API key literal.")
+@click.option("--max-tokens", type=int, default=None, help="Update the workflow max token budget.")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_edit_runtime(
+    name: str,
+    provider: str | None,
+    base_url: str | None,
+    clear_base_url: bool,
+    model: str | None,
+    clear_model: bool,
+    api_key: str | None,
+    clear_api_key: bool,
+    max_tokens: int | None,
+    workflows_dir: Path,
+) -> None:
+    """Edit the shared runtime profile used by a workflow."""
+
+    updates: dict[str, Any] = {}
+    if provider is not None:
+        updates["provider"] = provider
+    for label, value, clear in (
+        ("--base-url", base_url, clear_base_url),
+        ("--model", model, clear_model),
+        ("--api-key", api_key, clear_api_key),
+    ):
+        requested, resolved = _workflow_update_value(value, clear=clear, label=label)
+        if requested:
+            updates[label.removeprefix("--").replace("-", "_")] = resolved
+    if max_tokens is not None:
+        updates["max_tokens"] = max_tokens
+    _require_workflow_updates(
+        updates,
+        hint="Pass one or more of --provider, --base-url, --clear-base-url, --model, --clear-model, --api-key, --clear-api-key, or --max-tokens.",
+    )
+
+    service = _workflow_authoring_service(workflows_dir)
+    blueprint = _load_workflow_for_authoring(name, workflows_dir=workflows_dir)
+    try:
+        updated = service.update_runtime(blueprint, **updates)
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, updated, workflows_dir=workflows_dir, overwrite=True)
+    _print_workflow_authoring_success(action="updated", name=updated.name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_edit_group.command("artifacts")
+@click.argument("name")
+@click.option("--write-report/--no-write-report", default=None, help="Enable or disable HTML report generation.")
+@click.option(
+    "--write-blueprint-copy/--no-write-blueprint-copy",
+    default=None,
+    help="Enable or disable blueprint.json artifact copies.",
+)
+@click.option(
+    "--write-graph-trace/--no-write-graph-trace",
+    default=None,
+    help="Enable or disable graph_trace.jsonl artifact writes.",
+)
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_edit_artifacts(
+    name: str,
+    write_report: bool | None,
+    write_blueprint_copy: bool | None,
+    write_graph_trace: bool | None,
+    workflows_dir: Path,
+) -> None:
+    """Edit workflow artifact persistence flags."""
+
+    updates = {
+        key: value
+        for key, value in {
+            "write_report": write_report,
+            "write_blueprint_copy": write_blueprint_copy,
+            "write_graph_trace": write_graph_trace,
+        }.items()
+        if value is not None
+    }
+    _require_workflow_updates(
+        updates,
+        hint="Pass one or more of --write-report/--no-write-report, --write-blueprint-copy/--no-write-blueprint-copy, or --write-graph-trace/--no-write-graph-trace.",
+    )
+
+    service = _workflow_authoring_service(workflows_dir)
+    blueprint = _load_workflow_for_authoring(name, workflows_dir=workflows_dir)
+    try:
+        updated = service.update_artifacts(blueprint, **updates)
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, updated, workflows_dir=workflows_dir, overwrite=True)
+    _print_workflow_authoring_success(action="updated", name=updated.name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_edit_group.command("scoring")
+@click.argument("name")
+@click.option("--write-eval/--no-write-eval", default=None, help="Enable or disable eval.json scoring output.")
+@click.option(
+    "--write-train-backtest/--no-write-train-backtest",
+    default=None,
+    help="Enable or disable train/backtest scoring output.",
+)
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_edit_scoring(
+    name: str,
+    write_eval: bool | None,
+    write_train_backtest: bool | None,
+    workflows_dir: Path,
+) -> None:
+    """Edit workflow scoring and backtest artifact flags."""
+
+    updates = {
+        key: value
+        for key, value in {
+            "write_eval": write_eval,
+            "write_train_backtest": write_train_backtest,
+        }.items()
+        if value is not None
+    }
+    _require_workflow_updates(
+        updates,
+        hint="Pass one or more of --write-eval/--no-write-eval or --write-train-backtest/--no-write-train-backtest.",
+    )
+
+    service = _workflow_authoring_service(workflows_dir)
+    blueprint = _load_workflow_for_authoring(name, workflows_dir=workflows_dir)
+    try:
+        updated = service.update_scoring(blueprint, **updates)
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, updated, workflows_dir=workflows_dir, overwrite=True)
+    _print_workflow_authoring_success(action="updated", name=updated.name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_edit_group.group("node")
+def workflow_edit_node_group() -> None:
+    """Edit safe workflow graph nodes."""
+
+
+@workflow_edit_node_group.command("add")
+@click.argument("name")
+@click.argument("node_name")
+@click.option("--builtin", "builtin_name", type=click.Choice(_BUILTIN_WORKFLOW_NODE_CHOICES), required=True, help="Safe builtin node to add.")
+@click.option("--from-node", "incoming_from", multiple=True, help="Add an incoming edge from this node or group. Repeatable.")
+@click.option("--to-node", "outgoing_to", multiple=True, help="Add an outgoing edge to this node or group. Repeatable.")
+@click.option("--description", default=None, help="Optional description override for the added node.")
+@click.option("--runtime", default=None, help="Optional runtime override for the added node.")
+@click.option("--optional/--required", default=None, help="Mark the added node optional or required.")
+@click.option("--config-json", callback=_workflow_json_object_callback, default=None, help="JSON object to store in node config.")
+@click.option("--entry", "set_as_entry", is_flag=True, help="Set the new node as the graph entry.")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_edit_node_add(
+    name: str,
+    node_name: str,
+    builtin_name: str,
+    incoming_from: tuple[str, ...],
+    outgoing_to: tuple[str, ...],
+    description: str | None,
+    runtime: str | None,
+    optional: bool | None,
+    config_json: dict[str, Any] | None,
+    set_as_entry: bool,
+    workflows_dir: Path,
+) -> None:
+    """Add a safe released node to a workflow graph."""
+
+    definition = _builtin_node_definition(builtin_name)
+    node = NodeSpec(
+        kind=definition.kind,
+        implementation=definition.implementation,
+        runtime=runtime,
+        description=description or definition.summary,
+        optional=optional if optional is not None else False,
+        config=config_json or {},
+    )
+
+    service = _workflow_authoring_service(workflows_dir)
+    blueprint = _load_workflow_for_authoring(name, workflows_dir=workflows_dir)
+    try:
+        updated = service.add_node(
+            blueprint,
+            node_name=node_name,
+            node=node,
+            incoming_from=incoming_from,
+            outgoing_to=outgoing_to,
+            set_as_entry=set_as_entry,
+        )
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, updated, workflows_dir=workflows_dir, overwrite=True)
+    _print_workflow_authoring_success(action="updated", name=updated.name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_edit_node_group.command("update")
+@click.argument("name")
+@click.argument("node_name")
+@click.option("--builtin", "builtin_name", type=click.Choice(_BUILTIN_WORKFLOW_NODE_CHOICES), default=None, help="Swap to another safe builtin node definition.")
+@click.option("--runtime", default=None, help="Set a runtime override for this node.")
+@click.option("--clear-runtime", is_flag=True, help="Clear any node runtime override.")
+@click.option("--description", default=None, help="Set the node description.")
+@click.option("--clear-description", is_flag=True, help="Clear the node description.")
+@click.option("--optional/--required", default=None, help="Mark the node optional or required.")
+@click.option("--config-json", callback=_workflow_json_object_callback, default=None, help="JSON object to merge into node config.")
+@click.option("--replace-config", is_flag=True, help="Replace the node config object instead of merging.")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_edit_node_update(
+    name: str,
+    node_name: str,
+    builtin_name: str | None,
+    runtime: str | None,
+    clear_runtime: bool,
+    description: str | None,
+    clear_description: bool,
+    optional: bool | None,
+    config_json: dict[str, Any] | None,
+    replace_config: bool,
+    workflows_dir: Path,
+) -> None:
+    """Update a safe workflow graph node."""
+
+    if replace_config and config_json is None:
+        raise click.ClickException("--replace-config requires --config-json.")
+    updates: dict[str, Any] = {}
+    if builtin_name is not None:
+        definition = _builtin_node_definition(builtin_name)
+        updates["kind"] = definition.kind
+        updates["implementation"] = definition.implementation
+    runtime_requested, runtime_value = _workflow_update_value(runtime, clear=clear_runtime, label="--runtime")
+    if runtime_requested:
+        updates["runtime"] = runtime_value
+    description_requested, description_value = _workflow_update_value(
+        description,
+        clear=clear_description,
+        label="--description",
+    )
+    if description_requested:
+        updates["description"] = description_value
+    if optional is not None:
+        updates["optional"] = optional
+    if config_json is not None:
+        updates["config"] = config_json
+        updates["replace_config"] = replace_config
+    _require_workflow_updates(
+        updates,
+        hint="Pass one or more of --builtin, --runtime, --clear-runtime, --description, --clear-description, --optional/--required, or --config-json.",
+    )
+
+    service = _workflow_authoring_service(workflows_dir)
+    blueprint = _load_workflow_for_authoring(name, workflows_dir=workflows_dir)
+    try:
+        updated = service.update_node(blueprint, node_name, **updates)
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, updated, workflows_dir=workflows_dir, overwrite=True)
+    _print_workflow_authoring_success(action="updated", name=updated.name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_edit_node_group.command("remove")
+@click.argument("name")
+@click.argument("node_name")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_edit_node_remove(name: str, node_name: str, workflows_dir: Path) -> None:
+    """Remove a workflow graph node."""
+
+    service = _workflow_authoring_service(workflows_dir)
+    blueprint = _load_workflow_for_authoring(name, workflows_dir=workflows_dir)
+    try:
+        updated = service.remove_node(blueprint, node_name)
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, updated, workflows_dir=workflows_dir, overwrite=True)
+    _print_workflow_authoring_success(action="updated", name=updated.name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_edit_group.group("edge")
+def workflow_edit_edge_group() -> None:
+    """Edit workflow graph edges."""
+
+
+@workflow_edit_edge_group.command("add")
+@click.argument("name")
+@click.argument("from_node")
+@click.argument("to_node")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_edit_edge_add(name: str, from_node: str, to_node: str, workflows_dir: Path) -> None:
+    """Add a graph edge between two existing nodes or groups."""
+
+    service = _workflow_authoring_service(workflows_dir)
+    blueprint = _load_workflow_for_authoring(name, workflows_dir=workflows_dir)
+    try:
+        updated = service.add_edge(blueprint, from_node=from_node, to_node=to_node)
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, updated, workflows_dir=workflows_dir, overwrite=True)
+    _print_workflow_authoring_success(action="updated", name=updated.name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_edit_edge_group.command("remove")
+@click.argument("name")
+@click.argument("from_node")
+@click.argument("to_node")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_edit_edge_remove(name: str, from_node: str, to_node: str, workflows_dir: Path) -> None:
+    """Remove a graph edge between two existing nodes or groups."""
+
+    service = _workflow_authoring_service(workflows_dir)
+    blueprint = _load_workflow_for_authoring(name, workflows_dir=workflows_dir)
+    try:
+        updated = service.remove_edge(blueprint, from_node=from_node, to_node=to_node)
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, updated, workflows_dir=workflows_dir, overwrite=True)
+    _print_workflow_authoring_success(action="updated", name=updated.name, path=path, workflows_dir=workflows_dir)
+
+
+@workflow_edit_group.group("entry")
+def workflow_edit_entry_group() -> None:
+    """Edit the graph entry point."""
+
+
+@workflow_edit_entry_group.command("set")
+@click.argument("name")
+@click.argument("entry")
+@click.option(
+    "--workflows-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
+    show_default=True,
+)
+def workflow_edit_entry_set(name: str, entry: str, workflows_dir: Path) -> None:
+    """Set the workflow graph entry node or group."""
+
+    service = _workflow_authoring_service(workflows_dir)
+    blueprint = _load_workflow_for_authoring(name, workflows_dir=workflows_dir)
+    try:
+        updated = service.set_entry(blueprint, entry)
+    except WorkflowAuthoringError as exc:
+        raise click.ClickException(str(exc)) from exc
+    path = _persist_authored_workflow(service, updated, workflows_dir=workflows_dir, overwrite=True)
+    _print_workflow_authoring_success(action="updated", name=updated.name, path=path, workflows_dir=workflows_dir)
 
 
 @workflow_group.command("list")
@@ -583,37 +1616,10 @@ def workflow_validate(name: str, workflows_dir: Path) -> None:
     """Validate one workflow blueprint."""
 
     try:
-        blueprint = _workflow_registry(workflows_dir).validate(name)
+        blueprint = launch_module.validate_registered_workflow(name, workflows_dir=workflows_dir)
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     console.print(f"[green]Workflow valid:[/green] {blueprint.name} ({blueprint.schema_version})")
-
-
-@workflow_group.command("clone")
-@click.argument("source_name")
-@click.argument("target_name")
-@click.option(
-    "--workflows-dir",
-    type=click.Path(file_okay=False, path_type=Path),
-    default=DEFAULT_LOCAL_WORKFLOWS_DIR,
-    show_default=True,
-)
-@click.option("--overwrite", is_flag=True, help="Replace an existing cloned workflow with the same name.")
-def workflow_clone(source_name: str, target_name: str, workflows_dir: Path, overwrite: bool) -> None:
-    """Clone a workflow into a local editable blueprint."""
-
-    destination_root = workflows_dir if workflows_dir.is_absolute() else Path.cwd() / workflows_dir
-    try:
-        path = _workflow_registry(workflows_dir).clone(
-            source_name,
-            target_name,
-            destination_root=destination_root,
-            overwrite=overwrite,
-        )
-    except (FileExistsError, FileNotFoundError, ValueError) as exc:
-        raise click.ClickException(str(exc)) from exc
-    console.print(f"[green]Workflow cloned:[/green] {source_name} -> {path}")
-    console.print(f"[blue]Next:[/blue] xrtm workflow explain {target_name} --workflows-dir {shell_quote(workflows_dir.as_posix())}")
 
 
 @workflow_group.command("explain")

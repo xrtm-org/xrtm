@@ -3,6 +3,8 @@ import json
 import re
 from pathlib import Path
 from threading import Thread
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 from urllib.request import urlopen
 
@@ -10,6 +12,7 @@ import pytest
 from click.testing import CliRunner
 from rich.console import Console
 
+from xrtm.cli import main as cli_main
 from xrtm.cli.main import cli
 from xrtm.product.history import compare_runs, resolve_run_dir
 from xrtm.product.monitoring import run_monitor_once
@@ -105,6 +108,7 @@ def test_help_exposes_product_commands() -> None:
     assert "start" in result.output
     assert "doctor" in result.output
     assert "demo" in result.output
+    assert "playground" in result.output
     assert "artifacts" in result.output
     assert "benchmark" in result.output
     assert "profile" in result.output
@@ -116,6 +120,131 @@ def test_help_exposes_product_commands() -> None:
     assert "monitor" in result.output
     assert "tui" in result.output
     assert "web" in result.output
+
+
+def test_playground_runs_seeded_workflow_question_and_writes_sandbox_artifact() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            cli,
+            [
+                "playground",
+                "--workflow",
+                "demo-provider-free",
+                "--question",
+                "Will the playground stay exploratory?",
+                "--runs-dir",
+                "runs",
+            ],
+        )
+
+        output = _strip_ansi(result.output)
+        assert result.exit_code == 0, output
+        run_dir = next(Path("runs").iterdir())
+        session_payload = json.loads((run_dir / "sandbox_session.json").read_text(encoding="utf-8"))
+        assert session_payload["context"]["workflow_name"] == "demo-provider-free"
+        assert session_payload["labeling"]["classification"] == "exploratory"
+        assert "Exploratory playground session" in output
+        assert "Sandbox output is inspectable" in output
+        assert "Step inspection" in output
+        assert "load_questions" in output
+        assert "Workflow save-back: ready (demo-provider-free)" in output
+
+
+def test_playground_supports_interactive_rerun_loop_with_template_context() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            cli,
+            ["playground", "--runs-dir", "runs"],
+            input=(
+                "template:provider-free-demo\n"
+                "Will the first exploratory loop run?\n"
+                "r\n"
+                "Will the rerun keep the same template context?\n"
+                "q\n"
+            ),
+        )
+
+        output = _strip_ansi(result.output)
+        assert result.exit_code == 0, output
+        run_dirs = sorted(Path("runs").iterdir())
+        assert len(run_dirs) == 2
+        payloads = [
+            json.loads((run_dir / "sandbox_session.json").read_text(encoding="utf-8"))
+            for run_dir in run_dirs
+        ]
+        assert all(payload["context"]["template_id"] == "provider-free-demo" for payload in payloads)
+        assert all(payload["labeling"]["classification"] == "exploratory" for payload in payloads)
+        assert "Workflow contexts" in output
+        assert "Starter template contexts" in output
+        assert "Next action [r=rerun, c=change context, q=quit]" in output
+        assert "Profile save-back: requires_workflow_save" in output
+        assert output.count("Exploratory playground session") >= 2
+
+
+def test_playground_command_uses_shared_launch_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = CliRunner()
+    context = cli_main.launch_module.resolve_sandbox_context(workflow_name="demo-provider-free")
+    calls: list[tuple[str, Any]] = []
+
+    def fake_run_sandbox_session(**kwargs: Any):
+        calls.append(("run", kwargs))
+        return cli_main.launch_module.SandboxSessionResult(
+            run_id="sandbox-cli-shared",
+            run_dir=Path("runs") / "sandbox-cli-shared",
+            run={
+                "run_id": "sandbox-cli-shared",
+                "status": "completed",
+                "provider": "mock",
+                "artifacts": {},
+            },
+            workflow={"title": "Shared sandbox workflow"},
+            run_summary={"summary": "Shared contract response"},
+            context=context,
+            labeling={
+                "classification": "exploratory",
+                "surface": "sandbox",
+                "display_label": "Exploratory playground session",
+                "notes": ["Shared launch contract note."],
+            },
+            questions=({"title": "Shared contract question", "description": "Shared contract question"},),
+            inspection_steps=(
+                {"order": 7, "node_id": "forecast", "label": "Forecast", "node_type": "node", "status": "completed", "output_preview": "Shared step", "output": {}, "artifacts": [], "artifact_payloads": {}},
+            ),
+            save_back={
+                "mode": "explicit",
+                "workflow": {"status": "ready", "recommended_name": "demo-provider-free"},
+                "profile": {"status": "ready"},
+            },
+            total_seconds=0.25,
+        )
+
+    monkeypatch.setattr(cli_main.launch_module, "run_sandbox_session", fake_run_sandbox_session)
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            cli,
+            [
+                "playground",
+                "--workflow",
+                "demo-provider-free",
+                "--question",
+                "Does the CLI use the shared launch contract?",
+                "--runs-dir",
+                "runs",
+            ],
+            input="q\n",
+        )
+
+    output = _strip_ansi(result.output)
+    assert result.exit_code == 0, output
+    assert "Shared launch contract note." in output
+    assert "Step 7: forecast" in output
+    assert "Workflow save-back: ready (demo-provider-free)" in output
+    assert calls and calls[0][1]["command"] == "xrtm playground"
 
 
 def test_provider_free_demo_writes_canonical_artifacts() -> None:
@@ -294,6 +423,41 @@ def test_workflow_list_show_and_run_demo_provider_free() -> None:
         assert any('"node": "forecast"' in line for line in trace_lines)
 
 
+def test_workflow_validate_and_explain_use_launch_services(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = CliRunner()
+    calls: list[tuple[str, Any, ...]] = []
+
+    def fake_validate(name: str, *, workflows_dir: Path) -> SimpleNamespace:
+        calls.append(("validate", name, workflows_dir))
+        return SimpleNamespace(name=name, schema_version="xrtm.workflow.v1")
+
+    def fake_explain(name: str, *, workflows_dir: Path) -> dict[str, Any]:
+        calls.append(("explain", name, workflows_dir))
+        return {
+            "summary": f"{name} summary",
+            "runtime_requirements": ["Provider-free mode works out of the box."],
+            "expected_artifacts": ["run.json"],
+            "nodes": [],
+        }
+
+    monkeypatch.setattr(cli_main.launch_module, "validate_registered_workflow", fake_validate)
+    monkeypatch.setattr(cli_main.launch_module, "explain_registered_workflow", fake_explain)
+
+    validate = runner.invoke(cli, ["workflow", "validate", "demo-provider-free", "--workflows-dir", "workflows"])
+    explain = runner.invoke(cli, ["workflow", "explain", "demo-provider-free", "--workflows-dir", "workflows"])
+
+    assert validate.exit_code == 0, validate.output
+    assert explain.exit_code == 0, explain.output
+    assert "Workflow valid: demo-provider-free (xrtm.workflow.v1)" in _strip_ansi(validate.output)
+    explain_output = _strip_ansi(explain.output)
+    assert "Workflow explanation: demo-provider-free" in explain_output
+    assert "Runtime requirements" in explain_output
+    assert calls == [
+        ("validate", "demo-provider-free", Path("workflows")),
+        ("explain", "demo-provider-free", Path("workflows")),
+    ]
+
+
 def test_flagship_benchmark_workflow_runs_in_provider_free_fallback_mode() -> None:
     runner = CliRunner()
 
@@ -320,17 +484,298 @@ def test_flagship_benchmark_workflow_runs_in_provider_free_fallback_mode() -> No
         assert any('"node": "time_series_baseline"' in line for line in trace_lines)
 
 
+def test_workflow_authoring_commands_create_and_edit_safe_local_workflows() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        workflow_help = runner.invoke(cli, ["workflow", "--help"])
+        assert workflow_help.exit_code == 0, workflow_help.output
+        workflow_help_output = _strip_ansi(workflow_help.output)
+        assert "create" in workflow_help_output
+        assert "edit" in workflow_help_output
+
+        scratch = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "create",
+                "scratch",
+                "authored-scratch",
+                "--title",
+                "Authored Scratch Workflow",
+                "--description",
+                "Scratch workflow authored through the CLI.",
+                "--workflow-kind",
+                "workflow",
+                "--question-limit",
+                "3",
+                "--max-tokens",
+                "640",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        scratch_output = _strip_ansi(scratch.output)
+        assert scratch.exit_code == 0, scratch_output
+        assert "Workflow created:" in scratch_output
+        assert "xrtm workflow show authored-scratch" in scratch_output
+
+        template = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "create",
+                "template",
+                "ensemble-starter",
+                "authored-template",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert template.exit_code == 0, template.output
+
+        cloned = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "create",
+                "clone",
+                "demo-provider-free",
+                "authored-clone",
+                "--title",
+                "Authored Clone Workflow",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert cloned.exit_code == 0, cloned.output
+
+        metadata = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "metadata",
+                "authored-scratch",
+                "--title",
+                "Customized Scratch Workflow",
+                "--description",
+                "Customized through the CLI authoring flow.",
+                "--workflow-kind",
+                "benchmark",
+                "--tag",
+                "authoring",
+                "--tag",
+                "cli",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert metadata.exit_code == 0, metadata.output
+
+        questions = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "questions",
+                "authored-scratch",
+                "--corpus-id",
+                "xrtm-real-binary-v1",
+                "--limit",
+                "4",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert questions.exit_code == 0, questions.output
+
+        runtime = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "runtime",
+                "authored-scratch",
+                "--provider",
+                "local-llm",
+                "--base-url",
+                "http://127.0.0.1:11434/v1",
+                "--model",
+                "phi-4-mini",
+                "--api-key",
+                "placeholder",
+                "--max-tokens",
+                "512",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert runtime.exit_code == 0, runtime.output
+
+        artifacts = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "artifacts",
+                "authored-scratch",
+                "--no-write-report",
+                "--no-write-blueprint-copy",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert artifacts.exit_code == 0, artifacts.output
+
+        scoring = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "scoring",
+                "authored-scratch",
+                "--no-write-train-backtest",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert scoring.exit_code == 0, scoring.output
+
+        add_context = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "node",
+                "add",
+                "authored-scratch",
+                "question_context",
+                "--builtin",
+                "question-context",
+                "--from-node",
+                "load_questions",
+                "--to-node",
+                "forecast",
+                "--description",
+                "Insert question context before forecasting.",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert add_context.exit_code == 0, add_context.output
+
+        remove_default_edge = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "edge",
+                "remove",
+                "authored-scratch",
+                "load_questions",
+                "forecast",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert remove_default_edge.exit_code == 0, remove_default_edge.output
+
+        add_bootstrap = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "node",
+                "add",
+                "authored-scratch",
+                "bootstrap",
+                "--builtin",
+                "load-questions",
+                "--to-node",
+                "load_questions",
+                "--entry",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert add_bootstrap.exit_code == 0, add_bootstrap.output
+
+        entry = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "entry",
+                "set",
+                "authored-scratch",
+                "bootstrap",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert entry.exit_code == 0, entry.output
+
+        update_context = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "node",
+                "update",
+                "authored-scratch",
+                "question_context",
+                "--description",
+                "Updated question context node.",
+                "--optional",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert update_context.exit_code == 0, update_context.output
+
+        validate = runner.invoke(cli, ["workflow", "validate", "authored-scratch", "--workflows-dir", "workflows"])
+        assert validate.exit_code == 0, validate.output
+
+        show = runner.invoke(cli, ["workflow", "show", "authored-scratch", "--workflows-dir", "workflows"])
+        show_output = _strip_ansi(show.output)
+        assert show.exit_code == 0, show_output
+        assert "Workflow: authored-scratch" in show_output
+        assert "question_context" in show_output
+
+        authored_payload = json.loads(Path("workflows/authored-scratch.json").read_text(encoding="utf-8"))
+        assert authored_payload["title"] == "Customized Scratch Workflow"
+        assert authored_payload["workflow_kind"] == "benchmark"
+        assert authored_payload["questions"]["limit"] == 4
+        assert authored_payload["runtime"]["provider"] == "local-llm"
+        assert authored_payload["runtime"]["model"] == "phi-4-mini"
+        assert authored_payload["runtime"]["max_tokens"] == 512
+        assert authored_payload["artifacts"]["write_report"] is False
+        assert authored_payload["artifacts"]["write_blueprint_copy"] is False
+        assert authored_payload["scoring"]["write_train_backtest"] is False
+        assert authored_payload["tags"] == ["authoring", "cli"]
+        assert authored_payload["graph"]["entry"] == "bootstrap"
+        assert authored_payload["graph"]["nodes"]["question_context"]["description"] == "Updated question context node."
+        assert authored_payload["graph"]["nodes"]["question_context"]["optional"] is True
+
+        template_payload = json.loads(Path("workflows/authored-template.json").read_text(encoding="utf-8"))
+        assert template_payload["name"] == "authored-template"
+        assert "candidate_fanout" in template_payload["graph"]["parallel_groups"]
+
+        cloned_payload = json.loads(Path("workflows/authored-clone.json").read_text(encoding="utf-8"))
+        assert cloned_payload["name"] == "authored-clone"
+        assert cloned_payload["title"] == "Authored Clone Workflow"
+
+
 def test_workflow_clone_explain_validate_and_compare_customized_runs() -> None:
     runner = CliRunner()
 
     with runner.isolated_filesystem():
         cloned = runner.invoke(
             cli,
-            ["workflow", "clone", "flagship-benchmark", "my-workflow", "--workflows-dir", "workflows"],
+            ["workflow", "create", "clone", "flagship-benchmark", "my-workflow", "--workflows-dir", "workflows"],
         )
         assert cloned.exit_code == 0, cloned.output
-        workflow_path = Path("workflows/my-workflow.json")
-        assert workflow_path.exists()
 
         explain = runner.invoke(cli, ["workflow", "explain", "my-workflow", "--workflows-dir", "workflows"])
         explain_output = _strip_ansi(explain.output)
@@ -338,13 +783,28 @@ def test_workflow_clone_explain_validate_and_compare_customized_runs() -> None:
         assert "Runtime requirements" in explain_output
         assert "Expected artifacts" in explain_output
 
-        payload = json.loads(workflow_path.read_text(encoding="utf-8"))
-        payload["questions"]["limit"] = 1
-        payload["graph"]["nodes"]["aggregate_candidates"]["config"]["weights"] = {
-            "provider_free_control": 1.0,
-            "time_series_baseline": 0.0,
-        }
-        workflow_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        question_limit = runner.invoke(
+            cli,
+            ["workflow", "edit", "questions", "my-workflow", "--limit", "1", "--workflows-dir", "workflows"],
+        )
+        assert question_limit.exit_code == 0, question_limit.output
+        first_weights = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "node",
+                "update",
+                "my-workflow",
+                "aggregate_candidates",
+                "--config-json",
+                json.dumps({"weights": {"provider_free_control": 1.0, "time_series_baseline": 0.0}}),
+                "--replace-config",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert first_weights.exit_code == 0, first_weights.output
 
         first_validate = runner.invoke(cli, ["workflow", "validate", "my-workflow", "--workflows-dir", "workflows"])
         assert first_validate.exit_code == 0, first_validate.output
@@ -354,11 +814,23 @@ def test_workflow_clone_explain_validate_and_compare_customized_runs() -> None:
         )
         assert first_run.exit_code == 0, first_run.output
 
-        payload["graph"]["nodes"]["aggregate_candidates"]["config"]["weights"] = {
-            "provider_free_control": 0.0,
-            "time_series_baseline": 1.0,
-        }
-        workflow_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        second_weights = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "edit",
+                "node",
+                "update",
+                "my-workflow",
+                "aggregate_candidates",
+                "--config-json",
+                json.dumps({"weights": {"provider_free_control": 0.0, "time_series_baseline": 1.0}}),
+                "--replace-config",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert second_weights.exit_code == 0, second_weights.output
 
         second_validate = runner.invoke(cli, ["workflow", "validate", "my-workflow", "--workflows-dir", "workflows"])
         assert second_validate.exit_code == 0, second_validate.output
@@ -1356,7 +1828,8 @@ def test_webui_serves_api_routes() -> None:
                 html = response.read().decode("utf-8")
             assert '"resume_target"' in shell_body
             assert '"demo-provider-free"' in runs_body
-            assert "Overview · Start · Runs · Operations · Workbench" in html
+            assert "Overview · Start · Runs · Playground · Operations · Workbench" in html
+            assert "version-pill" in html
             assert "/static/app.js" in html
         finally:
             server.shutdown()

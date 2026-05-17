@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from xrtm.product.pipeline import PipelineOptions
+from xrtm.product.workflows import validate_workflow_name
 
 PROFILE_SCHEMA_VERSION = "xrtm.profile.v1"
 DEFAULT_PROFILES_DIR = Path(".xrtm/profiles")
@@ -21,6 +22,7 @@ class WorkflowProfile:
     """A saved provider/run configuration."""
 
     name: str
+    workflow_name: str | None = None
     provider: str = "mock"
     limit: int = 2
     runs_dir: str = "runs"
@@ -33,6 +35,8 @@ class WorkflowProfile:
 
     def __post_init__(self) -> None:
         validate_profile_name(self.name)
+        if self.workflow_name is not None:
+            validate_workflow_name(self.workflow_name)
         if self.provider not in {"mock", "local-llm"}:
             raise ValueError(f"unsupported provider: {self.provider}")
         if self.limit < 1:
@@ -44,6 +48,7 @@ class WorkflowProfile:
         return {
             "schema_version": self.schema_version,
             "name": self.name,
+            "workflow_name": self.workflow_name,
             "provider": self.provider,
             "limit": self.limit,
             "runs_dir": self.runs_dir,
@@ -71,6 +76,7 @@ class WorkflowProfile:
     def from_payload(cls, payload: dict[str, Any]) -> "WorkflowProfile":
         return cls(
             name=str(payload["name"]),
+            workflow_name=payload.get("workflow_name"),
             provider=str(payload.get("provider", "mock")),
             limit=int(payload.get("limit", 2)),
             runs_dir=str(payload.get("runs_dir", "runs")),

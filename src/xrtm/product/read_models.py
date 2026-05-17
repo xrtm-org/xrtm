@@ -76,6 +76,7 @@ def read_run_detail(run_dir: Path) -> dict[str, Any]:
 
     blueprint = _read_optional_json(run_dir / "blueprint.json")
     graph_trace = _read_optional_jsonl(run_dir / "graph_trace.jsonl")
+    sandbox = _read_sandbox_session(run_dir)
     detail: dict[str, Any] = {
         "run": ArtifactStore.read_run(run_dir),
         "summary": _read_optional_json(run_dir / "run_summary.json"),
@@ -91,6 +92,8 @@ def read_run_detail(run_dir: Path) -> dict[str, Any]:
     workflow = _workflow_summary(blueprint, graph_trace)
     if workflow:
         detail["workflow"] = workflow
+    if sandbox:
+        detail["sandbox"] = sandbox
     monitor_path = run_dir / "monitor.json"
     if monitor_path.exists():
         monitor = _read_optional_json(monitor_path)
@@ -120,6 +123,9 @@ def _read_run_record(run_dir: Path) -> dict[str, Any] | None:
     )
     if workflow:
         run["workflow"] = workflow
+    sandbox = _sandbox_summary(_read_sandbox_session(run_dir))
+    if sandbox:
+        run["sandbox"] = sandbox
     return run
 
 
@@ -135,8 +141,18 @@ def _read_optional_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _read_sandbox_session(run_dir: Path) -> dict[str, Any]:
+    path = run_dir / "sandbox_session.json"
+    if not path.exists():
+        return {}
+    from xrtm.product.sandbox import read_sandbox_session
+
+    return read_sandbox_session(path)
+
+
 def _search_text(run: dict[str, Any]) -> str:
     workflow = run.get("workflow", {})
+    sandbox = run.get("sandbox", {})
     values = [
         run.get("run_id"),
         run.get("status"),
@@ -147,6 +163,9 @@ def _search_text(run: dict[str, Any]) -> str:
         workflow.get("name") if isinstance(workflow, dict) else None,
         workflow.get("title") if isinstance(workflow, dict) else None,
         workflow.get("kind") if isinstance(workflow, dict) else None,
+        sandbox.get("classification") if isinstance(sandbox, dict) else None,
+        sandbox.get("surface") if isinstance(sandbox, dict) else None,
+        sandbox.get("workflow_name") if isinstance(sandbox, dict) else None,
     ]
     return " ".join(str(value) for value in values if value is not None)
 
@@ -165,6 +184,21 @@ def _workflow_summary(blueprint: dict[str, Any], graph_trace: list[dict[str, Any
         "node_count": len(nodes) if isinstance(nodes, dict) else 0,
         "parallel_group_count": len(parallel_groups) if isinstance(parallel_groups, dict) else 0,
         "graph_step_count": len(graph_trace),
+    }
+
+
+def _sandbox_summary(sandbox: dict[str, Any]) -> dict[str, Any]:
+    if not sandbox:
+        return {}
+    context = sandbox.get("context", {})
+    labeling = sandbox.get("labeling", {})
+    return {
+        "classification": labeling.get("classification"),
+        "surface": labeling.get("surface"),
+        "question_count": labeling.get("question_count"),
+        "batch": labeling.get("batch"),
+        "workflow_name": context.get("workflow_name"),
+        "template_id": context.get("template_id"),
     }
 
 

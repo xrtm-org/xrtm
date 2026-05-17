@@ -8,13 +8,17 @@ import json
 import os
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
+import time
 import tomllib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 WORKSPACE_REPOS = ("data", "eval", "forecast", "train", "xrtm")
 DEFAULT_IMAGE_TAG = "xrtm-provider-free-acceptance:py311"
@@ -213,6 +217,11 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
 def run_logged(
     command: list[str],
     *,
@@ -349,6 +358,53 @@ def new_run_id(previous_run_ids: Iterable[str], runs_dir: Path) -> str:
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def reserve_local_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def fetch_json(
+    url: str,
+    *,
+    output_path: Path,
+    method: str = "GET",
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    data = None
+    headers: dict[str, str] = {}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    with urlopen(Request(url, data=data, headers=headers, method=method), timeout=10) as response:
+        body = response.read().decode("utf-8")
+    write_text(output_path, body)
+    return json.loads(body) if body else {}
+
+
+def fetch_text(url: str, *, output_path: Path) -> str:
+    with urlopen(url, timeout=10) as response:
+        body = response.read().decode("utf-8")
+    write_text(output_path, body)
+    return body
+
+
+def wait_for_web_server(base_url: str, *, timeout_seconds: float = 15.0) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            with urlopen(f"{base_url}/api/health", timeout=2) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if payload.get("ready"):
+                return payload
+            last_error = RuntimeError(f"web server reported not ready: {payload}")
+        except (URLError, OSError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
+            last_error = exc
+        time.sleep(0.2)
+    raise RuntimeError(f"Web server did not become ready at {base_url}") from last_error
 
 
 def total_forecast_count(runs_dir: Path) -> int:
@@ -814,6 +870,584 @@ def run_benchmark_matrix(env: dict[str, str], artifacts_dir: Path) -> dict[str, 
     return summary
 
 
+def run_workflow_authoring(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
+    journey_dir = artifacts_dir / "xrtm-release" / "workflow-authoring"
+    cli_dir = journey_dir / "cli"
+    webui_dir = journey_dir / "webui"
+    workflows_dir = journey_dir / ".xrtm" / "workflows"
+    runs_dir = journey_dir / "runs"
+    prepare_artifacts_dir(cli_dir)
+    prepare_artifacts_dir(webui_dir)
+    prepare_artifacts_dir(workflows_dir)
+
+    scratch_name = "gate2-scratch-authoring"
+    clone_name = "gate2-clone-authoring"
+    template_name = "gate2-template-authoring"
+
+    before_baseline = discover_run_ids(runs_dir)
+    run_logged(["xrtm", "start", "--runs-dir", str(runs_dir)], log_path=cli_dir / "start.log", cwd=journey_dir, env=env)
+    baseline_run_id = new_run_id(before_baseline, runs_dir)
+
+    scratch_path = workflows_dir / f"{scratch_name}.json"
+    run_logged(
+        [
+            "xrtm",
+            "workflow",
+            "create",
+            "scratch",
+            scratch_name,
+            "--title",
+            "Gate 2 scratch workflow",
+            "--description",
+            "Provider-free scratch workflow created in clean-room validation.",
+            "--question-limit",
+            "1",
+            "--max-tokens",
+            "512",
+            "--workflows-dir",
+            str(workflows_dir),
+        ],
+        log_path=cli_dir / "workflow-create-scratch.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        ["xrtm", "workflow", "validate", scratch_name, "--workflows-dir", str(workflows_dir)],
+        log_path=cli_dir / "workflow-validate-scratch.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    before_scratch = discover_run_ids(runs_dir)
+    run_logged(
+        ["xrtm", "workflow", "run", scratch_name, "--workflows-dir", str(workflows_dir), "--runs-dir", str(runs_dir)],
+        log_path=cli_dir / "workflow-run-scratch.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    scratch_run_id = new_run_id(before_scratch, runs_dir)
+    scratch_run_dir = runs_dir / scratch_run_id
+    run_logged(
+        ["xrtm", "runs", "show", scratch_run_id, "--runs-dir", str(runs_dir)],
+        log_path=cli_dir / "runs-show-scratch.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        ["xrtm", "runs", "compare", baseline_run_id, scratch_run_id, "--runs-dir", str(runs_dir)],
+        log_path=cli_dir / "runs-compare-scratch.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        ["xrtm", "report", "html", str(scratch_run_dir)],
+        log_path=cli_dir / "report-html-scratch.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    if not scratch_path.exists():
+        raise RuntimeError(f"Scratch workflow did not persist: {scratch_path}")
+    if not (scratch_run_dir / "report.html").exists():
+        raise RuntimeError(f"Scratch workflow report missing: {scratch_run_dir / 'report.html'}")
+
+    clone_path = workflows_dir / f"{clone_name}.json"
+    run_logged(
+        [
+            "xrtm",
+            "workflow",
+            "create",
+            "clone",
+            "demo-provider-free",
+            clone_name,
+            "--workflows-dir",
+            str(workflows_dir),
+        ],
+        log_path=cli_dir / "workflow-create-clone.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        [
+            "xrtm",
+            "workflow",
+            "edit",
+            "metadata",
+            clone_name,
+            "--title",
+            "Gate 2 cloned workflow",
+            "--description",
+            "Cloned workflow proved during clean-room validation.",
+            "--tag",
+            "gate2",
+            "--tag",
+            "clone",
+            "--workflows-dir",
+            str(workflows_dir),
+        ],
+        log_path=cli_dir / "workflow-edit-clone.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        ["xrtm", "workflow", "validate", clone_name, "--workflows-dir", str(workflows_dir)],
+        log_path=cli_dir / "workflow-validate-clone.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    before_clone = discover_run_ids(runs_dir)
+    run_logged(
+        ["xrtm", "workflow", "run", clone_name, "--workflows-dir", str(workflows_dir), "--runs-dir", str(runs_dir), "--limit", "1"],
+        log_path=cli_dir / "workflow-run-clone.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    clone_run_id = new_run_id(before_clone, runs_dir)
+    clone_run_dir = runs_dir / clone_run_id
+    if not clone_path.exists():
+        raise RuntimeError(f"Cloned workflow did not persist: {clone_path}")
+
+    port = reserve_local_port()
+    base_url = f"http://127.0.0.1:{port}"
+    server_log_path = webui_dir / "web-server.log"
+    with server_log_path.open("w", encoding="utf-8") as server_log:
+        server = subprocess.Popen(
+            [
+                "xrtm",
+                "web",
+                "--runs-dir",
+                str(runs_dir),
+                "--workflows-dir",
+                str(workflows_dir),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ],
+            cwd=str(journey_dir),
+            env=env,
+            text=True,
+            stdout=server_log,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            wait_for_web_server(base_url)
+            health = fetch_json(f"{base_url}/api/health", output_path=webui_dir / "health.json")
+            workbench_html = fetch_text(f"{base_url}/workbench", output_path=webui_dir / "workbench.html")
+            catalog = fetch_json(f"{base_url}/api/authoring/catalog", output_path=webui_dir / "authoring-catalog.json")
+            created = fetch_json(
+                f"{base_url}/api/drafts",
+                output_path=webui_dir / "draft-create.json",
+                method="POST",
+                payload={
+                    "creation_mode": "template",
+                    "template_id": "provider-free-demo",
+                    "draft_workflow_name": template_name,
+                    "baseline_run_id": baseline_run_id,
+                    "title": "Gate 2 template workflow",
+                    "description": "Template workflow created in provider-free clean-room validation.",
+                },
+            )
+            updated = fetch_json(
+                f"{base_url}/api/drafts/{created['id']}",
+                output_path=webui_dir / "draft-update.json",
+                method="PATCH",
+                payload={
+                    "action": {
+                        "type": "update-core",
+                        "metadata": {
+                            "title": "Gate 2 template workflow",
+                            "description": "Template-authored workflow updated through the WebUI authoring surface.",
+                            "workflow_kind": "workflow",
+                            "tags": ["gate2", "webui"],
+                        },
+                        "questions": {"limit": 1},
+                        "runtime": {"provider": "mock", "base_url": None, "model": None, "max_tokens": 512},
+                        "artifacts": {
+                            "write_report": True,
+                            "write_blueprint_copy": True,
+                            "write_graph_trace": True,
+                        },
+                        "scoring": {"write_eval": True, "write_train_backtest": True},
+                    }
+                },
+            )
+            draft_snapshot = fetch_json(
+                f"{base_url}/api/drafts/{created['id']}",
+                output_path=webui_dir / "draft-get.json",
+            )
+            validated = fetch_json(
+                f"{base_url}/api/drafts/{created['id']}/validate",
+                output_path=webui_dir / "draft-validate.json",
+                method="POST",
+                payload={},
+            )
+            launched = fetch_json(
+                f"{base_url}/api/drafts/{created['id']}/run",
+                output_path=webui_dir / "draft-run.json",
+                method="POST",
+                payload={},
+            )
+            candidate_run_id = str(launched["run_id"])
+            candidate_run_dir = runs_dir / candidate_run_id
+            workflow_detail_html = fetch_text(
+                f"{base_url}/workflows/{template_name}",
+                output_path=webui_dir / "workflow-detail.html",
+            )
+            run_detail = fetch_json(
+                f"{base_url}/api/runs/{candidate_run_id}",
+                output_path=webui_dir / "run-detail.json",
+            )
+            run_detail_html = fetch_text(
+                f"{base_url}/runs/{candidate_run_id}",
+                output_path=webui_dir / "run-detail.html",
+            )
+            compare = fetch_json(
+                f"{base_url}/api/runs/{candidate_run_id}/compare/{baseline_run_id}",
+                output_path=webui_dir / "compare.json",
+            )
+            compare_html = fetch_text(
+                f"{base_url}/runs/{candidate_run_id}/compare/{baseline_run_id}",
+                output_path=webui_dir / "compare.html",
+            )
+            fetch_json(
+                f"{base_url}/api/runs/{candidate_run_id}/report",
+                output_path=webui_dir / "report.json",
+                method="POST",
+                payload={},
+            )
+            report_html = fetch_text(
+                f"{base_url}/runs/{candidate_run_id}/report",
+                output_path=webui_dir / "report.html",
+            )
+        finally:
+            server.terminate()
+            try:
+                server.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait(timeout=5)
+
+    if "Loading the local-first app shell" not in workbench_html:
+        raise RuntimeError("Workbench route did not return the app shell")
+    if "Loading the local-first app shell" not in workflow_detail_html:
+        raise RuntimeError("Workflow detail route did not return the app shell")
+    if "Loading the local-first app shell" not in run_detail_html:
+        raise RuntimeError("Run detail route did not return the app shell")
+    if "Loading the local-first app shell" not in compare_html:
+        raise RuntimeError("Compare route did not return the app shell")
+    if "<html" not in report_html.lower():
+        raise RuntimeError("Report route did not return HTML")
+    if not validated["validation"]["ok"]:
+        raise RuntimeError(f"WebUI draft validation failed: {validated}")
+    if launched["compare"]["baseline_run_id"] != baseline_run_id:
+        raise RuntimeError(f"WebUI compare baseline mismatch: expected {baseline_run_id}, got {launched['compare']}")
+    if compare["baseline_run_id"] != baseline_run_id:
+        raise RuntimeError(f"Compare snapshot baseline mismatch: expected {baseline_run_id}, got {compare}")
+    if not candidate_run_dir.exists():
+        raise RuntimeError(f"WebUI candidate run missing: {candidate_run_dir}")
+    if not (candidate_run_dir / "report.html").exists():
+        raise RuntimeError(f"WebUI report missing: {candidate_run_dir / 'report.html'}")
+    if not (workflows_dir / f"{template_name}.json").exists():
+        raise RuntimeError(f"WebUI template workflow did not persist: {workflows_dir / f'{template_name}.json'}")
+
+    summary = {
+        "baseline_run_id": baseline_run_id,
+        "cli": {
+            "scratch_workflow_path": str(scratch_path),
+            "scratch_run_id": scratch_run_id,
+            "scratch_status": load_json(scratch_run_dir / "run.json")["status"],
+            "scratch_report_exists": (scratch_run_dir / "report.html").exists(),
+            "clone_workflow_path": str(clone_path),
+            "clone_run_id": clone_run_id,
+            "clone_status": load_json(clone_run_dir / "run.json")["status"],
+        },
+        "webui": {
+            "catalog_modes": [item["key"] for item in catalog["creation_modes"]],
+            "draft_id": created["id"],
+            "workflow_name": template_name,
+            "workflow_path": str(workflows_dir / f"{template_name}.json"),
+            "updated_title": updated["authoring"]["core_form"]["title"],
+            "validate_ok": validated["validation"]["ok"],
+            "candidate_run_id": candidate_run_id,
+            "candidate_status": run_detail["summary"]["status"],
+            "compare_baseline_run_id": compare["baseline_run_id"],
+            "compare_row_count": len(compare["rows"]),
+            "report_exists": (candidate_run_dir / "report.html").exists(),
+            "workbench_route_ok": "Loading the local-first app shell" in workbench_html,
+            "workflow_detail_route_ok": "Loading the local-first app shell" in workflow_detail_html,
+            "run_detail_route_ok": "Loading the local-first app shell" in run_detail_html,
+            "compare_route_ok": "Loading the local-first app shell" in compare_html,
+            "report_route_ok": "<html" in report_html.lower(),
+            "draft_source": draft_snapshot["workflow"]["source"],
+            "health_ready": health["ready"],
+        },
+    }
+    write_json(journey_dir / "summary.json", summary)
+    return summary
+
+
+def run_playground(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
+    journey_dir = artifacts_dir / "xrtm-release" / "playground"
+    cli_dir = journey_dir / "cli"
+    webui_dir = journey_dir / "webui"
+    workflows_dir = journey_dir / ".xrtm" / "workflows"
+    profiles_dir = journey_dir / ".xrtm" / "profiles"
+    runs_dir = journey_dir / "runs"
+    prepare_artifacts_dir(cli_dir)
+    prepare_artifacts_dir(webui_dir)
+    prepare_artifacts_dir(workflows_dir)
+    prepare_artifacts_dir(profiles_dir)
+
+    before_baseline = discover_run_ids(runs_dir)
+    run_logged(["xrtm", "start", "--runs-dir", str(runs_dir)], log_path=cli_dir / "start.log", cwd=journey_dir, env=env)
+    baseline_run_id = new_run_id(before_baseline, runs_dir)
+
+    cli_question = "Will the provider-free CLI playground custom-question flow pass Gate 2?"
+    before_cli = discover_run_ids(runs_dir)
+    run_logged(
+        [
+            "xrtm",
+            "playground",
+            "--workflow",
+            "demo-provider-free",
+            "--question",
+            cli_question,
+            "--workflows-dir",
+            str(workflows_dir),
+            "--runs-dir",
+            str(runs_dir),
+        ],
+        log_path=cli_dir / "playground.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    cli_run_id = new_run_id(before_cli, runs_dir)
+    cli_run_dir = runs_dir / cli_run_id
+    cli_session = load_json(cli_run_dir / "sandbox_session.json")
+    cli_step_orders = [int(step["order"]) for step in cli_session["inspection_steps"]]
+    if cli_session["labeling"]["classification"] != "exploratory":
+        raise RuntimeError(f"CLI playground run should stay exploratory: {cli_session['labeling']}")
+    if cli_session["context"]["workflow_name"] != "demo-provider-free":
+        raise RuntimeError(f"CLI playground used unexpected workflow context: {cli_session['context']}")
+    if cli_session["run"]["provider"] != "mock":
+        raise RuntimeError(f"CLI playground should stay provider-free: {cli_session['run']}")
+    if cli_session["save_back"]["mode"] != "explicit":
+        raise RuntimeError(f"CLI playground save-back should stay explicit: {cli_session['save_back']}")
+    if cli_step_orders != sorted(cli_step_orders):
+        raise RuntimeError(f"CLI inspection steps are not ordered: {cli_session['inspection_steps']}")
+    if not cli_session["inspection_steps"] or cli_session["inspection_steps"][0]["node_id"] != "load_questions":
+        raise RuntimeError(f"CLI inspection steps missing load_questions entry: {cli_session['inspection_steps']}")
+    if not cli_session["inspection_steps"][0]["artifact_payloads"].get("questions"):
+        raise RuntimeError(f"CLI inspection steps missing normalized question payloads: {cli_session['inspection_steps'][0]}")
+    cli_log = (cli_dir / "playground.log").read_text(encoding="utf-8")
+    if "Exploratory playground session" not in cli_log or "Step inspection" not in cli_log:
+        raise RuntimeError("CLI playground output did not include the expected exploratory inspection summary")
+    run_logged(
+        ["xrtm", "runs", "show", cli_run_id, "--runs-dir", str(runs_dir)],
+        log_path=cli_dir / "runs-show.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        ["xrtm", "runs", "compare", baseline_run_id, cli_run_id, "--runs-dir", str(runs_dir)],
+        log_path=cli_dir / "runs-compare.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        ["xrtm", "report", "html", str(cli_run_dir)],
+        log_path=cli_dir / "report-html.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    if not (cli_run_dir / "report.html").exists():
+        raise RuntimeError(f"CLI playground report missing: {cli_run_dir / 'report.html'}")
+
+    web_question = "Will the provider-free WebUI playground custom-question flow pass Gate 2?"
+    saved_workflow_name = "gate2-playground-web-workflow"
+    saved_profile_name = "gate2-playground-web-profile"
+    port = reserve_local_port()
+    base_url = f"http://127.0.0.1:{port}"
+    server_log_path = webui_dir / "web-server.log"
+    with server_log_path.open("w", encoding="utf-8") as server_log:
+        server = subprocess.Popen(
+            [
+                "xrtm",
+                "web",
+                "--runs-dir",
+                str(runs_dir),
+                "--workflows-dir",
+                str(workflows_dir),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ],
+            cwd=str(journey_dir),
+            env=env,
+            text=True,
+            stdout=server_log,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            wait_for_web_server(base_url)
+            health = fetch_json(f"{base_url}/api/health", output_path=webui_dir / "health.json")
+            playground_html = fetch_text(f"{base_url}/playground", output_path=webui_dir / "playground.html")
+            snapshot = fetch_json(f"{base_url}/api/playground", output_path=webui_dir / "playground-snapshot.json")
+            updated = fetch_json(
+                f"{base_url}/api/playground",
+                output_path=webui_dir / "playground-update.json",
+                method="PATCH",
+                payload={
+                    "context_type": "template",
+                    "template_id": "provider-free-demo",
+                    "question_prompt": web_question,
+                    "question_title": "Gate 2 playground WebUI question",
+                    "resolution_criteria": "Resolves YES if the provider-free playground run completes through the shared WebUI sandbox path.",
+                },
+            )
+            launched = fetch_json(
+                f"{base_url}/api/playground/run",
+                output_path=webui_dir / "playground-run.json",
+                method="POST",
+                payload={},
+            )
+            last_result = launched["last_result"]
+            web_run_id = str(last_result["run_id"])
+            web_run_dir = runs_dir / web_run_id
+            run_detail = fetch_json(
+                f"{base_url}/api/runs/{web_run_id}",
+                output_path=webui_dir / "run-detail.json",
+            )
+            run_detail_html = fetch_text(
+                f"{base_url}/runs/{web_run_id}",
+                output_path=webui_dir / "run-detail.html",
+            )
+            compare = fetch_json(
+                f"{base_url}/api/runs/{web_run_id}/compare/{baseline_run_id}",
+                output_path=webui_dir / "compare.json",
+            )
+            compare_html = fetch_text(
+                f"{base_url}/runs/{web_run_id}/compare/{baseline_run_id}",
+                output_path=webui_dir / "compare.html",
+            )
+            fetch_json(
+                f"{base_url}/api/runs/{web_run_id}/report",
+                output_path=webui_dir / "report.json",
+                method="POST",
+                payload={},
+            )
+            report_html = fetch_text(
+                f"{base_url}/runs/{web_run_id}/report",
+                output_path=webui_dir / "report.html",
+            )
+            saved_workflow = fetch_json(
+                f"{base_url}/api/playground/runs/{web_run_id}/save-workflow",
+                output_path=webui_dir / "save-workflow.json",
+                method="POST",
+                payload={"workflow_name": saved_workflow_name},
+            )
+            saved_profile = fetch_json(
+                f"{base_url}/api/playground/runs/{web_run_id}/save-profile",
+                output_path=webui_dir / "save-profile.json",
+                method="POST",
+                payload={"profile_name": saved_profile_name},
+            )
+        finally:
+            server.terminate()
+            try:
+                server.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait(timeout=5)
+
+    web_session = load_json(web_run_dir / "sandbox_session.json")
+    web_step_orders = [int(step["order"]) for step in web_session["inspection_steps"]]
+    if "Loading the local-first app shell" not in playground_html:
+        raise RuntimeError("Playground route did not return the app shell")
+    if "Loading the local-first app shell" not in run_detail_html:
+        raise RuntimeError("Playground run detail route did not return the app shell")
+    if "Loading the local-first app shell" not in compare_html:
+        raise RuntimeError("Playground compare route did not return the app shell")
+    if "<html" not in report_html.lower():
+        raise RuntimeError("Playground report route did not return HTML")
+    if not health["ready"]:
+        raise RuntimeError(f"WebUI playground server never reported ready: {health}")
+    if snapshot["session"]["context_type"] != "workflow":
+        raise RuntimeError(f"Unexpected initial playground session state: {snapshot['session']}")
+    if not updated["session"]["ready_to_run"]:
+        raise RuntimeError(f"Updated playground session should be ready to run: {updated['session']}")
+    if last_result["labeling"]["classification"] != "exploratory":
+        raise RuntimeError(f"WebUI playground run should stay exploratory: {last_result['labeling']}")
+    if last_result["run"]["provider"] != "mock":
+        raise RuntimeError(f"WebUI playground should stay provider-free: {last_result['run']}")
+    if last_result["context"]["template_id"] != "provider-free-demo":
+        raise RuntimeError(f"WebUI playground used unexpected template context: {last_result['context']}")
+    if web_step_orders != sorted(web_step_orders):
+        raise RuntimeError(f"WebUI inspection steps are not ordered: {web_session['inspection_steps']}")
+    if web_session["save_back"]["workflow"]["saved_workflow_name"] != saved_workflow_name:
+        raise RuntimeError(f"WebUI workflow save-back did not persist expected workflow: {web_session['save_back']}")
+    if web_session["save_back"]["profile"]["saved_profile_name"] != saved_profile_name:
+        raise RuntimeError(f"WebUI profile save-back did not persist expected profile: {web_session['save_back']}")
+    if "Inspection is read-only" not in " ".join(updated["guidance"]["limitations"]):
+        raise RuntimeError(f"WebUI playground guidance lost the read-only inspection contract: {updated['guidance']}")
+    if compare["baseline_run_id"] != baseline_run_id:
+        raise RuntimeError(f"Playground compare baseline mismatch: expected {baseline_run_id}, got {compare}")
+    if run_detail["summary"]["status"] != "completed":
+        raise RuntimeError(f"Playground run detail should show a completed run: {run_detail['summary']}")
+    if saved_workflow["workflow"]["name"] != saved_workflow_name or not Path(saved_workflow["path"]).exists():
+        raise RuntimeError(f"Playground workflow save-back failed: {saved_workflow}")
+    if saved_profile["profile"]["name"] != saved_profile_name or not Path(saved_profile["path"]).exists():
+        raise RuntimeError(f"Playground profile save-back failed: {saved_profile}")
+    if saved_profile["profile"]["workflow_name"] != saved_workflow_name:
+        raise RuntimeError(f"Playground profile save-back should reference the saved workflow: {saved_profile}")
+    if not (web_run_dir / "report.html").exists():
+        raise RuntimeError(f"WebUI playground report missing: {web_run_dir / 'report.html'}")
+
+    run_logged(
+        ["xrtm", "workflow", "validate", saved_workflow_name, "--workflows-dir", str(workflows_dir)],
+        log_path=webui_dir / "workflow-validate-saved.log",
+        cwd=journey_dir,
+        env=env,
+    )
+    run_logged(
+        ["xrtm", "profile", "show", saved_profile_name, "--profiles-dir", str(profiles_dir)],
+        log_path=webui_dir / "profile-show-saved.log",
+        cwd=journey_dir,
+        env=env,
+    )
+
+    summary = {
+        "baseline_run_id": baseline_run_id,
+        "cli": {
+            "run_id": cli_run_id,
+            "provider": cli_session["run"]["provider"],
+            "question_count": len(cli_session["questions"]),
+            "inspection_step_ids": [step["node_id"] for step in cli_session["inspection_steps"]],
+            "inspection_ordered": cli_step_orders == sorted(cli_step_orders),
+            "inspection_mode": cli_session["labeling"]["inspection_mode"],
+            "save_back_mode": cli_session["save_back"]["mode"],
+            "report_exists": (cli_run_dir / "report.html").exists(),
+        },
+        "webui": {
+            "run_id": web_run_id,
+            "provider": last_result["run"]["provider"],
+            "question_count": len(last_result["questions"]),
+            "inspection_step_ids": [step["node_id"] for step in last_result["inspection_steps"]],
+            "inspection_ordered": web_step_orders == sorted(web_step_orders),
+            "playground_route_ok": "Loading the local-first app shell" in playground_html,
+            "run_detail_route_ok": "Loading the local-first app shell" in run_detail_html,
+            "compare_route_ok": "Loading the local-first app shell" in compare_html,
+            "report_route_ok": "<html" in report_html.lower(),
+            "saved_workflow_name": saved_workflow["workflow"]["name"],
+            "saved_profile_name": saved_profile["profile"]["name"],
+            "saved_profile_workflow_name": saved_profile["profile"]["workflow_name"],
+            "health_ready": health["ready"],
+        },
+    }
+    write_json(journey_dir / "summary.json", summary)
+    return summary
+
+
 def run_developer_package(
     *,
     workspace_root_path: Path,
@@ -891,6 +1525,8 @@ def run_product_shell(
     run_release_claims(xrtm_repo_root_path, env, output_dir)
     summary = {
         "first_success": run_first_success(env, artifacts_dir),
+        "workflow_authoring": run_workflow_authoring(env, artifacts_dir),
+        "playground": run_playground(env, artifacts_dir),
         "operator": run_operator(env, artifacts_dir),
         "research_eval": run_research_eval(env, artifacts_dir),
         "benchmark_matrix": run_benchmark_matrix(env, artifacts_dir),

@@ -4,7 +4,7 @@ This page is the implementation-level source of truth for CLI/WebUI parity in
 `xrtm`. It follows the governance
 [Interface Parity and Claim Ownership Policy](https://github.com/xrtm-org/governance/blob/main/policies/interface-parity-and-claim-ownership-policy.md).
 
-Current baseline: published `xrtm==0.8.0`.
+Current baseline: published `xrtm==0.8.2`.
 
 ## Status legend
 
@@ -31,14 +31,15 @@ Current baseline: published `xrtm==0.8.0`.
 | Report generation/viewing | `/runs/<run-id>`, `POST /api/runs/<run-id>/report`, `/runs/<run-id>/report` | `partial` | Uses the same report renderer as `xrtm report html`; run detail now exposes generate/open actions. |
 | Workflow catalog | `/start`, `GET /api/workflows` | `partial` | Start page exposes the catalog for newcomer run setup and workflow selection. |
 | Workflow detail | `/workflows/<name>`, `GET /api/workflows/<name>` | `partial` | Dedicated WebUI page now shows workflow metadata and canvas. |
-| Workflow explain | `/start`, `/workflows/<name>`, `GET /api/workflows/<name>/explain` | `partial` | Shared explain payload now backs both Start and workflow detail. |
+| Workflow explain | `/start`, `/workflows/<name>`, `GET /api/workflows/<name>/explain` | `partial` | Shared explain payload now backs both Start/workflow detail and the authored-workflow CLI inspection path. |
 | Workflow validate | `/workflows/<name>`, `POST /api/workflows/<name>/validate` | `partial` | Shared validation now has a dedicated workflow-detail action outside draft flow. |
 | First-success run | `/start`, `POST /api/start` | `parity-ready` | WebUI launches the same quickstart service used by `xrtm start` and passed release Gate 2. |
 | Demo run setup | `/start`, `POST /api/runs` | `partial` | WebUI now launches bounded demo runs with provider/runtime overrides through shared launch services. |
 | Workflow run | `/start`, `/workflows/<name>`, `POST /api/runs` | `partial` | WebUI now launches named workflows through the same shared launch service used by CLI workflow runs. |
-| Draft clone/edit | `/workbench`, `POST /api/drafts`, `PATCH /api/drafts/<id>` | `partial` | Covers constrained local draft creation and safe edits, not arbitrary workflow editing. |
-| Draft validate | `/workbench`, `POST /api/drafts/<id>/validate` | `parity-ready` | Covers the safe-draft validation path of `xrtm workflow validate`. |
-| Draft run | `/workbench`, `POST /api/drafts/<id>/run` | `parity-ready` | Covers the candidate workflow-run path for a draft. |
+| Playground exploratory loop | `/playground`, `GET/PATCH /api/playground`, `POST /api/playground/run`, `POST /api/playground/runs/<run-id>/save-workflow\|save-profile` | `parity-ready` | Shared sandbox state, one-custom-question-first flow, read-only step inspection, and explicit save-back wiring now ship in both interfaces for the released `0.8.2` provider-free sandbox contract. Keep any wider real-runtime or cloud/API wording off the released surface until matching Gate 2 proof exists. |
+| Draft authoring | `/workbench`, `GET /api/authoring/catalog`, `POST /api/drafts`, `PATCH /api/drafts/<id>` | `partial` | Covers draft creation from scratch/template/clone plus shared core-field and node/edge/entry authoring inside the released schema and node catalog. Parallel-group and conditional-route editing remain thin/read-only. |
+| Draft validate | `/workbench`, `POST /api/drafts/<id>/validate` | `parity-ready` | Shared authored-workflow validation now backs both CLI and WebUI draft flows. |
+| Draft run | `/workbench`, `POST /api/drafts/<id>/run` | `parity-ready` | Shared authored-workflow run wiring now backs both CLI and WebUI draft execution. |
 | Profiles | `/operations`, `GET/POST /api/profiles`, `GET /api/profiles/<name>`, `POST /api/profiles/<name>/run` | `parity-ready` | Operator page covers starter/custom profile creation, listing, inspection, and run launch with shared services and release proof. |
 | Monitors | `/operations`, `GET/POST /api/monitors`, `GET /api/monitors/<run-id>`, `POST /api/monitors/<run-id>/run-once\|pause\|resume\|halt` | `parity-ready` | Operator page exposes monitor lifecycle actions backed by shared monitor services and release proof. |
 | Artifact inventory and cleanup | `/operations`, `GET /api/artifacts/<run-id>`, `POST /api/artifacts/cleanup-preview`, `POST /api/artifacts/cleanup` | `parity-ready` | Operator page exposes artifact inventory plus explicit cleanup preview/confirm flow with release proof. |
@@ -52,10 +53,15 @@ Current baseline: published `xrtm==0.8.0`.
 | `xrtm doctor` | Newcomer readiness | `parity-ready` | released | `xrtm.product.doctor.run_doctor`, `doctor_snapshot` | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 complete |
 | `xrtm start` | First-success run | `parity-ready` | released | `xrtm.product.launch.run_start_quickstart` | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 complete |
 | `xrtm demo` | Demo run setup | `partial` | P0 | `xrtm.product.launch.run_demo_workflow` | `xrtm` next-release track | Gate 1 + selective Gate 2 if promoted |
+| `xrtm playground` | Run the bounded exploratory sandbox loop | `parity-ready` | released (`0.8.2`) | `xrtm.product.launch.run_sandbox_session`, `save_sandbox_workflow`, `save_sandbox_profile`, WebUI playground state services | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 provider-free baseline complete; any real-runtime or cloud/API playground claim still needs matching clean-room proof before promotion |
 | `xrtm workflow list` | Workflow discovery | `partial` | P0 | `WorkflowRegistry.list_workflows` | `xrtm` docs | Gate 1 |
 | `xrtm workflow show` | Workflow inspection | `partial` | P0 | `xrtm.product.launch.load_registered_workflow`, `WorkflowRegistry.load` | `xrtm` docs | Gate 1 |
 | `xrtm workflow validate` | Workflow validation | `partial` | P0 | `xrtm.product.launch.validate_registered_workflow`, `WorkflowRegistry.validate` | `xrtm` docs | Gate 1 + WebUI route/API smoke |
-| `xrtm workflow clone` | Editable local workflow | `partial` | P0 | `WorkflowRegistry.clone`, workbench draft services | `xrtm` docs | Gate 1 + WebUI route/API smoke |
+| `xrtm workflow create scratch` | Start a new local workflow | `partial` | P0 | `WorkflowAuthoringService.create_workflow_from_scratch`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
+| `xrtm workflow create template` | Start from a starter template | `partial` | P0 | `WorkflowAuthoringService.create_workflow_from_template`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
+| `xrtm workflow clone` / `xrtm workflow create clone` | Clone a workflow into a local authoring draft | `partial` | P0 | `WorkflowAuthoringService.clone_workflow`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
+| `xrtm workflow edit metadata/questions/runtime/artifacts/scoring` | Update shared core workflow fields | `partial` | P0 | `WorkflowAuthoringService.update_*`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
+| `xrtm workflow edit node/edge/entry` | Safe graph authoring inside the released node library | `partial` | P0 | `WorkflowAuthoringService.add_node/update_node/remove_node/add_edge/remove_edge/set_entry`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
 | `xrtm workflow explain` | Workflow explanation | `partial` | P0 | `xrtm.product.launch.explain_registered_workflow`, `WorkflowRegistry.explain` | `xrtm` docs | Gate 1 |
 | `xrtm workflow run` | Run selected workflow | `partial` | P0 | `xrtm.product.launch.run_registered_workflow` | `xrtm` docs | Gate 1 + WebUI-only Gate 2 |
 | `xrtm profile starter` | Starter profile creation | `parity-ready` | released | `starter_profile`, `ProfileStore.create` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
@@ -98,16 +104,19 @@ Current baseline: published `xrtm==0.8.0`.
 
 ## Released parity proof
 
-The `0.8.0` release proof covered:
+The `0.8.2` release proof should cover:
 
 1. open WebUI from a fresh install
 2. run readiness/doctor from the browser
 3. start a provider-free baseline run from the browser
 4. inspect run detail
-5. generate or open an HTML report
-6. export JSON and CSV evidence
-7. create and run a candidate
-8. compare candidate against baseline
+5. create a local authored workflow from scratch, a starter template, or a clone
+6. author shared core workflow fields plus node/edge/entry changes inside the built-in node catalog
+7. validate, explain, and run the authored workflow through the shared services
+8. generate/open reports, export evidence, and compare candidate against baseline
+9. run one custom-question-first playground session through CLI and WebUI, verify
+   read-only ordered step inspection, and confirm save-back stays explicit and
+   exploratory on the provider-free baseline
 
 ## Known decisions for P2
 

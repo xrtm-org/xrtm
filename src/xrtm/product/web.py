@@ -41,12 +41,14 @@ from xrtm.product.workbench import (
     workflow_registry_for,
 )
 from xrtm.product.workflows import DEFAULT_LOCAL_WORKFLOWS_DIR
+from xrtm.version import __version__
 
 _STATIC_ROOT = Path(__file__).with_name("webui_static")
 _APP_ROUTES = [
     re.compile(r"^/$"),
     re.compile(r"^/start$"),
     re.compile(r"^/runs$"),
+    re.compile(r"^/playground$"),
     re.compile(r"^/operations$"),
     re.compile(r"^/advanced$"),
     re.compile(r"^/workbench$"),
@@ -122,6 +124,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
             if path == "/api/workflows":
                 self.state_store.refresh_indexes(runs_dir=self.runs_dir, registry=self._registry())
                 self._send_json({"items": self.state_store.list_workflows()})
+                return
+            if path == "/api/playground":
+                self._send_json(self.state_store.playground_snapshot(runs_dir=self.runs_dir, registry=self._registry()))
+                return
+            if path == "/api/authoring/catalog":
+                self._send_json(self.state_store.authoring_catalog(registry=self._registry()))
                 return
             if path == "/api/profiles":
                 self._send_json(
@@ -264,11 +272,50 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 draft = self.state_store.create_draft_session(
                     registry=self._registry(),
                     runs_dir=self.runs_dir,
-                    source_workflow_name=_required_json_value(payload, "source_workflow_name"),
+                    source_workflow_name=_optional_json_value(payload, "source_workflow_name"),
                     baseline_run_id=_optional_json_value(payload, "baseline_run_id"),
                     draft_workflow_name=_optional_json_value(payload, "draft_workflow_name"),
+                    creation_mode=_optional_json_value(payload, "creation_mode") or "clone",
+                    template_id=_optional_json_value(payload, "template_id"),
+                    title=_optional_json_value(payload, "title"),
+                    description=_optional_json_value(payload, "description"),
                 )
                 self._send_json(draft, status=HTTPStatus.CREATED)
+                return
+            if path == "/api/playground/run":
+                payload = self._read_json()
+                self._send_json(
+                    self.state_store.run_playground_session(
+                        registry=self._registry(),
+                        runs_dir=self.runs_dir,
+                        values=payload,
+                    ),
+                    status=HTTPStatus.CREATED,
+                )
+                return
+            playground_workflow_save = re.match(r"^/api/playground/runs/([^/]+)/save-workflow$", path)
+            if playground_workflow_save:
+                payload = self._read_json()
+                result = launch_module.save_sandbox_workflow(
+                    _safe_run_dir(self.runs_dir, playground_workflow_save.group(1)),
+                    workflow_name=_optional_json_value(payload, "workflow_name"),
+                    workflows_dir=self.workflows_dir,
+                    overwrite=_optional_json_bool(payload, "overwrite", default=False),
+                )
+                self._send_json(result, status=HTTPStatus.CREATED)
+                return
+            playground_profile_save = re.match(r"^/api/playground/runs/([^/]+)/save-profile$", path)
+            if playground_profile_save:
+                payload = self._read_json()
+                result = launch_module.save_sandbox_profile(
+                    _safe_run_dir(self.runs_dir, playground_profile_save.group(1)),
+                    profile_name=_required_json_value(payload, "profile_name"),
+                    profiles_dir=self._profiles_dir(),
+                    workflows_dir=self.workflows_dir,
+                    workflow_name=_optional_json_value(payload, "workflow_name"),
+                    overwrite=_optional_json_bool(payload, "overwrite", default=False),
+                )
+                self._send_json(result, status=HTTPStatus.CREATED)
                 return
             if path == "/api/profiles":
                 payload = self._read_json()
@@ -279,6 +326,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 else:
                     profile = WorkflowProfile(
                         name=name,
+                        workflow_name=_optional_json_value(payload, "workflow_name"),
                         provider=_optional_json_value(payload, "provider") or "mock",
                         limit=_optional_json_int(payload, "limit", default=launch_module.DEFAULT_DEMO_LIMIT),
                         runs_dir=str(_optional_json_path(payload, "runs_dir") or self.runs_dir),
@@ -405,6 +453,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = unquote(parsed.path).rstrip("/") or "/"
         try:
+            if path == "/api/playground":
+                payload = self._read_json()
+                self._send_json(
+                    self.state_store.update_playground_session(
+                        registry=self._registry(),
+                        runs_dir=self.runs_dir,
+                        values=payload,
+                    )
+                )
+                return
             draft_match = re.match(r"^/api/drafts/([^/]+)$", path)
             if draft_match:
                 payload = self._read_json()
@@ -692,8 +750,11 @@ def render_app_shell_html(*, initial_path: str, query_string: str = "", error: s
     <div id='root'>
       <main class='boot-shell'>
         <header class='boot-header'>
-          <span class='boot-badge'>XRTM WebUI</span>
-          <h1>Overview · Start · Runs · Operations · Workbench</h1>
+          <div class='boot-title-group'>
+            <span class='boot-badge'>XRTM WebUI</span>
+            <span class='version-pill'>v{__version__}</span>
+          </div>
+          <h1>Overview · Start · Runs · Playground · Operations · Workbench</h1>
           <p>Loading the local-first app shell…</p>
         </header>
         <noscript>This WebUI shell needs JavaScript enabled.</noscript>

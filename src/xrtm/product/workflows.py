@@ -563,6 +563,90 @@ def _summary_for_blueprint(blueprint: WorkflowBlueprint, *, source: str, path: s
     )
 
 
+def _graph_adjacency(graph: GraphSpec) -> dict[str, set[str]]:
+    adjacency: dict[str, set[str]] = {
+        name: set() for name in set(graph.nodes) | set(graph.parallel_groups)
+    }
+    for group_name, group in graph.parallel_groups.items():
+        adjacency.setdefault(group_name, set()).update(group.nodes)
+    for edge in graph.edges:
+        adjacency.setdefault(edge.from_node, set()).add(edge.to_node)
+    for source_name, route in graph.conditional_routes.items():
+        adjacency.setdefault(source_name, set()).update(route.routes.values())
+    return adjacency
+
+
+def _reachable_graph_targets(graph: GraphSpec) -> set[str]:
+    adjacency = _graph_adjacency(graph)
+    reachable: set[str] = set()
+    stack = [graph.entry]
+    while stack:
+        current = stack.pop()
+        if current in reachable:
+            continue
+        reachable.add(current)
+        stack.extend(reversed(sorted(adjacency.get(current, ()))))
+    return reachable
+
+
+def _graph_cycle(graph: GraphSpec) -> list[str] | None:
+    adjacency = _graph_adjacency(graph)
+    visited: set[str] = set()
+    visiting: set[str] = set()
+    path: list[str] = []
+
+    def visit(node_name: str) -> list[str] | None:
+        visiting.add(node_name)
+        path.append(node_name)
+        for target in sorted(adjacency.get(node_name, ())):
+            if target in visiting:
+                cycle_start = path.index(target)
+                return path[cycle_start:] + [target]
+            if target in visited:
+                continue
+            cycle = visit(target)
+            if cycle is not None:
+                return cycle
+        visiting.remove(node_name)
+        path.pop()
+        visited.add(node_name)
+        return None
+
+    for node_name in sorted(adjacency):
+        if node_name in visited:
+            continue
+        cycle = visit(node_name)
+        if cycle is not None:
+            return cycle
+    return None
+
+
+def _validate_graph_topology(blueprint: WorkflowBlueprint) -> list[str]:
+    graph = blueprint.graph
+    errors: list[str] = []
+    seen_edges: set[tuple[str, str]] = set()
+    duplicate_edges: list[str] = []
+    for edge in graph.edges:
+        key = (edge.from_node, edge.to_node)
+        if key in seen_edges:
+            duplicate_edges.append(f"{edge.from_node}->{edge.to_node}")
+        seen_edges.add(key)
+    if duplicate_edges:
+        errors.append("workflow graph contains duplicate edges: " + ", ".join(sorted(set(duplicate_edges))))
+    for source_name in graph.conditional_routes:
+        source = graph.nodes.get(source_name)
+        if source is not None and source.kind != "router":
+            errors.append(f"{source_name}: conditional routes require router nodes")
+    cycle = _graph_cycle(graph)
+    if cycle is not None:
+        errors.append("workflow graph may not contain cycles: " + " -> ".join(cycle))
+    reachable = _reachable_graph_targets(graph)
+    unreachable = sorted((set(graph.nodes) | set(graph.parallel_groups)) - reachable)
+    if unreachable:
+        errors.append("workflow graph contains unreachable nodes or groups: " + ", ".join(unreachable))
+    return errors
+
+
 def validate_product_blueprint(blueprint: WorkflowBlueprint) -> None:
     from xrtm.product.workflow_nodes import list_builtin_workflow_nodes
 
@@ -573,6 +657,7 @@ def validate_product_blueprint(blueprint: WorkflowBlueprint) -> None:
         errors.append(f"unsupported runtime provider for product workflows: {blueprint.runtime.provider}")
     if blueprint.questions.source not in _SUPPORTED_QUESTION_SOURCES:
         errors.append(f"unsupported question source for product workflows: {blueprint.questions.source}")
+    errors.extend(_validate_graph_topology(blueprint))
     for node_name, node in blueprint.graph.nodes.items():
         if node.kind not in ALLOWED_PRODUCT_NODE_KINDS:
             errors.append(f"{node_name}: unsupported node kind {node.kind!r}")

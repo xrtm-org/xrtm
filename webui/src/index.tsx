@@ -98,6 +98,7 @@ function App(): React.ReactElement {
   const nav = shell.data?.app?.nav ?? [
     { label: "Overview", href: "/" },
     { label: "Runs", href: "/runs" },
+    { label: "Playground", href: "/playground" },
     { label: "Workbench", href: "/workbench" },
   ];
 
@@ -108,6 +109,8 @@ function App(): React.ReactElement {
     page = <StartPage shell={shell.data} navigate={navigate} onMutate={refreshShell} />;
   } else if (route.path === "/runs") {
     page = <RunsPage route={route} navigate={navigate} />;
+  } else if (route.path === "/playground") {
+    page = <PlaygroundPage shell={shell.data} navigate={navigate} onMutate={refreshShell} />;
   } else if (route.path === "/operations") {
     page = <OperationsPage navigate={navigate} onMutate={refreshShell} />;
   } else if (route.path === "/advanced") {
@@ -127,8 +130,11 @@ function App(): React.ReactElement {
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <span className="eyebrow">XRTM WebUI</span>
-          <h1>Local forecasting workbench</h1>
+          <div className="title-row">
+            <span className="eyebrow">XRTM WebUI</span>
+            {shell.data?.app?.version ? <span className="version-pill">v{String(shell.data.app.version)}</span> : null}
+          </div>
+          <h1>Local forecasting cockpit</h1>
         </div>
         <nav className="topnav" aria-label="Primary">
           {nav.map((item: JsonObject) => (
@@ -151,6 +157,10 @@ function App(): React.ReactElement {
       {shell.loading && !shell.data ? <LoadingCard label="Loading app shell" /> : null}
       {shell.data ? (
         <section className="environment-strip">
+          <div>
+            <strong>Version</strong>
+            <span>{shell.data.app?.version ? `xrtm ${String(shell.data.app.version)}` : "unknown"}</span>
+          </div>
           <div>
             <strong>Runs</strong>
             <span>{shell.data.environment?.runs_dir}</span>
@@ -1411,34 +1421,430 @@ function ComparePage({ candidateRunId, baselineRunId, navigate }: { candidateRun
   );
 }
 
+function PlaygroundPage({
+  shell,
+  navigate,
+  onMutate,
+}: {
+  shell: JsonObject | null;
+  navigate: (path: string) => void;
+  onMutate: () => void;
+}): React.ReactElement {
+  const resource = useJsonResource(`${bootstrap.api_root}/playground`, []);
+  const [contextType, setContextType] = useState("workflow");
+  const [workflowName, setWorkflowName] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const [questionPrompt, setQuestionPrompt] = useState("");
+  const [questionTitle, setQuestionTitle] = useState("");
+  const [resolutionCriteria, setResolutionCriteria] = useState("");
+  const [selectedStepKey, setSelectedStepKey] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: string; title: string; body: string } | null>(null);
+
+  const session = resource.data?.session;
+  const catalog = (resource.data?.catalog || {}) as JsonObject;
+  const workflows = (catalog.workflows || []) as JsonObject[];
+  const templates = (catalog.templates || []) as JsonObject[];
+  const contextPreview = resource.data?.context_preview as JsonObject | null;
+  const lastResult = resource.data?.last_result as JsonObject | null;
+  const steps = ((lastResult?.inspection_steps || []) as JsonObject[]).filter((step) => typeof step?.node_id === "string");
+  const activeStep = steps.find((step) => playgroundStepKey(step) === selectedStepKey) || steps[0] || null;
+  const readyToRun = Boolean(questionPrompt.trim() && (contextType === "workflow" ? workflowName : templateId));
+  const latestRun = shell?.overview?.latest_run as JsonObject | null;
+
+  useEffect(() => {
+    if (!session) return;
+    setContextType(String(session.context_type || "workflow"));
+    setWorkflowName(String(session.workflow_name || workflows[0]?.name || ""));
+    setTemplateId(String(session.template_id || templates[0]?.template_id || ""));
+    setQuestionPrompt(String(session.question_prompt || ""));
+    setQuestionTitle(String(session.question_title || ""));
+    setResolutionCriteria(String(session.resolution_criteria || ""));
+  }, [session?.updated_at, session?.context_type, session?.workflow_name, session?.template_id, session?.question_prompt, session?.question_title, session?.resolution_criteria, workflows, templates]);
+
+  useEffect(() => {
+    if (!steps.length) {
+      setSelectedStepKey("");
+      return;
+    }
+    if (!selectedStepKey || !steps.some((step) => playgroundStepKey(step) === selectedStepKey)) {
+      setSelectedStepKey(playgroundStepKey(steps[0]));
+    }
+  }, [selectedStepKey, steps]);
+
+  const payload = (): JsonObject => ({
+    context_type: contextType,
+    workflow_name: workflowName || undefined,
+    template_id: templateId || undefined,
+    question_prompt: questionPrompt,
+    question_title: questionTitle || undefined,
+    resolution_criteria: resolutionCriteria || undefined,
+  });
+
+  async function persistPlaygroundState() {
+    setBusy("Updating playground state");
+    setNotice(null);
+    try {
+      await requestJson(`${bootstrap.api_root}/playground`, {
+        method: "PATCH",
+        body: JSON.stringify(payload()),
+      });
+      resource.reload();
+      onMutate();
+      setNotice({
+        tone: "success",
+        title: "Playground state updated",
+        body: "The current exploratory context is saved locally in the WebUI state store.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setNotice({
+        tone: "error",
+        title: "Couldn't update playground state",
+        body: `${message} Stay inside the bounded workflow/template + single-question playground contract.`,
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runPlayground() {
+    setBusy("Running playground session");
+    setNotice(null);
+    try {
+      await requestJson(`${bootstrap.api_root}/playground/run`, {
+        method: "POST",
+        body: JSON.stringify(payload()),
+      });
+      resource.reload();
+      onMutate();
+      setNotice({
+        tone: "success",
+        title: "Exploratory run finished",
+        body: "Inspect the ordered step outputs below. The playground keeps node inspection read-only.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setNotice({
+        tone: "error",
+        title: "Couldn't run playground session",
+        body: `${message} The playground only runs one bounded custom question at a time.`,
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <main className="page-grid playground-shell">
+      {resource.error ? <Message tone="error" title="Playground unavailable" body={resource.error} /> : null}
+      {notice ? <Message tone={notice.tone} title={notice.title} body={notice.body} /> : null}
+      {resource.loading && !resource.data ? <LoadingCard label="Loading playground" /> : null}
+
+      <section className="panel hero-panel playground-hero">
+        <span className="eyebrow">Playground</span>
+        <h2>Run one bounded exploratory question without opening the workbench canvas</h2>
+        <p>
+          Choose a workflow or starter template, ask one custom question, then inspect ordered step outputs from the shared sandbox backend.
+          This surface is for exploratory execution only; safe authoring still lives in the workbench.
+        </p>
+        <div className="meta-row">
+          <span>{lastResult?.labeling?.display_label || "Exploratory playground session"}</span>
+          <StatusPill value={String(lastResult?.run?.status || session?.status || "playground-ready")} />
+          <span>{contextPreview?.title || contextPreview?.reference_name || "Choose a context"}</span>
+        </div>
+        <div className="button-row">
+          <button className="primary-button" onClick={runPlayground} disabled={Boolean(busy) || !readyToRun}>
+            {busy === "Running playground session" ? busy : "Run exploratory session"}
+          </button>
+          <button className="secondary-button" onClick={persistPlaygroundState} disabled={Boolean(busy)}>
+            {busy === "Updating playground state" ? busy : "Update playground state"}
+          </button>
+          {lastResult?.run_id ? (
+            <button className="secondary-button" onClick={() => navigate(`/runs/${lastResult.run_id}`)}>
+              Inspect full run
+            </button>
+          ) : latestRun?.run_id ? (
+            <button className="secondary-button" onClick={() => navigate(`/runs/${latestRun.run_id}`)}>
+              Inspect latest run
+            </button>
+          ) : null}
+          <button className="secondary-button" onClick={() => navigate("/workbench")}>Open workbench</button>
+        </div>
+      </section>
+
+      <section className="playground-grid">
+        <section className="panel section-stack">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">1. Context</span>
+              <h3>Choose workflow or starter template</h3>
+            </div>
+            <p className="section-copy">The playground reuses the same workflow registry and starter templates as the shared authoring stack.</p>
+          </div>
+          <div className="creation-mode-row">
+            {[
+              { key: "workflow", label: "Workflow", detail: "Reuse a saved workflow directly." },
+              { key: "template", label: "Template", detail: "Start from a starter template without opening the workbench." },
+            ].map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={contextType === item.key ? "workflow-tile active" : "workflow-tile"}
+                onClick={() => setContextType(item.key)}
+              >
+                <strong>{item.label}</strong>
+                <span className="workflow-note">{item.detail}</span>
+              </button>
+            ))}
+          </div>
+          {contextType === "workflow" ? (
+            <label>
+              <span>Workflow</span>
+              <select value={workflowName} onChange={(event) => setWorkflowName(event.target.value)}>
+                {workflows.map((item: JsonObject) => (
+                  <option key={item.name} value={item.name}>{item.title || item.name}</option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label>
+              <span>Starter template</span>
+              <select value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
+                {templates.map((item: JsonObject) => (
+                  <option key={item.template_id} value={item.template_id}>{item.title}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </section>
+
+        <section className="panel section-stack">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">2. Question</span>
+              <h3>Enter one custom question</h3>
+            </div>
+            <p className="section-copy">Keep the loop bounded: one custom exploratory question only in this WebUI pass.</p>
+          </div>
+          <label>
+            <span>Question prompt</span>
+            <textarea className="text-area-input" value={questionPrompt} onChange={(event) => setQuestionPrompt(event.target.value)} placeholder="Will the exploratory workflow produce a useful answer for this question?" />
+          </label>
+          <div className="two-field-grid">
+            <label>
+              <span>Optional title</span>
+              <input value={questionTitle} onChange={(event) => setQuestionTitle(event.target.value)} placeholder="Auto-derived from the prompt when blank" />
+            </label>
+            <label>
+              <span>Optional resolution criteria</span>
+              <input value={resolutionCriteria} onChange={(event) => setResolutionCriteria(event.target.value)} placeholder="Short read-only context for later inspection" />
+            </label>
+          </div>
+        </section>
+      </section>
+
+      <section className="playground-grid">
+        <section className="panel section-stack">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">3. Preview</span>
+              <h3>Selected playground context</h3>
+            </div>
+          </div>
+          {resource.data?.context_error ? (
+            <Message tone="error" title="Context unavailable" body={resource.data.context_error} />
+          ) : contextPreview ? (
+            <>
+              <div className="surface-card">
+                <div className="surface-header">
+                  <div>
+                    <strong>{contextPreview.title || contextPreview.reference_name}</strong>
+                    <p>{contextPreview.description || "No context description available."}</p>
+                  </div>
+                  <span className="source-pill local">{contextPreview.context_type}</span>
+                </div>
+                <dl className="context-list">
+                  <div><dt>Reference</dt><dd>{contextPreview.reference_name}</dd></div>
+                  <div><dt>Runtime</dt><dd>{contextPreview.runtime?.provider || "mock"}</dd></div>
+                  <div><dt>Question limit</dt><dd>{formatValue(contextPreview.questions_limit)}</dd></div>
+                  <div><dt>Entry node</dt><dd>{contextPreview.entry || "—"}</dd></div>
+                </dl>
+              </div>
+              <section className="guidance-section">
+                <h3>Playground contract</h3>
+                <ul className="guidance-list">
+                  {((resource.data?.guidance?.limitations || []) as string[]).map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </section>
+            </>
+          ) : (
+            <EmptyState title="Choose a context" body="Select a workflow or starter template to preview the playground context." />
+          )}
+        </section>
+
+        <section className="panel section-stack">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">4. Status</span>
+              <h3>Journey + next step</h3>
+            </div>
+          </div>
+          <ol className="step-list step-rail">
+            {((resource.data?.step_state || []) as JsonObject[]).map((step: JsonObject) => (
+              <li key={step.key} className={`step-item${step.locked ? " locked" : ""}`}>
+                <div className="step-head">
+                  <strong>{step.label}</strong>
+                  <span className={`step-status ${step.locked ? "locked" : "current"}`}>{step.locked ? "Locked" : "Ready"}</span>
+                </div>
+                <span>{step.description}</span>
+              </li>
+            ))}
+          </ol>
+          <section className="next-step-card">
+            <strong>{resource.data?.guidance?.next_step?.title || "Run one exploratory session"}</strong>
+            <p>{resource.data?.guidance?.next_step?.detail || "Update the playground state, then run one exploratory question."}</p>
+          </section>
+          {lastResult?.save_back ? (
+            <details className="artifact-preview">
+              <summary>Prepared save-back state (read-only)</summary>
+              <ArtifactPreview label="Workflow state" value={lastResult.save_back.workflow} />
+              <ArtifactPreview label="Profile state" value={lastResult.save_back.profile} />
+            </details>
+          ) : null}
+        </section>
+      </section>
+
+      {lastResult ? (
+        <>
+          <section className="stats-grid">
+            {((lastResult.summary_cards || []) as JsonObject[]).map((card: JsonObject) => (
+              <MetricCard key={String(card.label)} label={String(card.label)} value={card.value} />
+            ))}
+          </section>
+
+          <section className="playground-grid">
+            <section className="panel section-stack">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">5. Inspect</span>
+                  <h3>Ordered step outputs</h3>
+                </div>
+                <span className="section-count">{steps.length} steps</span>
+              </div>
+              <div className="playground-step-list">
+                {steps.map((step) => (
+                  <button
+                    key={playgroundStepKey(step)}
+                    type="button"
+                    className={playgroundStepKey(step) === playgroundStepKey(activeStep || {}) ? "playground-step-button active" : "playground-step-button"}
+                    onClick={() => setSelectedStepKey(playgroundStepKey(step))}
+                  >
+                    <div className="surface-header">
+                      <strong>{formatValue(step.order)}. {step.label || step.node_id}</strong>
+                      <StatusPill value={String(step.status || "completed")} />
+                    </div>
+                    <span className="workflow-note">{step.node_id} · {step.node_type || "node"}</span>
+                    <span>{step.output_preview || "No preview available."}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="panel section-stack">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Selected step</span>
+                  <h3>{activeStep?.label || activeStep?.node_id || "Read-only step detail"}</h3>
+                </div>
+              </div>
+              {activeStep ? (
+                <>
+                  <dl className="context-list">
+                    <div><dt>Node ID</dt><dd>{activeStep.node_id}</dd></div>
+                    <div><dt>Node type</dt><dd>{activeStep.node_type || "node"}</dd></div>
+                    <div><dt>Status</dt><dd>{activeStep.status || "completed"}</dd></div>
+                    <div><dt>Order</dt><dd>{formatValue(activeStep.order)}</dd></div>
+                    <div><dt>Latency (seconds)</dt><dd>{formatValue(activeStep.latency_seconds)}</dd></div>
+                    <div><dt>Route</dt><dd>{formatValue(activeStep.route)}</dd></div>
+                  </dl>
+                  <p className="helper-text">{activeStep.output_preview || "No step preview available."}</p>
+                  <ArtifactPreview label="Structured output" value={activeStep.output} />
+                  <ArtifactList items={((activeStep.artifacts || []) as JsonObject[]).map((item: JsonObject) => ({ ...item, label: item.name, available: true }))} />
+                  <div className="json-stack">
+                    {Object.entries((activeStep.artifact_payloads || {}) as Record<string, any>).map(([key, value]) => (
+                      <ArtifactPreview key={key} label={key} value={value} />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <EmptyState title="No step output yet" body="Run the playground session to inspect ordered node outputs here." />
+              )}
+            </section>
+          </section>
+
+          <section className="panel section-stack">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">Latest exploratory run</span>
+                <h3>{lastResult.run_id}</h3>
+              </div>
+            </div>
+            <p className="helper-text">{lastResult.run_summary?.summary || lastResult.labeling?.notes?.[0] || "Use the playground for exploratory local analysis, not release-grade evidence."}</p>
+            <div className="button-row">
+              <button className="primary-button" onClick={() => navigate(`/runs/${lastResult.run_id}`)}>Open run detail</button>
+              {lastResult.report?.available ? <a className="secondary-link" href={lastResult.report.href} target="_blank" rel="noreferrer">Open report</a> : null}
+            </div>
+          </section>
+        </>
+      ) : null}
+    </main>
+  );
+}
+
 function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; shell: JsonObject | null; navigate: (path: string) => void; onMutate: () => void }): React.ReactElement {
   const params = useMemo(() => new URLSearchParams(route.search), [route.search]);
   const draftId = params.get("draft");
   const selectedWorkflow = params.get("workflow") || shell?.overview?.latest_run?.workflow?.name || "demo-provider-free";
   const workflows = useJsonResource(`${bootstrap.api_root}/workflows`, [route.search]);
+  const authoringCatalog = useJsonResource(`${bootstrap.api_root}/authoring/catalog`, []);
   const draft = useJsonResource(draftId ? `${bootstrap.api_root}/drafts/${draftId}` : null, [draftId]);
   const workflow = useJsonResource(!draftId ? `${bootstrap.api_root}/workflows/${selectedWorkflow}` : null, [selectedWorkflow, draftId]);
-  const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<{ tone: string; title: string; body: string } | null>(null);
-
-  useEffect(() => {
-    if (draft.data?.draft_values) {
-      setFormValues(draft.data.draft_values);
-    }
-  }, [draft.data]);
-
-  useEffect(() => {
-    setActionNotice(null);
-  }, [draftId, selectedWorkflow]);
+  const [creationMode, setCreationMode] = useState("clone");
+  const [createForm, setCreateForm] = useState<Record<string, string>>({
+    source_workflow_name: "",
+    template_id: "",
+    draft_workflow_name: "",
+    title: "",
+    description: "",
+  });
+  const [coreForm, setCoreForm] = useState<Record<string, string>>({});
+  const [selectedNodeName, setSelectedNodeName] = useState("");
+  const [nodeForm, setNodeForm] = useState<Record<string, string>>({});
+  const [addNodeForm, setAddNodeForm] = useState<Record<string, string>>({
+    node_name: "",
+    implementation: "",
+    incoming_from: "",
+    outgoing_to: "",
+    description: "",
+    optional: "false",
+    runtime: "",
+  });
+  const [addEdgeForm, setAddEdgeForm] = useState<Record<string, string>>({ from_node: "", to_node: "" });
 
   const activeDraft = draft.data;
   const activeWorkflow = activeDraft ? activeDraft.workflow : workflow.data?.workflow;
-  const activeSafeEdit = activeDraft ? activeDraft.safe_edit : workflow.data?.safe_edit;
+  const activeAuthoring = activeDraft ? activeDraft.authoring : workflow.data?.authoring;
   const activeCanvas = activeDraft ? activeDraft.canvas : workflow.data?.canvas;
+  const activeGraph = (activeAuthoring?.graph || {}) as JsonObject;
+  const graphNodes = ((activeGraph.nodes || []) as JsonObject[]).filter((node) => typeof node?.name === "string");
+  const graphTargets = ((activeGraph.targets || []) as JsonObject[]).filter((target) => typeof target?.name === "string");
+  const selectedNode = graphNodes.find((node) => node.name === selectedNodeName) || null;
   const overviewLatestRun = shell?.overview?.latest_run || null;
-  const safeEditSupport = (activeDraft?.guidance?.supported_edits || activeSafeEdit?.supported_edits || []) as JsonObject[];
-  const safeEditLimitations = (activeDraft?.guidance?.limitations || activeSafeEdit?.limitations || []) as string[];
+  const safeEditSupport = (activeDraft?.guidance?.supported_edits || activeDraft?.safe_edit?.supported_edits || workflow.data?.safe_edit?.supported_edits || []) as JsonObject[];
+  const safeEditLimitations = (activeDraft?.guidance?.limitations || activeAuthoring?.limitations || defaultAuthoringLimitations()) as string[];
   const sourceOfTruth = (activeDraft?.guidance?.source_of_truth || defaultSourceOfTruth()) as string[];
   const nextStep = (activeDraft?.guidance?.next_step || buildDraftlessNextStep(activeWorkflow, overviewLatestRun)) as JsonObject;
   const stepState = draftId
@@ -1447,63 +1853,242 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   const validationStatus = buildValidationStatus(activeDraft);
   const validationFixes = buildValidationFixes(activeDraft);
   const runDisabled = !(activeDraft?.validation?.ok && !activeDraft?.validation?.stale);
-  const draftActionLabel = activeWorkflow?.source === "local" ? "Open local draft session" : "Clone into local draft";
-  const draftActionSummary = activeWorkflow?.source === "local"
-    ? "This workflow already lives in your local workspace, but edits still flow through a draft session so validation and resume state stay explicit."
-    : "Built-in workflows are reference blueprints. Clone one into a local draft before editing any field.";
+  const templates = (authoringCatalog.data?.templates || []) as JsonObject[];
+  const nodeCatalog = (authoringCatalog.data?.node_catalog || []) as JsonObject[];
+  const creationModes = (authoringCatalog.data?.creation_modes || []) as JsonObject[];
+  const creationDisabled = !createForm.draft_workflow_name || (creationMode === "clone" && !(createForm.source_workflow_name || activeWorkflow?.name)) || (creationMode === "template" && !createForm.template_id);
 
-  async function createDraft(sourceWorkflowName: string) {
-    setBusy("Creating local draft");
+  useEffect(() => {
+    setActionNotice(null);
+  }, [draftId, selectedWorkflow]);
+
+  useEffect(() => {
+    setCreateForm((current) => ({
+      ...current,
+      source_workflow_name: current.source_workflow_name || selectedWorkflow,
+      template_id: current.template_id || String(templates[0]?.template_id || ""),
+    }));
+    setAddNodeForm((current) => ({
+      ...current,
+      implementation: current.implementation || String(nodeCatalog[0]?.implementation || ""),
+    }));
+  }, [selectedWorkflow, templates, nodeCatalog]);
+
+  useEffect(() => {
+    if (activeAuthoring?.core_form) {
+      const nextCore: Record<string, string> = {};
+      Object.entries(activeAuthoring.core_form as JsonObject).forEach(([key, value]) => {
+        nextCore[key] = value == null ? "" : String(value);
+      });
+      setCoreForm(nextCore);
+    }
+  }, [activeAuthoring]);
+
+  useEffect(() => {
+    if (!graphNodes.length) {
+      setSelectedNodeName("");
+      return;
+    }
+    if (!selectedNodeName || !graphNodes.some((node) => node.name === selectedNodeName)) {
+      setSelectedNodeName(String(graphNodes[0].name));
+    }
+  }, [graphNodes, selectedNodeName]);
+
+  useEffect(() => {
+    if (!selectedNode) {
+      setNodeForm({});
+      return;
+    }
+    const nextNodeForm: Record<string, string> = {
+      description: String(selectedNode.description || ""),
+      runtime: String(selectedNode.runtime || ""),
+      optional: selectedNode.optional ? "true" : "false",
+    };
+    ((selectedNode.aggregate_weights || []) as JsonObject[]).forEach((item) => {
+      nextNodeForm[`weight:${String(item.name)}`] = String(item.percent ?? "");
+    });
+    setNodeForm(nextNodeForm);
+  }, [selectedNode]);
+
+  async function createDraftFromMode() {
+    setBusy("Creating authoring draft");
     setActionNotice(null);
     try {
-      const payload: JsonObject = { source_workflow_name: sourceWorkflowName };
-      if (shell?.overview?.latest_run?.run_id) {
-        payload.baseline_run_id = shell.overview.latest_run.run_id;
+      const payload: JsonObject = {
+        creation_mode: creationMode,
+        draft_workflow_name: createForm.draft_workflow_name,
+        title: normalizeText(createForm.title) || undefined,
+        description: normalizeText(createForm.description) || undefined,
+      };
+      if (overviewLatestRun?.run_id) {
+        payload.baseline_run_id = overviewLatestRun.run_id;
+      }
+      if (creationMode === "clone") {
+        payload.source_workflow_name = createForm.source_workflow_name || activeWorkflow?.name || selectedWorkflow;
+      } else if (creationMode === "template") {
+        payload.template_id = createForm.template_id;
       }
       const created = await requestJson(`${bootstrap.api_root}/drafts`, { method: "POST", body: JSON.stringify(payload) });
       onMutate();
       navigate(`/workbench?draft=${created.id}`);
     } catch (error) {
-      setActionNotice(buildActionErrorNotice("clone", error));
+      setActionNotice(buildActionErrorNotice("create", error));
     } finally {
       setBusy(null);
     }
   }
 
-  async function persistDraft(nextValues: Record<string, string>) {
+  async function applyDraftAction(stage: string, action: JsonObject, successTitle: string, successBody: string): Promise<JsonObject | null> {
     if (!draftId) return null;
-    return requestJson(`${bootstrap.api_root}/drafts/${draftId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ values: nextValues }),
-    });
-  }
-
-  async function saveDraft() {
-    if (!draftId) return;
-    setBusy("Saving safe edit");
+    setBusy(successTitle);
     setActionNotice(null);
     try {
-      await persistDraft(formValues);
+      const updated = await requestJson(`${bootstrap.api_root}/drafts/${draftId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action }),
+      });
       draft.reload();
       onMutate();
-      setActionNotice({
-        tone: "success",
-        title: "Draft saved",
-        body: "Safe-edit values are stored in SQLite. Next: validate the cloned workflow before running a candidate.",
-      });
+      setActionNotice({ tone: "success", title: successTitle, body: successBody });
+      return updated;
     } catch (error) {
-      setActionNotice(buildActionErrorNotice("save", error));
+      setActionNotice(buildActionErrorNotice(stage, error));
+      return null;
     } finally {
       setBusy(null);
     }
+  }
+
+  async function applyCoreFields() {
+    if (!draftId) return;
+    await applyDraftAction(
+      "workflow",
+      {
+        type: "update-core",
+        metadata: {
+          title: coreForm.title,
+          description: coreForm.description,
+          workflow_kind: coreForm.workflow_kind,
+          tags: (coreForm.tags || "").split(",").map((item) => item.trim()).filter(Boolean),
+        },
+        questions: { limit: Number(coreForm.questions_limit || 0) },
+        runtime: {
+          provider: coreForm.runtime_provider,
+          base_url: normalizeText(coreForm.runtime_base_url),
+          model: normalizeText(coreForm.runtime_model),
+          max_tokens: Number(coreForm.runtime_max_tokens || 0),
+        },
+        artifacts: {
+          write_report: parseBooleanString(coreForm.artifacts_write_report),
+          write_blueprint_copy: parseBooleanString(coreForm.artifacts_write_blueprint_copy),
+          write_graph_trace: parseBooleanString(coreForm.artifacts_write_graph_trace),
+        },
+        scoring: {
+          write_eval: parseBooleanString(coreForm.scoring_write_eval),
+          write_train_backtest: parseBooleanString(coreForm.scoring_write_train_backtest),
+        },
+      },
+      "Workflow fields updated",
+      "Core workflow fields now reflect the latest authored state. Validate when you're ready to run."
+    );
+  }
+
+  async function applyNodeUpdates() {
+    if (!draftId || !selectedNode) return;
+    const weights: Record<string, string> = {};
+    Object.entries(nodeForm).forEach(([key, value]) => {
+      if (key.startsWith("weight:")) {
+        weights[key.replace(/^weight:/, "")] = value;
+      }
+    });
+    await applyDraftAction(
+      "node",
+      {
+        type: "update-node",
+        node_name: selectedNode.name,
+        description: nodeForm.description || "",
+        runtime: normalizeText(nodeForm.runtime),
+        optional: parseBooleanString(nodeForm.optional),
+        weights: Object.keys(weights).length ? weights : undefined,
+      },
+      "Node updated",
+      `The visual editor saved changes for ${selectedNode.name}.`
+    );
+  }
+
+  async function removeSelectedNode() {
+    if (!draftId || !selectedNode) return;
+    const removedName = String(selectedNode.name);
+    const updated = await applyDraftAction(
+      "node",
+      { type: "remove-node", node_name: removedName },
+      "Node removed",
+      `${removedName} was removed from the draft graph.`
+    );
+    const nextNode = updated?.authoring?.graph?.nodes?.[0]?.name;
+    setSelectedNodeName(nextNode ? String(nextNode) : "");
+  }
+
+  async function setEntry(entryName: string) {
+    if (!draftId || !entryName) return;
+    await applyDraftAction(
+      "entry",
+      { type: "set-entry", entry: entryName },
+      "Entry updated",
+      `${entryName} is now the workflow entry for this draft.`
+    );
+  }
+
+  async function addNode() {
+    if (!draftId) return;
+    const action: JsonObject = {
+      type: "add-node",
+      node_name: addNodeForm.node_name,
+      implementation: addNodeForm.implementation,
+      description: normalizeText(addNodeForm.description),
+      runtime: normalizeText(addNodeForm.runtime),
+      optional: parseBooleanString(addNodeForm.optional),
+    };
+    if (addNodeForm.incoming_from) action.incoming_from = [addNodeForm.incoming_from];
+    if (addNodeForm.outgoing_to) action.outgoing_to = [addNodeForm.outgoing_to];
+    const addedName = addNodeForm.node_name;
+    const updated = await applyDraftAction(
+      "node",
+      action,
+      "Node added",
+      `${addedName} is now part of the authored workflow graph.`
+    );
+    if (updated) {
+      setSelectedNodeName(addedName);
+      setAddNodeForm((current) => ({ ...current, node_name: "", description: "", runtime: "", incoming_from: "", outgoing_to: "" }));
+    }
+  }
+
+  async function addEdge() {
+    if (!draftId) return;
+    await applyDraftAction(
+      "edge",
+      { type: "add-edge", from_node: addEdgeForm.from_node, to_node: addEdgeForm.to_node },
+      "Edge added",
+      `${addEdgeForm.from_node} now connects to ${addEdgeForm.to_node}.`
+    );
+  }
+
+  async function removeEdge(fromNode: string, toNode: string) {
+    if (!draftId) return;
+    await applyDraftAction(
+      "edge",
+      { type: "remove-edge", from_node: fromNode, to_node: toNode },
+      "Edge removed",
+      `${fromNode} no longer connects to ${toNode}.`
+    );
   }
 
   async function validateDraft() {
     if (!draftId) return;
-    setBusy("Validating safe edit");
+    setBusy("Validating draft");
     setActionNotice(null);
     try {
-      await persistDraft(formValues);
       const result = await requestJson(`${bootstrap.api_root}/drafts/${draftId}/validate`, { method: "POST", body: JSON.stringify({}) });
       draft.reload();
       onMutate();
@@ -1515,7 +2100,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
               title: validation.stale ? "Validation needs a refresh" : "Validation passed",
               body: validation.stale
                 ? "A newer edit changed the draft after validation. Validate once more before you run."
-                : "The latest safe edits validated successfully. Next: run a candidate and compare it with the baseline.",
+                : "The latest authored draft validated successfully. Next: run a candidate and compare it with the baseline.",
             }
           : {
               tone: "warning",
@@ -1535,7 +2120,6 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     setBusy("Running candidate");
     setActionNotice(null);
     try {
-      await persistDraft(formValues);
       const response = await requestJson(`${bootstrap.api_root}/drafts/${draftId}/run`, { method: "POST", body: JSON.stringify({}) });
       onMutate();
       if (response.compare) {
@@ -1550,16 +2134,11 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     }
   }
 
-  function updateFormValue(key: string, value: string) {
-    setActionNotice(null);
-    setFormValues((current) => ({ ...current, [key]: value }));
-  }
-
   return (
     <main className="workbench-layout">
       <aside className="panel step-panel">
         <span className="eyebrow">Journey</span>
-        <h2>Inspect → clone → safe edit</h2>
+        <h2>Inspect → create → author</h2>
         <ol className="step-list step-rail">
           {stepState.map((step: JsonObject) => (
             <li key={step.key} className={`step-item step-${step.state || "upcoming"}${step.locked ? " locked" : ""}`}>
@@ -1576,111 +2155,125 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         {workflow.error ? <Message tone="error" title="Workflow unavailable" body={workflow.error} /> : null}
         {draft.error ? <Message tone="error" title="Draft unavailable" body={draft.error} /> : null}
         {workflows.error ? <Message tone="error" title="Workflow catalog unavailable" body={workflows.error} /> : null}
+        {authoringCatalog.error ? <Message tone="error" title="Authoring catalog unavailable" body={authoringCatalog.error} /> : null}
         {actionNotice ? <Message tone={actionNotice.tone} title={actionNotice.title} body={actionNotice.body} /> : null}
         {busy ? <LoadingCard label={busy} /> : null}
         {draftId && draft.loading && !draft.data ? <LoadingCard label="Loading draft" /> : null}
-        {!draftId && workflow.loading && !workflow.data ? <LoadingCard label="Loading workflow" /> : null}
+        {!draftId && (workflow.loading || authoringCatalog.loading) && !workflow.data ? <LoadingCard label="Loading workflow authoring surface" /> : null}
 
         <section className="panel hero-panel workbench-hero">
           <span className="eyebrow">Workbench</span>
-          <h2>{draftId ? "Guide one safe draft from inspection to comparison" : "Choose a workflow, then unlock safe edits with a local draft"}</h2>
+          <h2>{draftId ? "Author workflow fields and graph visually" : "Create a new authored workflow or clone one into a local draft"}</h2>
           <p>
             {draftId
-              ? "Stay in context while you inspect the baseline, validate inline, run a candidate, and decide what to do next."
-              : "Built-in workflows stay read-only until you clone them. Draft values live in SQLite so you can validate and iterate without losing context."}
+              ? "Use the shared backend authoring layer to change supported workflow fields, add or remove safe graph nodes and edges, validate inline, then run and compare without leaving the workbench."
+              : "Start from scratch, a template, or an existing workflow. Draft state stays local and resumable while the reusable workflow file remains coherent on disk."}
           </p>
           <div className="meta-row">
             <SourceBadge source={activeWorkflow?.source || "builtin"} />
+            {activeDraft?.creation_mode ? <span>Mode: {activeDraft.creation_mode}</span> : null}
             {activeDraft?.draft_workflow_name ? <span>Draft: {activeDraft.draft_workflow_name}</span> : null}
             {activeDraft?.baseline_run_id ? <span>Baseline: {activeDraft.baseline_run_id}</span> : overviewLatestRun?.run_id ? <span>Suggested baseline: {overviewLatestRun.run_id}</span> : null}
             {activeDraft?.last_run_id ? <span>Candidate: {activeDraft.last_run_id}</span> : null}
           </div>
           <div className="button-row">
-            {!draftId ? (
-              <>
-                <button className="primary-button" onClick={() => createDraft(activeWorkflow?.name || selectedWorkflow)}>{draftActionLabel}</button>
-                {overviewLatestRun?.run_id ? (
-                  <button className="secondary-button" onClick={() => navigate(`/runs/${overviewLatestRun.run_id}`)}>Inspect latest run</button>
-                ) : (
-                  <button className="secondary-button" onClick={() => navigate("/runs")}>Browse runs</button>
-                )}
-              </>
+            {overviewLatestRun?.run_id ? (
+              <button className="secondary-button" onClick={() => navigate(`/runs/${overviewLatestRun.run_id}`)}>Inspect latest run</button>
             ) : (
-              <>
-                {activeDraft?.baseline_run_id ? (
-                  <button className="secondary-button" onClick={() => navigate(`/runs/${activeDraft.baseline_run_id}`)}>Inspect baseline</button>
-                ) : (
-                  <button className="secondary-button" onClick={() => navigate("/runs")}>Choose a baseline</button>
-                )}
-                {activeDraft?.last_run_id ? <button className="secondary-button" onClick={() => navigate(`/runs/${activeDraft.last_run_id}`)}>Inspect candidate run</button> : null}
-              </>
+              <button className="secondary-button" onClick={() => navigate("/runs")}>Browse runs</button>
             )}
+            {activeDraft?.last_run_id ? <button className="secondary-button" onClick={() => navigate(`/runs/${activeDraft.last_run_id}`)}>Inspect candidate run</button> : null}
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel section-stack">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">1. Inspect + clone</span>
-              <h3>Pick a workflow and keep the baseline in view</h3>
+              <span className="eyebrow">1. Create draft</span>
+              <h3>Start from scratch, template, or clone</h3>
             </div>
-            <p className="section-copy">{draftActionSummary}</p>
+            <p className="section-copy">Creation routes all flow through the shared backend authoring service and still land in the local draft + workflow file model.</p>
           </div>
-          <div className="inspect-grid">
-            <article className="surface-card">
+          <div className="creation-mode-row">
+            {creationModes.map((mode: JsonObject) => (
+              <button
+                key={mode.key}
+                className={creationMode === mode.key ? "workflow-tile active" : "workflow-tile"}
+                onClick={() => setCreationMode(String(mode.key || "clone"))}
+                type="button"
+              >
+                <strong>{mode.label}</strong>
+                <span className="workflow-note">{mode.detail}</span>
+              </button>
+            ))}
+          </div>
+          <div className="split-grid">
+            <section className="surface-card section-stack">
+              <label>
+                <span>Draft workflow name</span>
+                <input value={createForm.draft_workflow_name || ""} onChange={(event) => setCreateForm((current) => ({ ...current, draft_workflow_name: event.target.value }))} placeholder="my-authored-workflow" />
+              </label>
+              {creationMode === "clone" ? (
+                <label>
+                  <span>Source workflow</span>
+                  <select value={createForm.source_workflow_name || selectedWorkflow} onChange={(event) => setCreateForm((current) => ({ ...current, source_workflow_name: event.target.value }))}>
+                    {(workflows.data?.items || []).map((item: JsonObject) => (
+                      <option key={item.name} value={item.name}>{item.title || item.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {creationMode === "template" ? (
+                <label>
+                  <span>Starter template</span>
+                  <select value={createForm.template_id || ""} onChange={(event) => setCreateForm((current) => ({ ...current, template_id: event.target.value }))}>
+                    {templates.map((item: JsonObject) => (
+                      <option key={item.template_id} value={item.template_id}>{item.title}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <label>
+                <span>Title</span>
+                <input value={createForm.title || ""} onChange={(event) => setCreateForm((current) => ({ ...current, title: event.target.value }))} placeholder="Optional display title" />
+              </label>
+              <label>
+                <span>Description</span>
+                <textarea className="text-area-input" value={createForm.description || ""} onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))} placeholder="Optional authoring summary" />
+              </label>
+              <div className="button-row">
+                <button className="primary-button" onClick={createDraftFromMode} disabled={Boolean(busy) || creationDisabled}>Create draft</button>
+                {!draftId && activeWorkflow?.name ? (
+                  <button className="secondary-button" onClick={() => navigate(`/workflows/${encodeURIComponent(activeWorkflow.name)}`)}>Open workflow detail</button>
+                ) : null}
+              </div>
+            </section>
+            <section className="surface-card section-stack">
               <div className="surface-header">
                 <div>
                   <strong>{activeWorkflow?.title || activeWorkflow?.name || selectedWorkflow}</strong>
-                  <p>{activeWorkflow?.description || "Select a workflow from the catalog."}</p>
+                  <p>{activeWorkflow?.description || "Select a workflow or choose a starter mode."}</p>
                 </div>
                 <SourceBadge source={activeWorkflow?.source || "builtin"} />
               </div>
-              <p className="helper-text">{draftActionSummary}</p>
-              {!draftId ? (
-                <button className="primary-button" onClick={() => createDraft(activeWorkflow?.name || selectedWorkflow)}>{draftActionLabel}</button>
-              ) : (
-                  <dl className="context-list">
-                    <div>
-                      <dt>Source</dt>
-                      <dd>{activeDraft?.source_workflow_name || "—"}</dd>
-                    </div>
-                    <div>
-                      <dt>Local draft</dt>
-                      <dd>{activeDraft?.draft_workflow_name || "—"}</dd>
-                    </div>
-                    <div>
-                      <dt>Status</dt>
-                      <dd>{activeDraft?.status || "—"}</dd>
-                    </div>
-                  </dl>
-                )}
-            </article>
-            <article className="surface-card">
-              <div className="surface-header">
-                <div>
-                  <strong>Baseline context</strong>
-                  <p>Inspect first so the next edit has a clear comparison target.</p>
-                </div>
-              </div>
-              {activeDraft?.baseline_run || overviewLatestRun ? (
+              {activeDraft ? (
                 <dl className="context-list">
-                  <div>
-                    <dt>Run</dt>
-                    <dd>{formatRunContext(activeDraft?.baseline_run || overviewLatestRun)}</dd>
-                  </div>
-                  <div>
-                    <dt>Workflow</dt>
-                    <dd>{activeDraft?.baseline_run?.workflow?.title || activeDraft?.baseline_run?.workflow?.name || overviewLatestRun?.workflow?.title || overviewLatestRun?.workflow?.name || "—"}</dd>
-                  </div>
-                  <div>
-                    <dt>Action</dt>
-                    <dd>{activeDraft?.baseline_run_id ? "Compare against this baseline after your candidate run." : "Use the latest run as a suggested baseline when you clone."}</dd>
-                  </div>
+                  <div><dt>Draft mode</dt><dd>{activeDraft.creation_mode || "clone"}</dd></div>
+                  <div><dt>Source</dt><dd>{activeDraft.source_workflow_name || "—"}</dd></div>
+                  <div><dt>Local workflow</dt><dd>{activeDraft.draft_workflow_name || "—"}</dd></div>
+                  <div><dt>Status</dt><dd>{activeDraft.status || "—"}</dd></div>
+                </dl>
+              ) : activeWorkflow ? (
+                <dl className="context-list">
+                  <div><dt>Workflow kind</dt><dd>{activeWorkflow.workflow_kind || activeWorkflow.kind || "workflow"}</dd></div>
+                  <div><dt>Questions</dt><dd>{activeWorkflow.question_limit || workflow.data?.blueprint?.questions?.limit || "—"}</dd></div>
+                  <div><dt>Runtime</dt><dd>{activeWorkflow.runtime_provider || workflow.data?.blueprint?.runtime?.provider || "mock"}</dd></div>
+                  <div><dt>Action</dt><dd>{creationMode === "clone" ? "Clone this workflow into a local authored draft." : creationMode === "template" ? "Create a new workflow from the selected starter template." : "Create a fresh safe starter workflow and begin authoring."}</dd></div>
                 </dl>
               ) : (
-                <EmptyState title="No baseline yet" body="Run history is empty. You can still create a draft, then inspect the first candidate run after it completes." />
+                <EmptyState title="Select a workflow" body="The workbench will show the current workflow summary here before you create a draft." />
               )}
-            </article>
+            </section>
           </div>
           <div className="workflow-list workflow-catalog">
             {(workflows.data?.items || []).map((item: JsonObject) => (
@@ -1688,90 +2281,303 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 key={item.name}
                 className={item.name === activeWorkflow?.name ? "workflow-tile active" : "workflow-tile"}
                 onClick={() => navigate(`/workbench?workflow=${encodeURIComponent(item.name)}`)}
+                type="button"
               >
                 <div className="workflow-tile-head">
                   <strong>{item.title}</strong>
                   <SourceBadge source={item.source} />
                 </div>
                 <span>{item.name}</span>
-                <span className="workflow-note">{item.source === "builtin" ? "Read-only until cloned" : "Local workflow available for a draft session"}</span>
+                <span className="workflow-note">{item.source === "builtin" ? "Clone to author visually" : "Open a draft session for this local workflow"}</span>
               </button>
             ))}
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel section-stack">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">2. Safe edit</span>
-              <h3>Change only the fields this product contract supports</h3>
+              <span className="eyebrow">2. Workflow fields</span>
+              <h3>Edit supported core fields through the shared authoring layer</h3>
             </div>
-            <p className="section-copy">Question limits, report output, and supported aggregate weights are editable. No arbitrary JSON editor is exposed.</p>
-          </div>
-          <div className="supported-edit-list">
-            {safeEditSupport.map((edit: JsonObject) => (
-              <article key={edit.key} className="supported-edit-card">
-                <strong>{edit.label}</strong>
-                <p>{edit.detail}</p>
-              </article>
-            ))}
+            <p className="section-copy">Title, description, workflow kind, bounded runtime settings, scoring, and artifact toggles stay inside the safe product contract.</p>
           </div>
           {!draftId ? (
-            <EmptyState
-              title="Editing stays locked until you create a draft"
-              body="Choose Clone into local draft first. Built-in workflows remain read-only reference blueprints until the clone step succeeds."
-            />
+            <EmptyState title="Create a draft to unlock field editing" body="Once a draft exists, this form edits the authored workflow fields that the shared backend service supports." />
           ) : (
-            <>
-              {activeDraft?.preview_error ? (
-                <Message tone="warning" title="Safe edit needs attention" body={`${activeDraft.preview_error} Fix the supported fields below; your draft session is still preserved in SQLite.`} />
-              ) : null}
-              <div className="form-grid guided-form">
+            <div className="form-grid guided-form">
+              <div className="two-field-grid">
                 <label>
-                  <span>Questions limit</span>
-                  <span className="field-help">Safe range {activeSafeEdit?.questions_limit?.min || 1}–{activeSafeEdit?.questions_limit?.max || 25}. This only changes the cloned workflow.</span>
-                  <input
-                    type="number"
-                    min={activeSafeEdit?.questions_limit?.min || 1}
-                    max={activeSafeEdit?.questions_limit?.max || 25}
-                    value={formValues.questions_limit || ""}
-                    onChange={(event) => updateFormValue("questions_limit", event.target.value)}
-                  />
+                  <span>Title</span>
+                  <input value={coreForm.title || ""} onChange={(event) => setCoreForm((current) => ({ ...current, title: event.target.value }))} />
                 </label>
                 <label>
+                  <span>Workflow kind</span>
+                  <input value={coreForm.workflow_kind || ""} onChange={(event) => setCoreForm((current) => ({ ...current, workflow_kind: event.target.value }))} list="workflow-kind-options" />
+                </label>
+              </div>
+              <datalist id="workflow-kind-options">
+                {((authoringCatalog.data?.workflow_kind_options || []) as string[]).map((item) => <option key={item} value={item} />)}
+              </datalist>
+              <label>
+                <span>Description</span>
+                <textarea className="text-area-input" value={coreForm.description || ""} onChange={(event) => setCoreForm((current) => ({ ...current, description: event.target.value }))} />
+              </label>
+              <label>
+                <span>Tags</span>
+                <input value={coreForm.tags || ""} onChange={(event) => setCoreForm((current) => ({ ...current, tags: event.target.value }))} placeholder="starter, local, benchmark" />
+              </label>
+              <div className="three-column-grid compact-form-grid">
+                <label>
+                  <span>Questions limit</span>
+                  <input type="number" min={1} max={25} value={coreForm.questions_limit || ""} onChange={(event) => setCoreForm((current) => ({ ...current, questions_limit: event.target.value }))} />
+                </label>
+                <label>
+                  <span>Runtime provider</span>
+                  <select value={coreForm.runtime_provider || "mock"} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_provider: event.target.value }))}>
+                    {((authoringCatalog.data?.runtime_provider_options || []) as string[]).map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Max tokens</span>
+                  <input type="number" min={1} value={coreForm.runtime_max_tokens || ""} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_max_tokens: event.target.value }))} />
+                </label>
+              </div>
+              <div className="two-field-grid">
+                <label>
+                  <span>Runtime base URL</span>
+                  <input value={coreForm.runtime_base_url || ""} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_base_url: event.target.value }))} placeholder="http://127.0.0.1:11434/v1" />
+                </label>
+                <label>
+                  <span>Runtime model</span>
+                  <input value={coreForm.runtime_model || ""} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_model: event.target.value }))} placeholder="phi-4-mini" />
+                </label>
+              </div>
+              <div className="three-column-grid compact-form-grid">
+                <label>
                   <span>Write HTML report</span>
-                  <span className="field-help">Choose whether the candidate run writes report.html.</span>
-                  <select
-                    value={formValues.artifacts_write_report || "true"}
-                    onChange={(event) => updateFormValue("artifacts_write_report", event.target.value)}
-                  >
+                  <select value={coreForm.artifacts_write_report || "true"} onChange={(event) => setCoreForm((current) => ({ ...current, artifacts_write_report: event.target.value }))}>
                     <option value="true">true</option>
                     <option value="false">false</option>
                   </select>
                 </label>
-                {(activeSafeEdit?.aggregate_weight_editors || []).map((editor: JsonObject) => (
-                  <div key={editor.node} className="weight-editor">
+                <label>
+                  <span>Write blueprint copy</span>
+                  <select value={coreForm.artifacts_write_blueprint_copy || "true"} onChange={(event) => setCoreForm((current) => ({ ...current, artifacts_write_blueprint_copy: event.target.value }))}>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Write graph trace</span>
+                  <select value={coreForm.artifacts_write_graph_trace || "true"} onChange={(event) => setCoreForm((current) => ({ ...current, artifacts_write_graph_trace: event.target.value }))}>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </label>
+              </div>
+              <div className="two-field-grid">
+                <label>
+                  <span>Write eval</span>
+                  <select value={coreForm.scoring_write_eval || "true"} onChange={(event) => setCoreForm((current) => ({ ...current, scoring_write_eval: event.target.value }))}>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Write train backtest</span>
+                  <select value={coreForm.scoring_write_train_backtest || "true"} onChange={(event) => setCoreForm((current) => ({ ...current, scoring_write_train_backtest: event.target.value }))}>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </label>
+              </div>
+              <div className="button-row">
+                <button className="primary-button" onClick={applyCoreFields} disabled={Boolean(busy)}>Apply workflow fields</button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="panel section-stack">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">3. Visual graph authoring</span>
+              <h3>Edit nodes, edges, and entry against the rendered workflow graph</h3>
+            </div>
+            <p className="section-copy">Basic node, edge, and entry changes are editable here. Parallel groups and conditional routes stay visible but read-only for now.</p>
+          </div>
+          {!draftId ? (
+            <EmptyState title="Create a draft to unlock graph authoring" body="The canvas becomes editable as soon as you open a draft session." />
+          ) : (
+            <>
+              <WorkflowCanvasSurface canvas={activeCanvas} entry={String(activeGraph.entry || "")} selectedNodeName={selectedNodeName} onSelect={setSelectedNodeName} />
+              <div className="three-column-grid authoring-grid">
+                <section className="surface-card section-stack">
+                  <div className="surface-header">
                     <div>
-                      <h4>{editor.node}</h4>
-                      <p className="field-help">Adjust upstream candidate weights only. Weights are normalized when the draft is validated.</p>
+                      <strong>Selected node</strong>
+                      <p>{selectedNode ? `Edit ${selectedNode.name} inline.` : "Select a node from the canvas to edit it."}</p>
                     </div>
-                    {editor.contributors.map((contributor: JsonObject) => {
-                      const key = `weight:${editor.node}:${contributor.name}`;
-                      return (
-                        <label key={key}>
-                          <span>{contributor.name}</span>
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={formValues[key] || ""}
-                            onChange={(event) => updateFormValue(key, event.target.value)}
-                          />
-                        </label>
-                      );
-                    })}
+                    {selectedNode ? <StatusPill value={selectedNode.kind || "node"} /> : null}
                   </div>
-                ))}
+                  {selectedNode ? (
+                    <>
+                      <dl className="context-list compact-context-list">
+                        <div><dt>Implementation</dt><dd>{selectedNode.implementation || "—"}</dd></div>
+                        <div><dt>Runtime</dt><dd>{selectedNode.runtime || "—"}</dd></div>
+                        <div><dt>Entry</dt><dd>{selectedNode.is_entry ? "Yes" : "No"}</dd></div>
+                      </dl>
+                      <label>
+                        <span>Description</span>
+                        <textarea className="text-area-input" value={nodeForm.description || ""} onChange={(event) => setNodeForm((current) => ({ ...current, description: event.target.value }))} />
+                      </label>
+                      <label>
+                        <span>Runtime label</span>
+                        <input value={nodeForm.runtime || ""} onChange={(event) => setNodeForm((current) => ({ ...current, runtime: event.target.value }))} placeholder="Optional runtime tag" />
+                      </label>
+                      <label>
+                        <span>Optional</span>
+                        <select value={nodeForm.optional || "false"} onChange={(event) => setNodeForm((current) => ({ ...current, optional: event.target.value }))}>
+                          <option value="false">false</option>
+                          <option value="true">true</option>
+                        </select>
+                      </label>
+                      {((selectedNode.aggregate_weights || []) as JsonObject[]).map((item) => {
+                        const key = `weight:${String(item.name)}`;
+                        return (
+                          <label key={key}>
+                            <span>{item.name} weight</span>
+                            <input type="number" min={0} max={100} value={nodeForm[key] || ""} onChange={(event) => setNodeForm((current) => ({ ...current, [key]: event.target.value }))} />
+                          </label>
+                        );
+                      })}
+                      <div className="button-row">
+                        <button className="primary-button" onClick={applyNodeUpdates} disabled={Boolean(busy)}>Apply node changes</button>
+                        <button className="secondary-button" onClick={() => void setEntry(String(selectedNode.name))} disabled={Boolean(busy) || selectedNode.is_entry}>Set as entry</button>
+                        <button className="secondary-button" onClick={removeSelectedNode} disabled={Boolean(busy)}>Remove node</button>
+                      </div>
+                    </>
+                  ) : (
+                    <EmptyState title="No node selected" body="Pick a node from the canvas to edit its supported fields." />
+                  )}
+                </section>
+
+                <section className="surface-card section-stack">
+                  <div className="surface-header">
+                    <div>
+                      <strong>Add safe node</strong>
+                      <p>Pick a built-in safe node implementation, then connect it with basic graph edges.</p>
+                    </div>
+                  </div>
+                  <label>
+                    <span>Node name</span>
+                    <input value={addNodeForm.node_name || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, node_name: event.target.value }))} placeholder="question_context_2" />
+                  </label>
+                  <label>
+                    <span>Implementation</span>
+                    <select value={addNodeForm.implementation || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, implementation: event.target.value }))}>
+                      {nodeCatalog.map((item: JsonObject) => (
+                        <option key={item.implementation} value={item.implementation}>{item.name} · {item.kind}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="two-field-grid">
+                    <label>
+                      <span>Incoming from</span>
+                      <select value={addNodeForm.incoming_from || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, incoming_from: event.target.value }))}>
+                        <option value="">None</option>
+                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Outgoing to</span>
+                      <select value={addNodeForm.outgoing_to || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, outgoing_to: event.target.value }))}>
+                        <option value="">None</option>
+                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    <span>Description</span>
+                    <textarea className="text-area-input" value={addNodeForm.description || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, description: event.target.value }))} />
+                  </label>
+                  <div className="two-field-grid">
+                    <label>
+                      <span>Runtime label</span>
+                      <input value={addNodeForm.runtime || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, runtime: event.target.value }))} placeholder="Optional runtime tag" />
+                    </label>
+                    <label>
+                      <span>Optional</span>
+                      <select value={addNodeForm.optional || "false"} onChange={(event) => setAddNodeForm((current) => ({ ...current, optional: event.target.value }))}>
+                        <option value="false">false</option>
+                        <option value="true">true</option>
+                      </select>
+                    </label>
+                  </div>
+                  <button className="primary-button" onClick={addNode} disabled={Boolean(busy) || !addNodeForm.node_name || !addNodeForm.implementation}>Add node</button>
+                </section>
+
+                <section className="surface-card section-stack">
+                  <div className="surface-header">
+                    <div>
+                      <strong>Edges + advanced graph context</strong>
+                      <p>Add or remove simple edges here. Parallel groups and routes stay visible for review.</p>
+                    </div>
+                  </div>
+                  <div className="two-field-grid">
+                    <label>
+                      <span>From</span>
+                      <select value={addEdgeForm.from_node || ""} onChange={(event) => setAddEdgeForm((current) => ({ ...current, from_node: event.target.value }))}>
+                        <option value="">Select</option>
+                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span>To</span>
+                      <select value={addEdgeForm.to_node || ""} onChange={(event) => setAddEdgeForm((current) => ({ ...current, to_node: event.target.value }))}>
+                        <option value="">Select</option>
+                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <button className="primary-button" onClick={addEdge} disabled={Boolean(busy) || !addEdgeForm.from_node || !addEdgeForm.to_node}>Add edge</button>
+                  <div className="edge-list">
+                    {((activeGraph.edges || []) as JsonObject[]).map((edge: JsonObject, index: number) => (
+                      <div key={`${edge.from}-${edge.to}-${index}`} className="edge-row">
+                        <div>
+                          <strong>{edge.from}</strong>
+                          <span>{edge.to}</span>
+                        </div>
+                        <button className="secondary-button" onClick={() => void removeEdge(String(edge.from), String(edge.to))} disabled={Boolean(busy)}>Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                  {(Object.keys(activeGraph.parallel_groups || {}).length || Object.keys(activeGraph.conditional_routes || {}).length) ? (
+                    <div className="guidance-section minor-divider">
+                      {Object.keys(activeGraph.parallel_groups || {}).length ? (
+                        <div>
+                          <strong>Parallel groups</strong>
+                          <ul className="guidance-list compact-list">
+                            {Object.entries(activeGraph.parallel_groups as JsonObject).map(([name, members]) => (
+                              <li key={name}><strong>{name}</strong><span>{Array.isArray(members) ? members.join(", ") : ""}</span></li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {Object.keys(activeGraph.conditional_routes || {}).length ? (
+                        <div>
+                          <strong>Conditional routes</strong>
+                          <ul className="guidance-list compact-list">
+                            {Object.entries(activeGraph.conditional_routes as JsonObject).map(([name, route]) => (
+                              <li key={name}><strong>{name}</strong><span>{JSON.stringify(route)}</span></li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </section>
               </div>
             </>
           )}
@@ -1780,13 +2586,13 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         <section className="panel">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">3. Validate + run</span>
-              <h3>Validate inline, then run only when the latest draft is safe</h3>
+              <span className="eyebrow">4. Validate + run</span>
+              <h3>Validate inline, then run only when the authored draft is safe</h3>
             </div>
-            <p className="section-copy">Validation stays inside the edit flow so you can fix problems without losing the current draft context.</p>
+            <p className="section-copy">Validation stays inside the authoring loop so you can fix problems without losing the current graph state.</p>
           </div>
           {!draftId ? (
-            <EmptyState title="No draft to validate yet" body="Clone or reopen a local draft session first. Then this panel will keep validation, fixes, and run readiness together." />
+            <EmptyState title="No draft to validate yet" body="Create or open a draft session first. Then this panel will keep validation, fixes, and run readiness together." />
           ) : (
             <>
               <Message tone={validationStatus.tone} title={validationStatus.title} body={validationStatus.body} />
@@ -1796,9 +2602,8 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 </ul>
               ) : null}
               <div className="button-row">
-                <button className="secondary-button" onClick={saveDraft}>Save draft</button>
-                <button className="primary-button" onClick={validateDraft}>Save + validate</button>
-                <button className="primary-button" disabled={runDisabled} onClick={runDraft}>Run candidate</button>
+                <button className="primary-button" onClick={validateDraft} disabled={Boolean(busy)}>Validate draft</button>
+                <button className="primary-button" disabled={Boolean(busy) || runDisabled} onClick={runDraft}>Run candidate</button>
               </div>
             </>
           )}
@@ -1807,10 +2612,10 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         <section className="panel">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">4. Compare + next step</span>
-              <h3>Use the outcome to decide what happens next</h3>
+              <span className="eyebrow">5. Compare + next step</span>
+              <h3>Keep validate, run, and compare inside the same authoring loop</h3>
             </div>
-            <p className="section-copy">Success states should teach the next action: inspect the candidate, compare it with the baseline, or keep iterating.</p>
+            <p className="section-copy">Once the candidate finishes, compare it immediately or jump into the run detail from the same workbench surface.</p>
           </div>
           {activeDraft?.compare ? (
             <div className="compare-outcome">
@@ -1829,26 +2634,6 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
             <EmptyState title="No candidate run yet" body="Once validation passes and you run a candidate, this panel will explain whether to compare, iterate, or stop." />
           )}
         </section>
-
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">Canvas</span>
-              <h3>See the workflow before you change it</h3>
-            </div>
-            <p className="section-copy">The canvas stays visible so inspection and editing happen against the same workflow structure.</p>
-          </div>
-          <div className="canvas-grid">
-            {(activeCanvas?.nodes || []).map((node: JsonObject) => (
-              <article key={node.name} className="canvas-node">
-                <strong>{node.name}</strong>
-                <span>{node.kind}</span>
-                <span>{node.description || node.implementation || "No description"}</span>
-                <StatusPill value={node.status || "not-run"} />
-              </article>
-            ))}
-          </div>
-        </section>
       </section>
       <aside className="panel guidance-panel">
         <span className="eyebrow">Next step</span>
@@ -1857,13 +2642,13 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
           <p>{nextStep.detail}</p>
         </section>
         <section className="guidance-section">
-          <h3>Safe-edit contract</h3>
+          <h3>Authoring contract</h3>
           <ul className="guidance-list">
             {safeEditLimitations.map((item) => <li key={item}>{item}</li>)}
           </ul>
         </section>
         <section className="guidance-section">
-          <h3>Supported fields</h3>
+          <h3>Supported safe edits</h3>
           <ul className="guidance-list compact-list">
             {safeEditSupport.map((item: JsonObject) => (
               <li key={item.key}>
@@ -1884,14 +2669,87 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   );
 }
 
+function WorkflowCanvasSurface({
+  canvas,
+  entry,
+  selectedNodeName,
+  onSelect,
+}: {
+  canvas: JsonObject | null;
+  entry: string;
+  selectedNodeName: string;
+  onSelect: (name: string) => void;
+}): React.ReactElement {
+  const nodes = ((canvas?.nodes || []) as JsonObject[]).filter((node) => typeof node?.name === "string");
+  const edges = (canvas?.edges || []) as JsonObject[];
+  if (!nodes.length) {
+    return <EmptyState title="No graph nodes yet" body="Add a node or load another workflow to populate the visual graph surface." />;
+  }
+  const width = Math.max(360, ...nodes.map((node) => Number(node.x || 0) + 220));
+  const height = Math.max(220, ...nodes.map((node) => Number(node.y || 0) + 120));
+  const positions = Object.fromEntries(nodes.map((node) => [String(node.name), { x: Number(node.x || 0), y: Number(node.y || 0) }]));
+  return (
+    <div className="workflow-canvas-shell">
+      <div className="workflow-canvas-stage" style={{ height: `${height}px` }}>
+        <svg className="workflow-canvas-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMinYMin meet">
+          <defs>
+            <marker id="workflow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" fill="#91a5ca" />
+            </marker>
+          </defs>
+          {edges.map((edge, index) => {
+            const from = positions[String(edge.from || "")];
+            const to = positions[String(edge.to || "")];
+            if (!from || !to) return null;
+            const x1 = from.x + 164;
+            const y1 = from.y + 34;
+            const x2 = to.x;
+            const y2 = to.y + 34;
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2;
+            return (
+              <g key={`${edge.from}-${edge.to}-${index}`}>
+                <path className="workflow-canvas-edge" d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`} markerEnd="url(#workflow-arrow)" />
+                {edge.label ? <text className="workflow-canvas-label" x={midX} y={midY - 6}>{String(edge.label)}</text> : null}
+              </g>
+            );
+          })}
+        </svg>
+        {nodes.map((node) => (
+          <button
+            key={node.name}
+            type="button"
+            className={`workflow-canvas-node ${selectedNodeName === node.name ? "selected" : ""} ${entry === node.name ? "entry" : ""}`}
+            style={{ left: `${Number(node.x || 0)}px`, top: `${Number(node.y || 0)}px` }}
+            onClick={() => onSelect(String(node.name))}
+          >
+            <strong>{node.name}</strong>
+            <span>{node.kind}</span>
+            <StatusPill value={node.status || (entry === node.name ? "entry" : "ready")} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function normalizeText(value: string | undefined): string | null {
+  const text = String(value || "").trim();
+  return text ? text : null;
+}
+
+function parseBooleanString(value: string | undefined): boolean {
+  return String(value || "false").toLowerCase() === "true";
+}
+
 function draftlessStepState(activeWorkflow: JsonObject | null): JsonObject[] {
   const source = activeWorkflow?.source || "builtin";
-  const cloneDescription = source === "local" ? "Open a draft session for the local workflow." : "Clone the built-in workflow before editing.";
+  const cloneDescription = source === "local" ? "Open a draft session for the local workflow." : "Create a draft from scratch, template, or clone before editing.";
   return [
     { key: "inspect", label: "Inspect", locked: false, description: "Review the workflow and choose a baseline run." },
-    { key: "clone", label: "Clone", locked: false, description: cloneDescription },
-    { key: "edit", label: "Safe edit", locked: true, description: "Locked until a draft session exists." },
-    { key: "validate", label: "Validate", locked: true, description: "Locked until the safe edit can be checked inline." },
+    { key: "clone", label: "Create", locked: false, description: cloneDescription },
+    { key: "edit", label: "Author", locked: true, description: "Locked until a draft session exists." },
+    { key: "validate", label: "Validate", locked: true, description: "Locked until the authored draft can be checked inline." },
     { key: "run", label: "Run", locked: true, description: "Locked until validation passes." },
     { key: "compare", label: "Compare", locked: true, description: "Locked until a candidate run exists." },
     { key: "next-step", label: "Next step", locked: false, description: "The workbench will explain what to do after each step." },
@@ -1934,10 +2792,14 @@ function stepBadgeLabel(step: JsonObject): string {
 function buildActionErrorNotice(stage: string, error: unknown): { tone: string; title: string; body: string } {
   const message = error instanceof Error ? error.message : String(error);
   const hints: Record<string, string> = {
-    clone: "Built-in workflows remain read-only until the clone step succeeds.",
-    save: "Only the supported safe-edit fields can be stored in the draft session.",
+    clone: "Built-in workflows remain read-only until the draft creation step succeeds.",
+    create: "Use one of the supported scratch, template, or clone modes to create a safe authored draft.",
+    workflow: "Only the supported authored workflow fields can be changed from this surface.",
+    node: "Stay inside the built-in safe node catalog and keep the graph connected when you change nodes.",
+    edge: "Basic edge edits must keep the graph reachable and acyclic.",
+    entry: "Choose an existing node or group as the workflow entry.",
     validate: "Fix the supported fields below, then validate again without losing the current draft context.",
-    run: "The draft stays loaded. Re-validate the latest safe edit before you try another run.",
+    run: "The draft stays loaded. Re-validate the latest authored graph before you try another run.",
   };
   return {
     tone: "error",
@@ -1959,7 +2821,7 @@ function buildValidationStatus(activeDraft: JsonObject | null): { tone: string; 
     return {
       tone: "warning",
       title: "Validate before run",
-      body: "Save and validate inline before you run this draft. The run step stays locked until the latest validation passes.",
+      body: "Validate inline before you run this draft. The run step stays locked until the latest validation passes.",
     };
   }
   if (validation.ok && validation.stale) {
@@ -1973,7 +2835,7 @@ function buildValidationStatus(activeDraft: JsonObject | null): { tone: string; 
     return {
       tone: "success",
       title: "Validation passed",
-      body: "The latest safe edit is runnable. Next: run a candidate and compare it with the baseline.",
+      body: "The latest authored workflow is runnable. Next: run a candidate and compare it with the baseline.",
     };
   }
   return {
@@ -1998,7 +2860,7 @@ function buildValidationFixes(activeDraft: JsonObject | null): string[] {
       notes.add("Enter every supported weight as a number from 0 to 100; the workbench will normalize them after validation.");
     }
     if (lower.includes("unsupported edit field")) {
-      notes.add("Stay inside the listed safe-edit fields. The workbench does not expose arbitrary JSON or implementation edits.");
+      notes.add("Stay inside the listed authoring controls. The workbench does not expose arbitrary JSON or unsupported implementation edits.");
     }
     if (lower.includes("clone this workflow")) {
       notes.add("Clone the workflow into a local draft first. Built-ins remain read-only reference blueprints.");
@@ -2018,14 +2880,14 @@ function buildDraftlessNextStep(activeWorkflow: JsonObject | null, latestRun: Js
   if (latestRun?.run_id) {
     return {
       key: "inspect",
-      title: "Inspect the latest run, then clone",
-      detail: "Review the baseline context first, then clone the built-in workflow into a local draft before making a safe edit.",
+      title: "Inspect the latest run, then create a draft",
+      detail: "Review the baseline context first, then create a local authored draft before making visual changes.",
     };
   }
   return {
     key: "clone",
-    title: "Clone a workflow to begin",
-    detail: "Choose a workflow from the catalog and create a local draft. Safe edits only unlock after that step succeeds.",
+    title: "Create a draft to begin",
+    detail: "Choose a workflow from the catalog or starter modes, then create a local draft. Visual authoring unlocks after that step succeeds.",
   };
 }
 
@@ -2033,7 +2895,16 @@ function defaultSourceOfTruth(): string[] {
   return [
     "Built-in workflows stay read-only until you clone them into a local workflow.",
     "Reusable local workflows remain JSON files on disk.",
-    "Draft values, validation snapshots, and resume state live in SQLite.",
+    "Draft blueprint state, validation snapshots, and resume state live in SQLite until validate or run writes the local workflow file.",
+  ];
+}
+
+function defaultAuthoringLimitations(): string[] {
+  return [
+    "Only shared safe-product workflow fields and graph mutations are exposed.",
+    "Node implementations stay inside the built-in product workflow node catalog.",
+    "Parallel-group and conditional-route editing stay read-only in this pass.",
+    "API keys are not persisted as authored workflow fields from the WebUI.",
   ];
 }
 
@@ -2041,6 +2912,10 @@ function formatRunContext(run: JsonObject | null): string {
   if (!run) return "—";
   const workflow = run.workflow?.title || run.workflow?.name;
   return [run.run_id, workflow, run.status].filter(Boolean).join(" · ");
+}
+
+function playgroundStepKey(step: JsonObject): string {
+  return String(step.order || step.node_id || "step");
 }
 
 function SourceBadge({ source }: { source: string }): React.ReactElement {
@@ -2358,8 +3233,8 @@ function isEmptyValue(value: any): boolean {
 function defaultStepState(): JsonObject[] {
   return [
     { key: "inspect", label: "Inspect", locked: false, description: "Review the workflow and baseline context." },
-    { key: "clone", label: "Clone", locked: false, description: "Create or reopen a local draft session." },
-    { key: "edit", label: "Safe edit", locked: true, description: "Locked until a draft exists." },
+    { key: "clone", label: "Create", locked: false, description: "Create or reopen a local draft session." },
+    { key: "edit", label: "Author", locked: true, description: "Locked until a draft exists." },
     { key: "validate", label: "Validate", locked: true, description: "Validate inline before the run step unlocks." },
     { key: "run", label: "Run", locked: true, description: "Locked until validation passes." },
     { key: "compare", label: "Compare", locked: true, description: "Locked until a candidate run exists." },
