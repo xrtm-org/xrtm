@@ -12,7 +12,7 @@ released local product tasks.
 If you arrived from xrtm.org, PyPI, or this repository, use the authoritative
 first-success guide: [docs/getting-started.md](docs/getting-started.md).
 
-That guide walks the released `xrtm==0.8.2` journey in one place:
+That guide walks the released `xrtm==0.8.3` journey in one place:
 
 1. install XRTM
 2. choose a CLI-led or WebUI-led first-success path
@@ -26,6 +26,11 @@ That guide walks the released `xrtm==0.8.2` journey in one place:
    step inspection, and explicit save-back to workflow/profile on the
    provider-free release baseline
 8. choose your next path
+
+The `0.8.3` release stays inside that same published surface: bug fixes,
+code-review correctness, and WebUI UX/UI polish only. This README stays pinned
+to the published `0.8.3` capability contract rather than advertising new
+feature families.
 
 This README intentionally stays short so the first-run commands live in one
 place.
@@ -43,7 +48,7 @@ place.
 - [Python API Reference](docs/python-api-reference.md)
 - [Integration Examples](examples/integration/)
 - [Interface Parity Matrix](docs/interface-parity.md) for the current CLI/WebUI capability map and next parity targets
-- [Next-release Feature Track](docs/next-release-feature-track.md) for source-only work that is not part of the published `xrtm==0.8.2` package
+- [Next-release Feature Track](docs/next-release-feature-track.md) for source-only work that is not part of the published `xrtm==0.8.3` package
 - [Stack Versioning Policy](https://github.com/xrtm-org/governance/blob/main/policies/stack-versioning-policy.md) for `xrtm` as the product-anchor release and cross-repo version ownership
 - Full documentation: [xrtm.org](https://xrtm.org)
 

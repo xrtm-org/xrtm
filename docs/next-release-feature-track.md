@@ -1,10 +1,54 @@
 # Next-release feature track
 
-> This page tracks conveniences that are intentionally **not** part of the published `xrtm==0.8.2` surface. Guided onboarding helpers, latest-run shortcuts, CSV export, the shared CLI/WebUI workflow-authoring loop, the guided local WebUI workbench, the WebUI/CLI parity shell, and the bounded interactive sandbox/playground are now on the released surface; this page now tracks what remains unreleased.
+> The `0.8.x` feature line is now intentionally **frozen** at the published
+> `xrtm==0.8.3` capability set. Guided onboarding helpers, latest-run shortcuts,
+> CSV export, the shared CLI/WebUI workflow-authoring loop, the guided local
+> WebUI workbench, the WebUI/CLI parity shell, and the bounded interactive
+> sandbox/playground are already on the released surface. The next coordinated
+> train, `0.8.3`, is for bug fixes, code review, UX/UI polish, and design-system
+> consolidation rather than new capability families.
 
 Use this together with the governance repo's [Feature Status and Graduation Policy](https://github.com/xrtm-org/governance/blob/main/policies/feature-status-and-graduation-policy.md), [Release Readiness Policy](https://github.com/xrtm-org/governance/blob/main/policies/release-readiness-policy.md), [Stack Versioning Policy](https://github.com/xrtm-org/governance/blob/main/policies/stack-versioning-policy.md), and [Interface Parity and Claim Ownership Policy](https://github.com/xrtm-org/governance/blob/main/policies/interface-parity-and-claim-ownership-policy.md).
 
 For the current command-by-command CLI/WebUI map, see [Interface Parity Matrix](interface-parity.md).
+
+## Locked 0.8.3 release direction
+
+`0.8.3` is a **stability and polish** release.
+
+### What belongs in `0.8.3`
+
+- bug fixes on already released product surfaces
+- correctness and maintainability fixes found in code review
+- UX/UI clarity and consistency improvements
+- contributor/design guidance that helps preserve the polished released surface
+
+### What does not belong in `0.8.3`
+
+- new CLI or WebUI capability families
+- widened playground/workbench/runtime claims
+- arbitrary graph IDE or other net-new product stories
+- public release wording that implies a broader product contract than `0.8.3`
+
+Any true new feature family should move to a later train rather than being
+smuggled into `0.8.3` as “polish.”
+
+## Locked WebUI design language for `0.8.3`
+
+The WebUI style contract for this train is:
+
+> **muted and postal, monochromatic muted plate, neo minimalism, card-based
+> design with layered elements when appropriate, approachable sophistication**
+
+Implementation guidance:
+
+- prefer restrained, low-saturation neutrals over bright dashboard accents
+- treat cards and document-like panels as the main composition unit
+- use spacing, grouping, and surface depth for hierarchy before adding ornament
+- add layered elements only when they clarify state, context, or workflow steps
+- keep the UI polished and trustworthy without becoming cold, flashy, or overly
+  enterprise-heavy
+- keep version/release trust cues visible and stylistically coherent in the app
 
 ## Status legend
 
@@ -26,6 +70,7 @@ For the current command-by-command CLI/WebUI map, see [Interface Parity Matrix](
 | Corpus preparation UX | `xrtm validate prepare-corpus` | **`redesign-required`** | Not on the current release train | The current command is useful, but the public contract still mixes cache preparation, dataset policy, preview semantics, and release-gate expectations. The workflow deserves clearer naming and framing before it becomes a public release promise. | Redesign the user-facing command/story first (for example, make cache/setup semantics explicit), then re-evaluate whether it belongs with `validate` or a separate corpus-management surface. |
 | Run attribution flags | `--user` on run-producing commands and saved profiles | **`redesign-required`** | Not on the current release train | A free-form attribution flag is technically useful, but the released product story still says team usage relies on conventions rather than built-in identity management. Shipping the current flag as-is risks overselling multi-user semantics and privacy expectations. | Define the public semantics first: what the field means, where it appears, privacy/storage expectations, and whether it is run metadata, analyst labeling, or team workflow state. Update team docs and exports only after that contract is explicit. |
 | Editable workflow workbench / GUI canvas | `xrtm web --workflows-dir .xrtm/workflows`, `/`, `/runs`, `/workbench`, `/api/app-shell`, `/api/authoring/catalog`, `/api/runs`, `/api/drafts`, `/api/runs/<run-id>/compare/<baseline-run-id>` | **`shipped`** | `0.8.1` | The released local WebUI is a React/TypeScript app shell backed by the local Python API and SQLite app-state. It can inspect runs, resume recent work, start from scratch/template/clone, author shared workflow fields, make safe node/edge/entry changes inside the built-in node catalog, validate, run, and compare against a selected baseline run. Parallel-group and conditional-route editing remain inspectable but thin/read-only; there is still no arbitrary JSON editing, implementation editing, or code editing claim. | Keep provider-free clean-room evidence covering WebUI smoke plus authoring → validate → run → compare, and keep the release docs precise about the remaining parallel-group/conditional-route limits. |
+| Managed local live WebUI dev path | released `xrtm web`, reserved `./workspace.sh live-webui <start\|stop\|restart\|status\|logs>` | **`advanced/experimental`** | Workspace/internal first | The recurring stale `http://127.0.0.1:8765` problem is a local-dev lifecycle issue, not a release-docs gap. The released `xrtm web` entrypoint is still a plain local server over built static assets, so the honest fix is a managed current-checkout workspace helper rather than prematurely promising `xrtm web --reload` or `xrtm web --dev`. | Lock the workspace-helper contract first: manager-owned PID/log/state under `.xrtm/live-webui/`, rebuilt packaged assets before start/restart, current-checkout launch semantics, default `127.0.0.1:8765`, and release docs that continue to describe only plain `xrtm web` until a separate graduation intentionally widens the public CLI. |
 
 ## 0.8.2 interactive sandbox contract (released)
 
@@ -78,6 +123,47 @@ package, release claims, and provider-free Gate 2 evidence move together.
 | Save as profile | “Save as profile” stores repeatable launch/runtime preferences in the normal profile store (for example `.xrtm/profiles`) and references a workflow explicitly. Profiles must not silently embed unsaved graph mutations. If the sandbox includes graph changes, the product should require saving a workflow first (or keep the original workflow reference) before saving the profile. | A profile format that hides unsaved workflow snapshots or mixes workflow persistence with run evidence implicitly. |
 | Runtime promise boundaries for Gate 2 | The release minimum for the playground story is the provider-free product-shell baseline. If `0.8.2` release docs claim playground support for a real OpenAI-compatible endpoint or coding-agent CLI runtime, Gate 2 must prove at least one such end-to-end playground path in a fresh environment. If the released playground docs advertise cloud/API support, Gate 2 must also include at least one **commercial OpenAI-compatible** playground profile. Until that proof exists, release-pinned docs must keep playground runtime wording narrower. | Releasing a playground promise that implies real/commercial runtime support without matching clean-room proof. |
 | Product framing and safety boundary | The feature is a **safe sandbox / playground** for bounded workflow experimentation. It stays inside the released schema, built-in node catalog, supported runtime/provider taxonomy, and explicit save flows. | A full arbitrary graph IDE, arbitrary code execution surface, or unrestricted implementation editing story. |
+
+## Locked local live WebUI contract (unreleased / local-dev only)
+
+The current source tree has two different concerns:
+
+- released/public `xrtm web`, which is a plain local HTTP server
+- local current-checkout iteration, which is where the stale detached-process
+  problem lives today
+
+Lock the dev contract around those realities instead of pretending the released
+CLI already has a clean reload story.
+
+| Area | Locked contract | Must not drift into |
+| --- | --- | --- |
+| Supported surface | The supported current-code live/dev path is `./workspace.sh live-webui <start\|stop\|restart\|status\|logs>`. The released `xrtm web` command stays the plain server entrypoint with `--runs-dir`, `--workflows-dir`, `--host`, `--port`, and `--smoke` only. No `xrtm web --reload` or `xrtm web --dev` promise is locked right now. | Sneaking reload/dev semantics into the released CLI before the Python + packaged-frontend story is intentionally designed and validated. |
+| Frontend asset model | The browser shell continues to be served from built assets in `src/xrtm/product/webui_static/`. The live manager is responsible for rebuilding those packaged assets from `webui/src/**` before `start`/`restart`. Automatic watch/rebuild may exist later as an implementation detail, but the stable promise is rebuilt packaged assets, not direct source serving or HMR. | Promising instant hot reload for every TS/CSS edit, or serving unpublished assets from outside the packaged static path. |
+| Backend update path | Python changes are picked up by restarting the manager-owned `xrtm web` process from the current checkout. Automatic restart may be added later, but the locked contract only requires an explicit managed restart path that developers can trust. | Claiming fully automatic in-process reload semantics across all backend paths, providers, and long-running sessions. |
+| PID / log / port ownership | `workspace.sh live-webui` owns one server instance by default on `127.0.0.1:8765`. It owns workspace-local state under `.xrtm/live-webui/`, including at least the active PID, current URL/port metadata, and log location. `status` reports the canonical URL plus PID/log path, `restart` replaces the managed instance, and `stop` only targets the manager-owned PID. | Detached orphan processes, ambiguous ownership of port `8765`, or ad hoc PID/log files scattered across the workspace. |
+| How the live URL tracks current code | `start` and `restart` must run against the current repo checkout in an editable/dev-style path, not a previously installed wheel. The supported promise is: after the manager finishes its rebuild/restart step, `http://127.0.0.1:8765` reflects the current checkout's Python code plus the freshly rebuilt packaged WebUI assets. | Calling the URL "live" while it still serves an old wheel, stale static bundle, or an unmanaged detached process from a prior branch/state. |
+| Doc boundary | Developer/local workspace docs may describe `workspace.sh live-webui` as the managed current-code path. Release/new-user docs, `docs/release-command-contract.json`, and packaged CLI help continue to describe only plain `xrtm web` until a later graduation intentionally broadens the public CLI surface. | Adding `live-webui`, `xrtm web --reload`, or `xrtm web --dev` to release-pinned docs before implementation and matching validation land. |
+
+### Current source-only helper usage
+
+Use the workspace helper when iterating on current checkout code:
+
+```bash
+./workspace.sh live-webui start
+./workspace.sh live-webui status
+./workspace.sh live-webui restart
+./workspace.sh live-webui logs --lines 100
+./workspace.sh live-webui stop
+```
+
+Operational notes:
+
+- `start` and `restart` rebuild the packaged WebUI assets from `xrtm/webui/`
+  before launching the current checkout.
+- The manager keeps `state.json`, `server.pid`, and `server.log` under
+  `.xrtm/live-webui/`.
+- If `127.0.0.1:8765` is already active from an unmanaged process, the helper
+  refuses to take ownership silently; stop the old process first.
 
 ## Rules for contributors
 

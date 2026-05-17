@@ -28,6 +28,13 @@ function routePath(route: Route): string {
   return route.search ? `${route.path}?${route.search}` : route.path;
 }
 
+function isNavItemActive(routePath: string, href: string): boolean {
+  if (href === "/") return routePath === "/";
+  if (href === "/start") return routePath === "/start" || /^\/workflows\/[^/]+$/.test(routePath);
+  if (href === "/runs") return routePath === "/runs" || /^\/runs\/[^/]+(?:\/compare\/[^/]+)?$/.test(routePath);
+  return routePath === href;
+}
+
 async function requestJson(url: string, init?: RequestInit): Promise<JsonObject> {
   const response = await fetch(url, {
     headers: { "Content-Type": "application/json" },
@@ -95,12 +102,27 @@ function App(): React.ReactElement {
   };
   const refreshShell = () => setShellRefresh((value) => value + 1);
 
-  const nav = shell.data?.app?.nav ?? [
+  const appChrome = (shell.data?.app || {}) as JsonObject;
+  const nav = appChrome.nav ?? [
     { label: "Overview", href: "/" },
     { label: "Runs", href: "/runs" },
     { label: "Playground", href: "/playground" },
     { label: "Workbench", href: "/workbench" },
   ];
+  const trustCues = (appChrome.trust_cues || ["Local-only shell", "File-backed history", "SQLite draft state"]) as string[];
+  const environmentCards = (shell.data?.environment?.cards || [
+    { key: "version", label: "Version", value: shell.data?.app?.version ? `xrtm ${String(shell.data.app.version)}` : "unknown" },
+    { key: "runs", label: "Runs", value: shell.data?.environment?.runs_dir || "—" },
+    { key: "workflows", label: "Workflows", value: shell.data?.environment?.workflows_dir || "—" },
+    {
+      key: "local-llm",
+      label: "Local LLM",
+      value: shell.data?.environment?.local_llm?.healthy ? "Healthy" : "Unavailable",
+      status: shell.data?.environment?.local_llm?.healthy ? "healthy" : "unavailable",
+      detail: shell.data?.environment?.local_llm?.base_url || shell.data?.environment?.local_llm?.error || "Unavailable",
+    },
+    { key: "app-db", label: "App DB", value: shell.data?.environment?.app_db || "—" },
+  ]) as JsonObject[];
 
   let page: React.ReactElement;
   if (route.path === "/") {
@@ -128,58 +150,67 @@ function App(): React.ReactElement {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div>
-          <div className="title-row">
-            <span className="eyebrow">XRTM WebUI</span>
-            {shell.data?.app?.version ? <span className="version-pill">v{String(shell.data.app.version)}</span> : null}
+      <section className="panel shell-chrome">
+        <header className="topbar">
+          <div className="shell-copy-stack">
+            <div className="title-row">
+              <span className="eyebrow">{String(appChrome.name || "XRTM WebUI")}</span>
+              {shell.data?.app?.version ? <span className="version-pill">v{String(shell.data.app.version)}</span> : null}
+            </div>
+            <h1>{String(appChrome.subtitle || "Local forecasting cockpit")}</h1>
+            <p className="shell-copy">
+              {String(appChrome.summary || "File-backed runs, local workflows, and resumable SQLite state in one muted local shell.")}
+            </p>
+            <div className="meta-row shell-trust-row">
+              {trustCues.map((cue) => (
+                <span key={cue} className="shell-trust-pill">{cue}</span>
+              ))}
+            </div>
           </div>
-          <h1>Local forecasting cockpit</h1>
-        </div>
-        <nav className="topnav" aria-label="Primary">
-          {nav.map((item: JsonObject) => (
-            <a
-              key={item.href}
-              className={route.path === item.href ? "nav-link active" : "nav-link"}
-              href={item.href}
-              onClick={(event) => {
-                event.preventDefault();
-                navigate(item.href);
-              }}
-            >
-              {item.label}
-            </a>
-          ))}
-        </nav>
-      </header>
+          <div className="shell-nav-stack">
+            <div className="title-row">
+              <span className="eyebrow">Primary lanes</span>
+            </div>
+            <nav className="topnav" aria-label="Primary">
+              {nav.map((item: JsonObject) => {
+                const active = isNavItemActive(route.path, String(item.href || "/"));
+                return (
+                  <a
+                    key={item.href}
+                    className={active ? "nav-link active" : "nav-link"}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(item.href);
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                );
+              })}
+            </nav>
+          </div>
+        </header>
+        {shell.data ? (
+          <section className="environment-strip" aria-label="Environment status">
+            {environmentCards.map((card) => (
+              <article key={String(card.key || card.label)} className="environment-card">
+                <div className="environment-card-head">
+                  <strong>{card.label}</strong>
+                  {card.status ? <StatusPill value={String(card.status)} /> : null}
+                </div>
+                <span className="environment-card-value" title={String(card.value || "—")}>{card.value || "—"}</span>
+                {card.detail ? <span className="environment-card-detail" title={String(card.detail)}>{card.detail}</span> : null}
+              </article>
+            ))}
+          </section>
+        ) : null}
+      </section>
       {bootstrap.initial_error ? <Message tone="error" title="Initial error" body={bootstrap.initial_error} /> : null}
       {shell.error ? <Message tone="error" title="App shell error" body={shell.error} /> : null}
       {shell.loading && !shell.data ? <LoadingCard label="Loading app shell" /> : null}
-      {shell.data ? (
-        <section className="environment-strip">
-          <div>
-            <strong>Version</strong>
-            <span>{shell.data.app?.version ? `xrtm ${String(shell.data.app.version)}` : "unknown"}</span>
-          </div>
-          <div>
-            <strong>Runs</strong>
-            <span>{shell.data.environment?.runs_dir}</span>
-          </div>
-          <div>
-            <strong>Workflows</strong>
-            <span>{shell.data.environment?.workflows_dir}</span>
-          </div>
-          <div>
-            <strong>Local LLM</strong>
-            <span>{String(shell.data.environment?.local_llm?.healthy)}</span>
-          </div>
-          <div>
-            <strong>App DB</strong>
-            <span>{shell.data.environment?.app_db}</span>
-          </div>
-        </section>
-      ) : null}
-      {page}
+      <div className="page-stack">{page}</div>
     </div>
   );
 }
@@ -1079,9 +1110,10 @@ function RunsPage({ route, navigate }: { route: Route; navigate: (path: string) 
 
   return (
     <main className="page-grid">
-      <section className="panel">
+      <section className="panel hero-panel page-lead">
         <span className="eyebrow">Runs</span>
         <h2>Inspect canonical run history</h2>
+        <p>Filter the file-backed history without losing status semantics, provider context, or comparison paths.</p>
         <form
           className="filter-row"
           onSubmit={(event) => {

@@ -64,7 +64,7 @@ surface is not an arbitrary graph, JSON, implementation, or code editor.
 The terminal exposes the same shared backend through `xrtm workflow create ...`
 and `xrtm workflow edit ...` when you prefer text-led authoring.
 
-In `0.8.2`, the same released shell also exposes `/playground` for a bounded
+In `0.8.3`, the same released shell also exposes `/playground` for a bounded
 exploratory sandbox: one custom question first, optional tiny follow-up batches
 capped at 5, read-only ordered step inspection, and explicit save-back to
 workflow/profile only. Keep playground runs exploratory and separate from
@@ -72,7 +72,7 @@ benchmark or release evidence by default, and keep the released runtime wording
 provider-free unless wider validation is published separately.
 
 ```bash
-xrtm playground --workflow demo-provider-free --question "Will the released 0.8.2 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
+xrtm playground --workflow demo-provider-free --question "Will the released 0.8.3 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
 ```
 
 Use the terminal TUI when you only need read-only review:

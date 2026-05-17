@@ -750,12 +750,19 @@ def render_app_shell_html(*, initial_path: str, query_string: str = "", error: s
     <div id='root'>
       <main class='boot-shell'>
         <header class='boot-header'>
-          <div class='boot-title-group'>
-            <span class='boot-badge'>XRTM WebUI</span>
-            <span class='version-pill'>v{__version__}</span>
+          <div class='boot-copy-stack'>
+            <div class='boot-title-group'>
+              <span class='boot-badge'>XRTM WebUI</span>
+              <span class='version-pill'>v{__version__}</span>
+              <span class='shell-trust-pill'>Local-only shell</span>
+            </div>
+            <h1>Local forecasting cockpit</h1>
+            <p class='shell-copy'>Loading the local-first app shell…</p>
           </div>
-          <h1>Overview · Start · Runs · Playground · Operations · Workbench</h1>
-          <p>Loading the local-first app shell…</p>
+          <div class='boot-nav-stack'>
+            <span class='boot-badge'>Primary lanes</span>
+            <p class='boot-route-strip'>Overview · Start · Runs · Playground · Operations · Workbench</p>
+          </div>
         </header>
         <noscript>This WebUI shell needs JavaScript enabled.</noscript>
       </main>

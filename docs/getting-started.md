@@ -1,7 +1,11 @@
 # Getting Started with XRTM
 
 This is the authoritative first-success path for the published
-`xrtm==0.8.2` package.
+`xrtm==0.8.3` package.
+
+The `0.8.3` release is limited to stability, code-review, and WebUI polish on
+these same released surfaces. This guide stays claim-pinned to the published
+`0.8.3` contract.
 
 You will install XRTM, choose either a CLI-led or WebUI-led first-success path,
 inspect the latest run, use report/export actions, open the local WebUI shell,
@@ -13,10 +17,10 @@ compare the result, and then choose the next guide that matches your job.
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.8.2
+pip install xrtm==0.8.3
 ```
 
-**Supported Python versions:** `>=3.11,<3.13`
+**Supported Python versions:** `>=3.11,<3.14`
 
 ## 2. Choose your first-success interface
 
@@ -64,10 +68,11 @@ xrtm web --runs-dir runs
 
 Open `http://127.0.0.1:8765/` in your browser first.
 
-The released WebUI is a local-only React/TypeScript app shell backed by a
-Python JSON API. It gives you Overview, Start, Runs, Workflow detail,
-Operations, run detail, compare, Advanced visibility, and the `/workbench`
-draft flow in one browser shell.
+The released WebUI is a polished local-only React/TypeScript app shell backed
+by a Python JSON API. It gives you the same local forecasting cockpit lanes —
+Overview, Start, Runs, Workflow detail, Operations, run detail, compare,
+Playground, Advanced visibility, and the `/workbench` draft flow — without
+widening the released `0.8.3` capability contract.
 
 With the default local workspace layout, reusable workflows stay in
 `.xrtm/workflows` while draft values, validation snapshots, compare cache, and
@@ -79,7 +84,7 @@ monitor, or cleanup controls, and `http://127.0.0.1:8765/workbench` when you
 are ready to edit. The guided workbench keeps the baseline in view, starts a
 local draft from scratch, a released starter template, or a clone, and then
 lets you author shared workflow fields plus safe graph changes inside the
-released schema and built-in node library. In `0.8.2`, that includes metadata,
+released schema and built-in node library. In `0.8.3`, that includes metadata,
 questions, runtime, artifact/scoring settings, and node/edge/entry edits.
 Parallel-group and conditional-route editing remain thin/read-only, and this is
 not an arbitrary JSON, implementation, or code editor.
@@ -96,7 +101,7 @@ xrtm workflow explain my-workflow --workflows-dir .xrtm/workflows
 xrtm workflow run my-workflow --workflows-dir .xrtm/workflows --runs-dir runs
 ```
 
-`xrtm==0.8.2` also releases the bounded Playground lane. Open
+`xrtm==0.8.3` also releases the bounded Playground lane. Open
 `http://127.0.0.1:8765/playground` from the same local shell when you want one
 custom question first, optional tiny follow-up batches capped at 5, read-only
 ordered step inspection, and explicit save-back to workflow/profile only. Keep
@@ -105,7 +110,7 @@ default, and keep the released runtime wording provider-free unless wider
 validation is published separately.
 
 ```bash
-xrtm playground --workflow demo-provider-free --question "Will the released 0.8.2 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
+xrtm playground --workflow demo-provider-free --question "Will the released 0.8.3 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
 ```
 
 That released Playground command uses the provider-free baseline path and the
@@ -154,7 +159,9 @@ Activate the virtual environment first:
 
 ### Installation fails on Python 3.13
 
-This is expected. XRTM currently supports Python `>=3.11,<3.13`.
+XRTM supports Python `>=3.11,<3.14`. If installation still fails on Python
+3.13, upgrade `pip`, `setuptools`, and `wheel`, then reinstall in a fresh
+virtual environment.
 
 ### Your current directory is read-only
 
