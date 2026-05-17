@@ -22,20 +22,26 @@ def _load_module():
     return module
 
 
-def _manager_paths(tmp_path: Path, module):
+def _manager_paths(tmp_path: Path, module, *, instance_name: str = "shared"):
     workspace_root = tmp_path / "workspace"
     repo_root = workspace_root / "xrtm"
-    (repo_root / "webui").mkdir(parents=True)
-    (repo_root / "src" / "xrtm" / "product" / "webui_static").mkdir(parents=True)
+    (repo_root / "webui").mkdir(parents=True, exist_ok=True)
+    (repo_root / "src" / "xrtm" / "product" / "webui_static").mkdir(parents=True, exist_ok=True)
     (repo_root / "webui" / "package.json").write_text('{"name":"xrtm-webui"}', encoding="utf-8")
     (repo_root / "webui" / "package-lock.json").write_text('{"name":"xrtm-webui","lockfileVersion":3}', encoding="utf-8")
+    state_dir = (
+        workspace_root / ".xrtm" / "live-webui"
+        if instance_name == "shared"
+        else workspace_root / ".xrtm" / "live-webui-instances" / instance_name
+    )
     return module.ManagerPaths(
+        instance_name=instance_name,
         workspace_root=workspace_root,
         repo_root=repo_root,
-        state_dir=workspace_root / ".xrtm" / "live-webui",
-        state_file=workspace_root / ".xrtm" / "live-webui" / "state.json",
-        pid_file=workspace_root / ".xrtm" / "live-webui" / "server.pid",
-        log_file=workspace_root / ".xrtm" / "live-webui" / "server.log",
+        state_dir=state_dir,
+        state_file=state_dir / "state.json",
+        pid_file=state_dir / "server.pid",
+        log_file=state_dir / "server.log",
         webui_dir=repo_root / "webui",
         node_modules_dir=repo_root / "webui" / "node_modules",
         package_lock_file=repo_root / "webui" / "package-lock.json",
@@ -191,3 +197,59 @@ def test_stop_skips_pid_reuse_when_start_time_changes(tmp_path: Path, monkeypatc
     assert not paths.pid_file.exists()
     saved = manager.load_state()
     assert "pid" not in saved
+
+
+def test_shared_and_isolated_instances_use_separate_defaults(tmp_path: Path) -> None:
+    module = _load_module()
+    shared_paths = _manager_paths(tmp_path, module)
+    isolated_paths = _manager_paths(tmp_path, module, instance_name="gate2-smoke")
+    shared_manager = module.LiveWebUIManager(shared_paths)
+    isolated_manager = module.LiveWebUIManager(isolated_paths)
+
+    shared_config = shared_manager.resolve_config(
+        argparse_namespace(host=None, port=None, runs_dir=None, workflows_dir=None, timeout=10.0)
+    )
+    isolated_config = isolated_manager.resolve_config(
+        argparse_namespace(host=None, port=None, runs_dir=None, workflows_dir=None, timeout=10.0)
+    )
+
+    assert shared_paths.state_dir.name == "live-webui"
+    assert isolated_paths.state_dir == tmp_path / "workspace" / ".xrtm" / "live-webui-instances" / "gate2-smoke"
+    assert shared_config.host == "0.0.0.0"
+    assert shared_config.port == 8765
+    assert isolated_config.host == "127.0.0.1"
+    assert isolated_config.port == 8876
+
+
+def test_shared_instance_requires_explicit_ack_for_mutations(tmp_path: Path) -> None:
+    module = _load_module()
+    manager = module.LiveWebUIManager(_manager_paths(tmp_path, module))
+
+    with pytest.raises(module.LiveWebUIError, match="--shared-live"):
+        manager.require_shared_mutation_ack(shared_live=False, command="restart")
+
+    manager.require_shared_mutation_ack(shared_live=True, command="restart")
+
+
+def test_isolated_instances_cannot_claim_shared_port(tmp_path: Path) -> None:
+    module = _load_module()
+    manager = module.LiveWebUIManager(_manager_paths(tmp_path, module, instance_name="validation"))
+    config = module.LiveWebUIConfig(
+        host="127.0.0.1",
+        port=8765,
+        runs_dir=manager.paths.workspace_root / "runs",
+        workflows_dir=manager.paths.workspace_root / ".xrtm" / "workflows",
+    )
+
+    with pytest.raises(module.LiveWebUIError, match="reserved for the shared live-webui instance"):
+        manager._ensure_instance_port_allowed(config)
+
+
+def argparse_namespace(**kwargs):
+    class Namespace:
+        pass
+
+    namespace = Namespace()
+    for key, value in kwargs.items():
+        setattr(namespace, key, value)
+    return namespace

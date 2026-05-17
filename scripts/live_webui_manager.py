@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -21,13 +22,17 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8765
+SHARED_INSTANCE_NAME = "shared"
+DEFAULT_SHARED_HOST = "0.0.0.0"
+DEFAULT_ISOLATED_HOST = "127.0.0.1"
+DEFAULT_SHARED_PORT = 8765
+DEFAULT_ISOLATED_PORT = 8876
 DEFAULT_RUNS_DIR = Path("runs")
 DEFAULT_WORKFLOWS_DIR = Path(".xrtm/workflows")
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 30.0
 DEFAULT_STOP_TIMEOUT_SECONDS = 10.0
 DEFAULT_LOG_LINES = 50
+_INSTANCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class LiveWebUIError(RuntimeError):
@@ -36,6 +41,7 @@ class LiveWebUIError(RuntimeError):
 
 @dataclass(frozen=True)
 class ManagerPaths:
+    instance_name: str
     workspace_root: Path
     repo_root: Path
     state_dir: Path
@@ -61,13 +67,37 @@ class LiveWebUIConfig:
         return f"http://{self.host}:{self.port}"
 
 
-def derive_paths(*, workspace_root: Path | None = None, repo_root: Path | None = None) -> ManagerPaths:
+def default_host_for_instance(instance_name: str) -> str:
+    return DEFAULT_SHARED_HOST if instance_name == SHARED_INSTANCE_NAME else DEFAULT_ISOLATED_HOST
+
+
+def default_port_for_instance(instance_name: str) -> int:
+    return DEFAULT_SHARED_PORT if instance_name == SHARED_INSTANCE_NAME else DEFAULT_ISOLATED_PORT
+
+
+def validate_instance_name(instance_name: str) -> str:
+    if not _INSTANCE_RE.match(instance_name):
+        raise LiveWebUIError(
+            "live-webui instance names must start with a letter or digit and use only letters, digits, '.', '_', or '-'."
+        )
+    return instance_name
+
+
+def derive_paths(
+    *, workspace_root: Path | None = None, repo_root: Path | None = None, instance_name: str = SHARED_INSTANCE_NAME
+) -> ManagerPaths:
     script_path = Path(__file__).resolve()
     repo = Path(os.environ.get("XRTM_LIVE_WEBUI_REPO_ROOT", repo_root or script_path.parents[1])).resolve()
     workspace = Path(os.environ.get("XRTM_LIVE_WEBUI_WORKSPACE_ROOT", workspace_root or repo.parent)).resolve()
-    state_dir = workspace / ".xrtm" / "live-webui"
+    instance = validate_instance_name(instance_name)
+    state_dir = (
+        workspace / ".xrtm" / "live-webui"
+        if instance == SHARED_INSTANCE_NAME
+        else workspace / ".xrtm" / "live-webui-instances" / instance
+    )
     webui_dir = repo / "webui"
     return ManagerPaths(
+        instance_name=instance,
         workspace_root=workspace,
         repo_root=repo,
         state_dir=state_dir,
@@ -96,19 +126,28 @@ class LiveWebUIManager:
 
     def resolve_config(self, args: argparse.Namespace) -> LiveWebUIConfig:
         state = self.load_state()
-        host = args.host or state.get("host") or DEFAULT_HOST
-        port = args.port or state.get("port") or DEFAULT_PORT
+        host = args.host or state.get("host") or default_host_for_instance(self.paths.instance_name)
+        port = args.port or state.get("port") or default_port_for_instance(self.paths.instance_name)
         runs_dir = self._resolve_workspace_path(Path(args.runs_dir) if args.runs_dir else state.get("runs_dir") or DEFAULT_RUNS_DIR)
         workflows_dir = self._resolve_workspace_path(
             Path(args.workflows_dir) if args.workflows_dir else state.get("workflows_dir") or DEFAULT_WORKFLOWS_DIR
         )
-        return LiveWebUIConfig(
+        config = LiveWebUIConfig(
             host=host,
             port=int(port),
             runs_dir=runs_dir,
             workflows_dir=workflows_dir,
             startup_timeout=float(args.timeout or DEFAULT_STARTUP_TIMEOUT_SECONDS),
         )
+        self._ensure_instance_port_allowed(config)
+        return config
+
+    def require_shared_mutation_ack(self, *, shared_live: bool, command: str) -> None:
+        if self.paths.instance_name == SHARED_INSTANCE_NAME and not shared_live:
+            raise LiveWebUIError(
+                f"Refusing to {command} the shared live-webui instance without --shared-live. "
+                "Use --instance <name> and a non-8765 port for validation/test runs."
+            )
 
     def ensure_frontend_assets(self, state: dict[str, Any]) -> dict[str, Any]:
         self._require_command("npm")
@@ -237,8 +276,8 @@ class LiveWebUIManager:
     def status_snapshot(self) -> dict[str, Any]:
         state = self.load_state()
         config = LiveWebUIConfig(
-            host=str(state.get("host") or DEFAULT_HOST),
-            port=int(state.get("port") or DEFAULT_PORT),
+            host=str(state.get("host") or default_host_for_instance(self.paths.instance_name)),
+            port=int(state.get("port") or default_port_for_instance(self.paths.instance_name)),
             runs_dir=self._resolve_workspace_path(state.get("runs_dir") or DEFAULT_RUNS_DIR),
             workflows_dir=self._resolve_workspace_path(state.get("workflows_dir") or DEFAULT_WORKFLOWS_DIR),
         )
@@ -248,6 +287,7 @@ class LiveWebUIManager:
         if active is None and port_open:
             status = "unmanaged-port-active"
         return {
+            "instance": self.paths.instance_name,
             "status": status,
             "url": config.url,
             "host": config.host,
@@ -263,6 +303,7 @@ class LiveWebUIManager:
     def status_text(self) -> str:
         snapshot = self.status_snapshot()
         lines = [
+            f"Instance: {snapshot['instance']}",
             f"Status: {snapshot['status']}",
             f"URL:    {snapshot['url']}",
             f"PID:    {snapshot['pid'] if snapshot['pid'] is not None else '<not running>'}",
@@ -375,6 +416,7 @@ class LiveWebUIManager:
 
     def _runtime_state(self, config: LiveWebUIConfig) -> dict[str, Any]:
         return {
+            "instance": self.paths.instance_name,
             "host": config.host,
             "port": config.port,
             "url": config.url,
@@ -383,6 +425,13 @@ class LiveWebUIManager:
             "workspace_root": str(self.paths.workspace_root),
             "repo_root": str(self.paths.repo_root),
         }
+
+    def _ensure_instance_port_allowed(self, config: LiveWebUIConfig) -> None:
+        if self.paths.instance_name != SHARED_INSTANCE_NAME and config.port == DEFAULT_SHARED_PORT:
+            raise LiveWebUIError(
+                f"Port {DEFAULT_SHARED_PORT} is reserved for the shared live-webui instance. "
+                "Use a different port for validation/test runs."
+            )
 
     def _dependency_hash(self) -> str:
         source = self.paths.package_lock_file if self.paths.package_lock_file.exists() else self.paths.package_json_file
@@ -403,16 +452,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name in ("start", "restart"):
         subparser = subparsers.add_parser(name)
+        subparser.add_argument("--instance", default=SHARED_INSTANCE_NAME)
+        subparser.add_argument("--shared-live", action="store_true")
         subparser.add_argument("--host", default=None)
         subparser.add_argument("--port", type=int, default=None)
         subparser.add_argument("--runs-dir", default=None)
         subparser.add_argument("--workflows-dir", default=None)
         subparser.add_argument("--timeout", type=float, default=DEFAULT_STARTUP_TIMEOUT_SECONDS)
 
-    subparsers.add_parser("stop")
-    subparsers.add_parser("status")
+    stop = subparsers.add_parser("stop")
+    stop.add_argument("--instance", default=SHARED_INSTANCE_NAME)
+    stop.add_argument("--shared-live", action="store_true")
+
+    status = subparsers.add_parser("status")
+    status.add_argument("--instance", default=SHARED_INSTANCE_NAME)
 
     logs = subparsers.add_parser("logs")
+    logs.add_argument("--instance", default=SHARED_INSTANCE_NAME)
     logs.add_argument("--lines", type=int, default=DEFAULT_LOG_LINES)
 
     return parser
@@ -420,19 +476,25 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    manager = LiveWebUIManager(derive_paths())
+    manager = LiveWebUIManager(derive_paths(instance_name=args.instance))
 
     if args.command == "start":
+        manager.require_shared_mutation_ack(shared_live=args.shared_live, command="start")
         state = manager.start(manager.resolve_config(args))
         print(f"live-webui running at {state['url']} (pid {state['pid']})")
         return 0
     if args.command == "restart":
+        manager.require_shared_mutation_ack(shared_live=args.shared_live, command="restart")
         state = manager.restart(manager.resolve_config(args))
         print(f"live-webui restarted at {state['url']} (pid {state['pid']})")
         return 0
     if args.command == "stop":
+        manager.require_shared_mutation_ack(shared_live=args.shared_live, command="stop")
         snapshot = manager.stop()
-        print(f"live-webui stopped; managed URL is {snapshot.get('url', f'http://{DEFAULT_HOST}:{DEFAULT_PORT}')}")
+        print(
+            "live-webui stopped; managed URL is "
+            f"{snapshot.get('url', f'http://{default_host_for_instance(manager.paths.instance_name)}:{default_port_for_instance(manager.paths.instance_name)}')}"
+        )
         return 0
     if args.command == "status":
         print(manager.status_text())

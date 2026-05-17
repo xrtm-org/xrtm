@@ -192,6 +192,9 @@ class WebUIStateStore:
         workflows = self.list_workflows()
         latest_run = runs[0] if runs else None
         resume_target = self.resume_target(runs=runs)
+        starter_templates = [template.__dict__ for template in list_workflow_starter_templates()]
+        preferred_workflow_name = _preferred_hub_workflow(workflows)
+        preferred_template_id = _preferred_hub_template(starter_templates)
         local_llm_snapshot = local_llm_status()
         local_llm_detail = (
             ", ".join(str(model) for model in local_llm_snapshot.get("models", [])[:2])
@@ -205,17 +208,16 @@ class WebUIStateStore:
                 "subtitle": "Local forecasting cockpit",
                 "summary": "File-backed runs, local workflows, and resumable SQLite state in one muted local shell.",
                 "trust_cues": [
-                    "Local-only shell",
+                    "Shared local shell",
                     "File-backed history",
                     "SQLite draft state",
                 ],
                 "nav": [
-                    {"label": "Overview", "href": "/"},
-                    {"label": "Start", "href": "/start"},
-                    {"label": "Runs", "href": "/runs"},
+                    {"label": "Hub", "href": "/hub"},
+                    {"label": "Studio", "href": "/studio"},
                     {"label": "Playground", "href": "/playground"},
+                    {"label": "Observatory", "href": "/observatory"},
                     {"label": "Operations", "href": "/operations"},
-                    {"label": "Workbench", "href": "/workbench"},
                     {"label": "Advanced", "href": "/advanced"},
                 ],
             },
@@ -260,10 +262,10 @@ class WebUIStateStore:
             },
             "overview": {
                 "hero": {
-                    "title": "Local-first forecasting cockpit",
+                    "title": "Local-first Hub for forecasts and workflows",
                     "summary": (
-                        "Start first-success runs, inspect file-backed history, operate monitors, "
-                        "and keep guided draft state in a local SQLite app database."
+                        "Choose a template-first path into Playground or open Studio to inspect and edit "
+                        "local workflow drafts without login or account setup."
                     ),
                 },
                 "counts": {"runs": len(runs), "workflows": len(workflows)},
@@ -281,11 +283,154 @@ class WebUIStateStore:
                 if not runs
                 else None,
             },
+            "hub": {
+                "hero": {
+                    "eyebrow": "Hub",
+                    "title": "Start locally from a template, then inspect what happened",
+                    "summary": (
+                        "Use the quick forecast door for a bounded Playground run, or open Studio to build "
+                        "a custom workflow draft. Everything points at local files, local run history, and "
+                        "the local SQLite app state."
+                    ),
+                },
+                "doors": [
+                    {
+                        "key": "quick-forecast",
+                        "label": "Quick forecast",
+                        "title": "Ask one bounded question",
+                        "summary": (
+                            "Open Playground with a starter template selected. Add one question, run locally, "
+                            "then inspect ordered step output and artifacts."
+                        ),
+                        "primary_cta": {
+                            "label": "Open Playground",
+                            "href": f"/playground?context=template&template={preferred_template_id}",
+                        },
+                        "secondary_cta": {"label": "Run first-success quickstart", "href": "/start"},
+                        "status": "local-first",
+                    },
+                    {
+                        "key": "custom-workflow",
+                        "label": "Build custom workflow",
+                        "title": "Inspect or create an editable draft",
+                        "summary": (
+                            "Open Studio on a selected workflow. Built-ins stay read-only until cloned into "
+                            "a local draft; the graph authoring surface exposes only supported safe edits."
+                        ),
+                        "primary_cta": {
+                            "label": "Open Studio",
+                            "href": f"/studio?workflow={preferred_workflow_name}",
+                        },
+                        "secondary_cta": {"label": "Legacy workbench route", "href": "/workbench"},
+                        "status": "draft-ready",
+                    },
+                ],
+                "counts": {"runs": len(runs), "workflows": len(workflows), "templates": len(starter_templates)},
+                "latest_run": latest_run,
+                "resume_target": resume_target,
+                "readiness": [
+                    {
+                        "key": "local-state",
+                        "label": "Local app state",
+                        "value": "Ready",
+                        "detail": str(self.db_path),
+                        "status": "ready",
+                    },
+                    {
+                        "key": "workflow-root",
+                        "label": "Workflow files",
+                        "value": str(registry.local_roots[0]),
+                        "detail": "Built-ins plus editable local workflow JSON",
+                        "status": "ready",
+                    },
+                    {
+                        "key": "local-llm",
+                        "label": "Local OpenAI-compatible endpoint",
+                        "value": "Healthy" if local_llm_snapshot.get("healthy") else "Optional",
+                        "detail": local_llm_detail,
+                        "status": "healthy" if local_llm_snapshot.get("healthy") else "optional",
+                    },
+                ],
+                "templates": [
+                    {
+                        **template,
+                        "playground_href": f"/playground?context=template&template={template['template_id']}",
+                        "studio_href": f"/studio?mode=template&template={template['template_id']}",
+                    }
+                    for template in starter_templates
+                ],
+                "workflows": [
+                    {
+                        **workflow,
+                        "playground_href": f"/playground?context=workflow&workflow={workflow['name']}",
+                        "studio_href": f"/studio?workflow={workflow['name']}",
+                    }
+                    for workflow in workflows[:6]
+                ],
+                "next_actions": [
+                    {
+                        "label": resume_target["label"],
+                        "href": resume_target["href"],
+                        "description": "Continue from the last local draft, playground session, or run when one exists.",
+                    },
+                    {
+                        "label": "Open Playground with a template",
+                        "href": f"/playground?context=template&template={preferred_template_id}",
+                        "description": "Fastest path to a local exploratory forecast without account setup.",
+                    },
+                    {
+                        "label": "Open Studio to inspect/edit",
+                        "href": f"/studio?workflow={preferred_workflow_name}",
+                        "description": "Inspect workflow shape and create a safe local draft when you need custom changes.",
+                    },
+                ],
+            },
         }
 
     def authoring_catalog(self, *, registry: WorkflowRegistry) -> dict[str, Any]:
         self.ensure_schema()
         return workbench_authoring_catalog(registry)
+
+    def studio_snapshot(self, *, runs_dir: Path, registry: WorkflowRegistry) -> dict[str, Any]:
+        self.ensure_schema()
+        self.refresh_indexes(runs_dir=runs_dir, registry=registry)
+        catalog = self.authoring_catalog(registry=registry)
+        return {
+            "schema_version": "xrtm.studio.api.v1",
+            "surface": "studio",
+            "compatibility": {
+                "workbench_api": "/api/workbench",
+                "draft_api": "/api/drafts",
+                "note": "Studio wraps the existing draft/workbench authoring model; it does not fork workflow runtime semantics.",
+            },
+            "routes": {
+                "create_draft": {"method": "POST", "href": "/api/studio/drafts"},
+                "catalog": {"method": "GET", "href": "/api/studio/catalog"},
+                "draft": {"method": "GET", "href": "/api/studio/drafts/{draft_id}"},
+                "mutate_graph": {"method": "PATCH", "href": "/api/studio/drafts/{draft_id}/graph"},
+                "validate": {"method": "POST", "href": "/api/studio/drafts/{draft_id}/validate"},
+                "run": {"method": "POST", "href": "/api/studio/drafts/{draft_id}/run"},
+            },
+            "catalog": catalog,
+            "drafts": {
+                "last_draft_id": self.get_ui_state("last_draft_id"),
+                "resume_target": self.resume_target(),
+            },
+        }
+
+    def studio_catalog(self, *, registry: WorkflowRegistry) -> dict[str, Any]:
+        catalog = self.authoring_catalog(registry=registry)
+        return {
+            "schema_version": "xrtm.studio.catalog.v1",
+            "surface": "studio",
+            "node_palette": catalog["node_palette"],
+            "creation_modes": catalog["creation_modes"],
+            "templates": catalog["templates"],
+            "workflow_kind_options": catalog["workflow_kind_options"],
+            "runtime_provider_options": catalog["runtime_provider_options"],
+            "limits": catalog["limits"],
+            "limitations": catalog["limitations"],
+        }
 
     def playground_snapshot(self, *, runs_dir: Path, registry: WorkflowRegistry) -> dict[str, Any]:
         self.ensure_schema()
@@ -301,6 +446,7 @@ class WebUIStateStore:
             "session": session,
             "catalog": _playground_catalog(registry),
             "context_preview": context_preview,
+            "graph_preview": context_preview.get("canvas") if context_preview else {"nodes": [], "edges": []},
             "context_error": context_error,
             "last_result": last_result,
             "step_state": _playground_step_state(has_result=last_result is not None, ready_to_run=ready_to_run),
@@ -415,6 +561,35 @@ class WebUIStateStore:
         self.set_ui_state("last_playground_id", PLAYGROUND_SESSION_ID)
         return self.playground_snapshot(runs_dir=runs_dir, registry=registry)
 
+    def runs_snapshot(
+        self,
+        *,
+        runs_dir: Path,
+        registry: WorkflowRegistry,
+        status: str | None = None,
+        provider: str | None = None,
+        query: str | None = None,
+    ) -> dict[str, Any]:
+        self.refresh_indexes(runs_dir=runs_dir, registry=registry)
+        items = self.list_runs(status=status, provider=provider, query=query)
+        return {
+            "schema_version": "xrtm.webui.runs.v2",
+            "surface": {
+                "name": "Observatory",
+                "title": "Observatory run inspector",
+                "summary": "File-backed run history with drill-down, report/export, and compare continuity.",
+                "canonical_href": "/runs",
+                "alias_href": "/observatory",
+            },
+            "items": items,
+            "filters": {"status": status, "provider": provider, "query": query},
+            "summary_cards": _run_list_summary_cards(items),
+            "empty_state": {
+                "title": "No Observatory runs match the current filter",
+                "body": "Clear filters or start a provider-free workflow to create a run for inspection.",
+            },
+        }
+
     def list_runs(self, *, status: str | None = None, provider: str | None = None, query: str | None = None) -> list[dict[str, Any]]:
         sql = "SELECT run_json FROM run_index WHERE 1 = 1"
         parameters: list[Any] = []
@@ -430,7 +605,7 @@ class WebUIStateStore:
         sql += " ORDER BY run_id DESC"
         with self._connect() as connection:
             rows = connection.execute(sql, parameters).fetchall()
-        return [_json_load(row["run_json"]) for row in rows]
+        return [_decorate_run_list_item(_json_load(row["run_json"])) for row in rows]
 
     def list_workflows(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
@@ -458,13 +633,25 @@ class WebUIStateStore:
         summary = _mapping(detail.get("summary"))
         forecast_rows = _forecast_rows(detail)
         report = _report_state(run_dir, run_id, run)
+        execution_trace = _execution_trace(detail)
+        probability_summary = _probability_summary(forecast_rows)
+        score_summary = _score_summary(summary=summary, eval_payload=_mapping(detail.get("eval")), train_payload=_mapping(detail.get("train")))
+        uncertainty_summary = _uncertainty_summary(summary=summary, eval_payload=_mapping(detail.get("eval")))
         candidate_baselines = [item for item in self.list_runs() if item.get("run_id") != run_id][:5]
         self.set_ui_state("last_run_id", run_id)
         return {
+            "schema_version": "xrtm.webui.run-detail.v2",
             "run_id": run_id,
             "run": run,
             "workflow": workflow,
             "summary": summary,
+            "observatory": {
+                "name": "Observatory",
+                "title": "Run inspector",
+                "summary": "Review the run result, execution trace, artifacts, exports, and comparisons without leaving run history.",
+                "runs_href": "/runs",
+                "alias_href": f"/observatory/{run_id}",
+            },
             "hero": {
                 "title": workflow.get("title") or run_id,
                 "summary": _run_detail_summary(run=run, workflow=workflow, summary=summary, report=report),
@@ -477,6 +664,9 @@ class WebUIStateStore:
             ],
             "metadata_groups": _run_metadata_groups(run=run, workflow=workflow, summary=summary),
             "result_groups": _run_result_groups(summary=summary),
+            "probability_summary": probability_summary,
+            "score_summary": score_summary,
+            "uncertainty_summary": uncertainty_summary,
             "forecast_table": {
                 "rows": forecast_rows,
                 "count": len(forecast_rows),
@@ -486,9 +676,18 @@ class WebUIStateStore:
                 },
             },
             "graph_trace": detail.get("graph_trace", []),
+            "execution_trace": {
+                "items": execution_trace,
+                "count": len(execution_trace),
+                "empty_state": {
+                    "title": "No execution trace",
+                    "body": "This run did not persist graph_trace.jsonl or sandbox inspection steps.",
+                },
+            },
             "artifacts": {
                 "report": report,
                 "items": _artifact_items(run_dir, run),
+                "exports": _export_items(run_id),
                 "summary": summary,
                 "report_url": report.get("href"),
                 "questions": detail.get("questions", []),
@@ -501,6 +700,7 @@ class WebUIStateStore:
                 },
             },
             "guided_actions": [
+                {"label": "Back to Observatory", "href": "/runs"},
                 {
                     "label": "Clone workflow",
                     "method": "POST",
@@ -684,6 +884,13 @@ class WebUIStateStore:
                     validation=validation,
                 ),
             },
+            "studio": _studio_contract(
+                draft_id=draft_id,
+                workflow_name=row["draft_workflow_name"],
+                revision=row["revision"],
+                canvas=workflow_canvas(preview_blueprint),
+                validation=validation,
+            ),
         }
 
     def patch_draft_session(
@@ -727,7 +934,43 @@ class WebUIStateStore:
             )
         return self.get_draft_session(draft_id=draft_id, registry=registry, runs_dir=runs_dir)
 
-    def validate_draft_session(self, *, draft_id: str, registry: WorkflowRegistry, runs_dir: Path) -> dict[str, Any]:
+    def patch_studio_draft_session(
+        self,
+        *,
+        draft_id: str,
+        registry: WorkflowRegistry,
+        runs_dir: Path,
+        values: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        patched = self.patch_draft_session(
+            draft_id=draft_id,
+            registry=registry,
+            runs_dir=runs_dir,
+            values=values,
+        )
+        validation = self.validate_draft_session(
+            draft_id=draft_id,
+            registry=registry,
+            runs_dir=runs_dir,
+            persist=False,
+        )
+        return {
+            "schema_version": "xrtm.studio.mutation.v1",
+            "draft": validation["draft"],
+            "validation": validation["validation"],
+            "canvas": validation["draft"]["canvas"],
+            "studio": validation["draft"]["studio"],
+            "revision": patched["revision"],
+        }
+
+    def validate_draft_session(
+        self,
+        *,
+        draft_id: str,
+        registry: WorkflowRegistry,
+        runs_dir: Path,
+        persist: bool = True,
+    ) -> dict[str, Any]:
         row = self._draft_row(draft_id)
         draft_blueprint = self._draft_blueprint(draft_id)
         timestamp = _utc_now()
@@ -748,14 +991,14 @@ class WebUIStateStore:
                 payload = launch_module.authored_workflow_validation_report(
                     blueprint=draft_blueprint,
                     registry=registry,
-                    persist=True,
+                    persist=persist,
                     overwrite=True,
                 )
         else:
             payload = launch_module.authored_workflow_validation_report(
                 blueprint=draft_blueprint,
                 registry=registry,
-                persist=True,
+                persist=persist,
                 overwrite=True,
             )
         if payload["ok"]:
@@ -763,6 +1006,7 @@ class WebUIStateStore:
         payload = {
             **payload,
             "revision": row["revision"],
+            "persisted": persist and payload["ok"],
             "validated_at": timestamp,
         }
         status = "draft-valid" if payload["ok"] else "draft-invalid"
@@ -916,8 +1160,8 @@ class WebUIStateStore:
                 row = None
             if row is not None:
                 return {
-                    "label": "Resume workbench draft",
-                    "href": f"/workbench?draft={draft_id}",
+                    "label": "Resume Studio draft",
+                    "href": f"/studio?draft={draft_id}",
                     "kind": "draft",
                     "draft_id": draft_id,
                     "workflow_name": row["draft_workflow_name"],
@@ -952,7 +1196,7 @@ class WebUIStateStore:
                 "kind": "run",
                 "run_id": latest_run_id,
             }
-        return {"label": "Open workbench", "href": "/workbench", "kind": "workbench"}
+        return {"label": "Open Studio", "href": "/studio", "kind": "studio"}
 
     def set_ui_state(self, key: str, value: str) -> None:
         with self._connect() as connection:
@@ -1040,8 +1284,8 @@ class WebUIStateStore:
     def _workflow_guided_actions(self, workflow: dict[str, Any]) -> list[dict[str, Any]]:
         actions: list[dict[str, Any]] = [
             {
-                "label": "Open workbench",
-                "href": f"/workbench?workflow={workflow['name']}",
+                "label": "Open Studio",
+                "href": f"/studio?workflow={workflow['name']}",
             }
         ]
         if workflow["source"] == "builtin":
@@ -1095,12 +1339,23 @@ class WebUIStateStore:
         sandbox = _mapping(detail.get("sandbox"))
         if not sandbox:
             return None
+        sandbox = dict(sandbox)
         run = _mapping(sandbox.get("run"))
+        blueprint = _playground_blueprint_from_result(sandbox=sandbox, detail=detail)
+        execution_trace = _playground_execution_trace(detail=detail, blueprint=blueprint)
+        canvas = workflow_canvas(blueprint, detail) if blueprint is not None else {"nodes": [], "edges": [], "parallel_groups": {}, "conditional_routes": {}}
+        graph_trace_artifact = _playground_graph_trace_artifact(run_dir=run_dir, detail=detail)
+        canvas = _playground_canvas_with_trace(canvas=canvas, trace_items=execution_trace["items"], trace_source=execution_trace["source"])
         sandbox["run_href"] = f"/runs/{run_id}"
         sandbox["report"] = _report_state(run_dir, run_id, run)
+        sandbox["canvas"] = canvas
+        sandbox["graph_trace"] = detail.get("graph_trace", [])
+        sandbox["graph_trace_artifact"] = graph_trace_artifact
+        sandbox["execution_trace"] = execution_trace
+        sandbox["ordered_node_trace"] = execution_trace["items"]
         sandbox["summary_cards"] = [
             {"label": "Questions", "value": len(sandbox.get("questions", []))},
-            {"label": "Steps", "value": len(sandbox.get("inspection_steps", []))},
+            {"label": "Trace nodes", "value": execution_trace["count"]},
             {"label": "Status", "value": run.get("status") or "unknown"},
             {"label": "Seconds", "value": sandbox.get("total_seconds")},
         ]
@@ -1204,6 +1459,53 @@ def default_app_db_path(workflows_dir: Path) -> Path:
 
 
 
+def _studio_contract(
+    *,
+    draft_id: str,
+    workflow_name: str,
+    revision: int,
+    canvas: dict[str, Any],
+    validation: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "xrtm.studio.graph-draft.v1",
+        "draft_id": draft_id,
+        "workflow_name": workflow_name,
+        "revision": revision,
+        "canvas": {
+            "node_id_field": "id",
+            "edge_id_field": "id",
+            "source_field": "source",
+            "target_field": "target",
+            "layout_strategy": canvas.get("layout", {}).get("strategy", "deterministic-dag"),
+        },
+        "positions": {
+            "persisted": False,
+            "source": "deterministic-dag",
+            "note": "Canvas positions are derived from the workflow graph and are not persisted in the workflow schema yet.",
+        },
+        "mutable_actions": [
+            "add-node",
+            "update-node",
+            "add-edge",
+            "remove-edge",
+            "set-entry",
+            "remove-node",
+            "validate",
+        ],
+        "read_only_graph_sections": ["parallel_groups", "conditional_routes"],
+        "validation": validation,
+        "endpoints": {
+            "self": f"/api/studio/drafts/{draft_id}",
+            "mutate_graph": f"/api/studio/drafts/{draft_id}/graph",
+            "validate": f"/api/studio/drafts/{draft_id}/validate",
+            "run": f"/api/studio/drafts/{draft_id}/run",
+            "workbench_compatible": f"/api/drafts/{draft_id}",
+        },
+    }
+
+
+
 def _allowed_draft_keys(blueprint: WorkflowBlueprint) -> set[str]:
     model = safe_edit_model(blueprint)
     keys = {"questions_limit", "artifacts_write_report"}
@@ -1244,6 +1546,27 @@ def _playground_optional_string(value: Any, *, allow_blank: bool = False) -> str
     if allow_blank:
         return text
     return text or None
+
+
+def _preferred_hub_workflow(workflows: list[dict[str, Any]]) -> str:
+    preferred = next((str(workflow["name"]) for workflow in workflows if workflow.get("name") == "demo-provider-free"), None)
+    if preferred is not None:
+        return preferred
+    if workflows:
+        return str(workflows[0].get("name") or "demo-provider-free")
+    return "demo-provider-free"
+
+
+def _preferred_hub_template(templates: list[dict[str, Any]]) -> str:
+    preferred = next(
+        (str(template["template_id"]) for template in templates if template.get("template_id") == "provider-free-demo"),
+        None,
+    )
+    if preferred is not None:
+        return preferred
+    if templates:
+        return str(templates[0].get("template_id") or "provider-free-demo")
+    return "provider-free-demo"
 
 
 def _preferred_playground_workflow(registry: WorkflowRegistry) -> str:
@@ -1370,6 +1693,125 @@ def _playground_guidance(*, last_result: dict[str, Any] | None) -> dict[str, Any
         },
     }
 
+
+def _playground_blueprint_from_result(*, sandbox: Mapping[str, Any], detail: Mapping[str, Any]) -> WorkflowBlueprint | None:
+    payload = detail.get("blueprint") or _mapping(_mapping(sandbox.get("context")).get("blueprint"))
+    if not isinstance(payload, Mapping) or not payload:
+        return None
+    try:
+        return WorkflowBlueprint.from_payload(dict(payload))
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def _playground_graph_trace_artifact(*, run_dir: Path, detail: Mapping[str, Any]) -> dict[str, Any]:
+    path = run_dir / "graph_trace.jsonl"
+    graph_trace = detail.get("graph_trace")
+    rows = graph_trace if isinstance(graph_trace, list) else []
+    available = path.exists()
+    if available and rows:
+        title = "Graph trace artifact ready"
+        body = "graph_trace.jsonl persisted ordered graph node execution rows for this playground run."
+    elif available:
+        title = "Graph trace artifact is empty"
+        body = "graph_trace.jsonl exists, but it did not contain trace rows."
+    else:
+        title = "No graph trace artifact"
+        body = "This run did not persist graph_trace.jsonl. Sandbox inspection steps may still be shown when available."
+    return {
+        "available": available,
+        "artifact_name": "graph_trace.jsonl",
+        "path": str(path) if available else None,
+        "row_count": len(rows),
+        "empty_state": {"title": title, "body": body},
+    }
+
+
+def _playground_execution_trace(*, detail: Mapping[str, Any], blueprint: WorkflowBlueprint | None) -> dict[str, Any]:
+    graph_trace = detail.get("graph_trace")
+    graph_rows = graph_trace if isinstance(graph_trace, list) else []
+    sandbox_steps = _mapping(detail.get("sandbox")).get("inspection_steps")
+    source_rows: list[Any]
+    source: str
+    if graph_rows:
+        source_rows = graph_rows
+        source = "graph_trace"
+    elif isinstance(sandbox_steps, list) and sandbox_steps:
+        source_rows = sandbox_steps
+        source = "sandbox"
+    else:
+        source_rows = []
+        source = "none"
+
+    items = [
+        _playground_execution_trace_item(_execution_trace_item(row, index=index, source=source), blueprint=blueprint)
+        for index, row in enumerate(source_rows, start=1)
+        if isinstance(row, dict)
+    ]
+    items = sorted(items, key=lambda row: (row["order"], row["node_id"]))
+    empty_title = "No execution trace"
+    empty_body = "This playground run did not persist graph_trace.jsonl or sandbox inspection steps."
+    if source == "sandbox":
+        empty_title = "No graph trace artifact"
+        empty_body = "Showing sandbox inspection steps because graph_trace.jsonl was not present for this run."
+    return {
+        "items": items,
+        "count": len(items),
+        "source": source,
+        "source_label": {
+            "graph_trace": "graph_trace.jsonl",
+            "sandbox": "Sandbox inspection steps",
+            "none": "No trace rows",
+        }[source],
+        "empty_state": {"title": empty_title, "body": empty_body},
+    }
+
+
+def _playground_execution_trace_item(item: dict[str, Any], *, blueprint: WorkflowBlueprint | None) -> dict[str, Any]:
+    node_id = str(item.get("node_id") or "")
+    graph_node = blueprint.graph.nodes.get(node_id) if blueprint is not None else None
+    parallel_group = blueprint.graph.parallel_groups.get(node_id) if blueprint is not None else None
+    node_type = "parallel-group" if parallel_group is not None else item.get("node_type") or (graph_node.kind if graph_node is not None else "node")
+    canvas_node_id = f"group:{node_id}" if node_type == "parallel-group" else f"node:{node_id}"
+    graph_label = graph_node.description if graph_node is not None and graph_node.description else node_id
+    if parallel_group is not None:
+        graph_label = f"Parallel group: {', '.join(parallel_group.nodes)}"
+    label = graph_label if graph_label else item.get("label") or node_id
+    return {
+        **item,
+        "label": label,
+        "graph_node_id": node_id,
+        "canvas_node_id": canvas_node_id,
+        "node_type": node_type,
+        "node_kind": graph_node.kind if graph_node is not None else node_type,
+    }
+
+
+def _playground_canvas_with_trace(
+    *, canvas: dict[str, Any], trace_items: list[dict[str, Any]], trace_source: str
+) -> dict[str, Any]:
+    trace_by_node: dict[str, dict[str, Any]] = {}
+    for item in trace_items:
+        node_id = str(item.get("node_id") or "")
+        if node_id and node_id not in trace_by_node:
+            trace_by_node[node_id] = item
+    nodes = []
+    for node in canvas.get("nodes", []):
+        if not isinstance(node, Mapping):
+            continue
+        name = str(node.get("name") or "")
+        trace_item = trace_by_node.get(name)
+        updated = dict(node)
+        updated["executed"] = trace_item is not None
+        updated["trace_source"] = trace_source if trace_item is not None else None
+        updated["trace_order"] = trace_item.get("order") if trace_item is not None else None
+        updated["trace_label"] = trace_item.get("label") if trace_item is not None else None
+        if trace_item is not None:
+            updated["status"] = trace_item.get("status") or updated.get("status") or "observed"
+        nodes.append(updated)
+    return {**canvas, "nodes": nodes, "trace": {"source": trace_source, "executed_node_count": len(trace_by_node)}}
+
+
 def _compare_verdict(rows: list[dict[str, Any]]) -> dict[str, Any]:
     improved = sum(1 for row in rows if "right improved" in str(row.get("interpretation")))
     regressed = sum(1 for row in rows if "right regressed" in str(row.get("interpretation")))
@@ -1474,6 +1916,212 @@ def _step_state(*, status: str, has_baseline: bool, has_last_run: bool, validati
             "description": f"Current draft state: {status}.",
         },
     ]
+
+
+def _run_list_summary_cards(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    completed = sum(1 for item in items if item.get("status") == "completed")
+    with_reports = sum(1 for item in items if _mapping(item.get("observatory")).get("report_available"))
+    providers = {str(item.get("provider")) for item in items if item.get("provider")}
+    return [
+        {"label": "Indexed runs", "value": len(items)},
+        {"label": "Completed", "value": completed},
+        {"label": "Reports ready", "value": with_reports},
+        {"label": "Providers", "value": len(providers)},
+    ]
+
+
+def _decorate_run_list_item(run: dict[str, Any]) -> dict[str, Any]:
+    item = dict(run)
+    run_id = str(item.get("run_id") or "")
+    workflow = _mapping(item.get("workflow"))
+    summary = _mapping(item.get("summary"))
+    artifacts = _mapping(item.get("artifacts"))
+    report_path = artifacts.get("report.html")
+    report_available = Path(str(report_path)).exists() if report_path else False
+    forecast_count = summary.get("forecast_count")
+    eval_summary = _mapping(summary.get("eval"))
+    score_label = _first_non_empty(
+        eval_summary.get("brier_score"),
+        eval_summary.get("ece"),
+        summary.get("warning_count"),
+    )
+    item["observatory"] = {
+        "label": workflow.get("title") or workflow.get("name") or run_id,
+        "summary": (
+            f"{item.get('status') or 'unknown'} · {item.get('provider') or 'unknown provider'}"
+            f" · {_count_label(int(forecast_count), 'forecast') if isinstance(forecast_count, int) else 'forecast count unknown'}"
+        ),
+        "inspect_href": f"/runs/{run_id}",
+        "alias_href": f"/observatory/{run_id}",
+        "report_available": report_available,
+        "score_label": score_label,
+    }
+    return item
+
+
+def _probability_summary(forecast_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    probabilities = [float(row["probability"]) for row in forecast_rows if isinstance(row.get("probability"), (int, float))]
+    brier_scores = [float(row["brier_score"]) for row in forecast_rows if isinstance(row.get("brier_score"), (int, float))]
+    outcome_count = sum(1 for row in forecast_rows if isinstance(row.get("outcome"), bool))
+    resolved_count = sum(1 for row in forecast_rows if row.get("resolved") is True)
+    cards = [
+        {"label": "Forecast rows", "value": len(forecast_rows)},
+        {"label": "Avg probability", "value": _mean(probabilities)},
+        {"label": "Resolved rows", "value": resolved_count},
+        {"label": "Known outcomes", "value": outcome_count},
+    ]
+    return {
+        "cards": cards,
+        "groups": [
+            {
+                "title": "Probability range",
+                "items": _present_items(
+                    [
+                        ("Average probability", _mean(probabilities)),
+                        ("Minimum probability", min(probabilities) if probabilities else None),
+                        ("Maximum probability", max(probabilities) if probabilities else None),
+                        ("Average Brier", _mean(brier_scores)),
+                    ]
+                ),
+            },
+            {
+                "title": "Resolution coverage",
+                "items": _present_items(
+                    [
+                        ("Forecast rows", len(forecast_rows)),
+                        ("Resolved rows", resolved_count),
+                        ("Known outcomes", outcome_count),
+                        ("Rows with probability", len(probabilities)),
+                    ]
+                ),
+            },
+        ],
+        "empty_state": {
+            "title": "No probability rows",
+            "body": "This run did not persist forecast probabilities in forecasts.jsonl.",
+        },
+    }
+
+
+def _score_summary(
+    *, summary: Mapping[str, Any], eval_payload: Mapping[str, Any], train_payload: Mapping[str, Any]
+) -> dict[str, Any]:
+    eval_summary = _mapping(summary.get("eval"))
+    train_summary = _mapping(summary.get("train"))
+    eval_stats = _mapping(eval_payload.get("summary_statistics"))
+    train_stats = _mapping(train_payload.get("summary_statistics"))
+    eval_items = _present_items(
+        [
+            ("Eval Brier", _first_non_empty(eval_summary.get("brier_score"), eval_stats.get("brier_score"))),
+            ("Eval ECE", _first_non_empty(eval_summary.get("ece"), eval_stats.get("ece"))),
+            ("Calibration error", _first_non_empty(eval_summary.get("calibration_error"), eval_stats.get("calibration_error"))),
+            ("Evaluated rows", _first_non_empty(eval_summary.get("total_evaluations"), eval_payload.get("total_evaluations"))),
+            ("Mean score", eval_payload.get("mean_score")),
+        ]
+    )
+    train_items = _present_items(
+        [
+            ("Train Brier", _first_non_empty(train_summary.get("brier_score"), train_stats.get("brier_score"))),
+            ("Train evaluations", _first_non_empty(train_summary.get("total_evaluations"), train_payload.get("total_evaluations"))),
+            ("Training samples", _first_non_empty(train_summary.get("training_samples"), train_payload.get("training_samples"))),
+            ("Mean train score", train_payload.get("mean_score")),
+        ]
+    )
+    groups = [
+        {"title": "Evaluation score", "items": eval_items},
+        {"title": "Train/backtest score", "items": train_items},
+    ]
+    groups = [group for group in groups if group["items"]]
+    cards = [
+        {"label": "Eval Brier", "value": _first_non_empty(eval_summary.get("brier_score"), eval_stats.get("brier_score"))},
+        {"label": "Eval ECE", "value": _first_non_empty(eval_summary.get("ece"), eval_stats.get("ece"))},
+        {"label": "Train Brier", "value": _first_non_empty(train_summary.get("brier_score"), train_stats.get("brier_score"))},
+        {"label": "Evaluated rows", "value": _first_non_empty(eval_summary.get("total_evaluations"), eval_payload.get("total_evaluations"))},
+    ]
+    return {
+        "cards": cards,
+        "groups": groups,
+        "empty_state": {
+            "title": "No score outputs",
+            "body": "This run did not include eval.json, train.json, or run_summary score fields.",
+        },
+    }
+
+
+def _uncertainty_summary(*, summary: Mapping[str, Any], eval_payload: Mapping[str, Any]) -> dict[str, Any]:
+    eval_summary = _mapping(summary.get("eval"))
+    eval_stats = _mapping(eval_payload.get("summary_statistics"))
+    reliability_bins = eval_payload.get("reliability_bins") if isinstance(eval_payload.get("reliability_bins"), list) else []
+    items = _present_items(
+        [
+            ("Uncertainty", _first_non_empty(eval_stats.get("uncertainty"), eval_summary.get("uncertainty"))),
+            ("Reliability bins", len(reliability_bins) if reliability_bins else None),
+            ("Resolution", eval_stats.get("resolution")),
+            ("Reliability", eval_stats.get("reliability")),
+        ]
+    )
+    return {
+        "available": bool(items),
+        "groups": [{"title": "Uncertainty signals", "items": items}] if items else [],
+        "empty_state": {
+            "title": "Uncertainty unavailable",
+            "body": "The current artifacts do not include reliability or uncertainty fields; inspect probability rows and score outputs instead.",
+        },
+    }
+
+
+def _execution_trace(detail: Mapping[str, Any]) -> list[dict[str, Any]]:
+    sandbox_steps = _mapping(detail.get("sandbox")).get("inspection_steps")
+    source_rows: list[Any]
+    source: str
+    if isinstance(sandbox_steps, list) and sandbox_steps:
+        source_rows = sandbox_steps
+        source = "sandbox"
+    else:
+        source_rows = detail.get("graph_trace", []) if isinstance(detail.get("graph_trace"), list) else []
+        source = "graph_trace"
+    rows = [
+        _execution_trace_item(row, index=index, source=source)
+        for index, row in enumerate(source_rows, start=1)
+        if isinstance(row, dict)
+    ]
+    return sorted(rows, key=lambda row: (row["order"], row["node_id"]))
+
+
+def _execution_trace_item(row: Mapping[str, Any], *, index: int, source: str) -> dict[str, Any]:
+    raw_order = _first_non_empty(row.get("order"), row.get("sequence"), index)
+    order = int(raw_order) if isinstance(raw_order, int) or (isinstance(raw_order, str) and raw_order.isdigit()) else index
+    node_id = str(_first_non_empty(row.get("node_id"), row.get("node"), f"step-{order}"))
+    label = _first_non_empty(row.get("label"), row.get("description"), row.get("implementation"), node_id)
+    preview = _first_non_empty(
+        row.get("output_preview"),
+        row.get("route") and f"Route: {row.get('route')}",
+        row.get("implementation"),
+    )
+    return {
+        "order": order,
+        "node_id": node_id,
+        "label": label,
+        "node_type": _first_non_empty(row.get("node_type"), row.get("kind"), "node"),
+        "status": row.get("status") or "observed",
+        "optional": bool(row.get("optional", False)),
+        "latency_seconds": row.get("latency_seconds"),
+        "route": row.get("route"),
+        "preview": preview,
+        "artifacts": row.get("artifacts") if isinstance(row.get("artifacts"), list) else [],
+        "source": source,
+    }
+
+
+def _export_items(run_id: str) -> list[dict[str, str]]:
+    return [
+        {"label": "Export JSON", "format": "json", "href": f"/api/runs/{run_id}/export?format=json"},
+        {"label": "Export CSV", "format": "csv", "href": f"/api/runs/{run_id}/export?format=csv"},
+    ]
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
 
 
 

@@ -46,15 +46,20 @@ from xrtm.version import __version__
 _STATIC_ROOT = Path(__file__).with_name("webui_static")
 _APP_ROUTES = [
     re.compile(r"^/$"),
+    re.compile(r"^/hub$"),
     re.compile(r"^/start$"),
     re.compile(r"^/runs$"),
+    re.compile(r"^/observatory$"),
     re.compile(r"^/playground$"),
+    re.compile(r"^/studio$"),
     re.compile(r"^/operations$"),
     re.compile(r"^/advanced$"),
     re.compile(r"^/workbench$"),
     re.compile(r"^/workflows/[^/]+$"),
     re.compile(r"^/runs/[^/]+$"),
+    re.compile(r"^/observatory/[^/]+$"),
     re.compile(r"^/runs/[^/]+/compare/[^/]+$"),
+    re.compile(r"^/observatory/[^/]+/compare/[^/]+$"),
 ]
 
 
@@ -110,16 +115,18 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 self._send_json(self._app_shell_snapshot())
                 return
             if path == "/api/runs":
-                self._send_json(
-                    {
-                        "items": self.state_store.list_runs(**_filters_from_query(parsed.query)),
-                        "filters": _filters_from_query(parsed.query),
-                    }
-                )
+                filters = _filters_from_query(parsed.query)
+                self._send_json(self.state_store.runs_snapshot(runs_dir=self.runs_dir, registry=self._registry(), **filters))
                 return
             if path == "/api/workbench":
                 query = _workbench_query(parsed.query)
                 self._send_json(workbench_snapshot(self.runs_dir, self.workflows_dir, **query))
+                return
+            if path == "/api/studio":
+                self._send_json(self.state_store.studio_snapshot(runs_dir=self.runs_dir, registry=self._registry()))
+                return
+            if path == "/api/studio/catalog":
+                self._send_json(self.state_store.studio_catalog(registry=self._registry()))
                 return
             if path == "/api/workflows":
                 self.state_store.refresh_indexes(runs_dir=self.runs_dir, registry=self._registry())
@@ -144,6 +151,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 return
             if path.startswith("/api/drafts/"):
                 self._handle_draft_get(path)
+                return
+            if path.startswith("/api/studio/drafts/"):
+                self._handle_studio_draft_get(path)
                 return
             compare_match = re.match(r"^/api/runs/([^/]+)/compare/([^/]+)$", path)
             if compare_match:
@@ -282,6 +292,29 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 )
                 self._send_json(draft, status=HTTPStatus.CREATED)
                 return
+            if path == "/api/studio/drafts":
+                payload = self._read_json()
+                draft = self.state_store.create_draft_session(
+                    registry=self._registry(),
+                    runs_dir=self.runs_dir,
+                    source_workflow_name=_optional_json_value(payload, "source_workflow_name"),
+                    baseline_run_id=_optional_json_value(payload, "baseline_run_id"),
+                    draft_workflow_name=_optional_json_value(payload, "draft_workflow_name"),
+                    creation_mode=_optional_json_value(payload, "creation_mode") or "clone",
+                    template_id=_optional_json_value(payload, "template_id"),
+                    title=_optional_json_value(payload, "title"),
+                    description=_optional_json_value(payload, "description"),
+                )
+                self._send_json(
+                    {
+                        "schema_version": "xrtm.studio.draft.v1",
+                        "draft": draft,
+                        "canvas": draft["canvas"],
+                        "studio": draft["studio"],
+                    },
+                    status=HTTPStatus.CREATED,
+                )
+                return
             if path == "/api/playground/run":
                 payload = self._read_json()
                 self._send_json(
@@ -364,6 +397,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     )
                 )
                 return
+            studio_draft_validate = re.match(r"^/api/studio/drafts/([^/]+)/validate$", path)
+            if studio_draft_validate:
+                self._send_json(
+                    self.state_store.validate_draft_session(
+                        draft_id=studio_draft_validate.group(1),
+                        registry=self._registry(),
+                        runs_dir=self.runs_dir,
+                    )
+                )
+                return
             draft_run = re.match(r"^/api/drafts/([^/]+)/run$", path)
             if draft_run:
                 self._send_json(
@@ -371,6 +414,29 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         draft_id=draft_run.group(1),
                         registry=self._registry(),
                         runs_dir=self.runs_dir,
+                    )
+                )
+                return
+            studio_draft_run = re.match(r"^/api/studio/drafts/([^/]+)/run$", path)
+            if studio_draft_run:
+                self._send_json(
+                    self.state_store.run_draft_session(
+                        draft_id=studio_draft_run.group(1),
+                        registry=self._registry(),
+                        runs_dir=self.runs_dir,
+                    )
+                )
+                return
+            studio_graph_action = re.match(r"^/api/studio/drafts/([^/]+)/graph/actions$", path)
+            if studio_graph_action:
+                payload = self._read_json()
+                values = payload if isinstance(payload.get("action"), dict) else {"action": payload}
+                self._send_json(
+                    self.state_store.patch_studio_draft_session(
+                        draft_id=studio_graph_action.group(1),
+                        registry=self._registry(),
+                        runs_dir=self.runs_dir,
+                        values=values,
                     )
                 )
                 return
@@ -476,6 +542,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     )
                 )
                 return
+            studio_graph_match = re.match(r"^/api/studio/drafts/([^/]+)/graph$", path)
+            if studio_graph_match:
+                payload = self._read_json()
+                values = payload if isinstance(payload.get("action"), dict) else {"action": payload}
+                self._send_json(
+                    self.state_store.patch_studio_draft_session(
+                        draft_id=studio_graph_match.group(1),
+                        registry=self._registry(),
+                        runs_dir=self.runs_dir,
+                        values=values,
+                    )
+                )
+                return
             self._send_text("Not found", status=HTTPStatus.NOT_FOUND)
         except (WorkbenchInputError, FileNotFoundError, ValueError) as exc:
             self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -503,6 +582,25 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 registry=self._registry(),
                 runs_dir=self.runs_dir,
             )
+        )
+
+    def _handle_studio_draft_get(self, path: str) -> None:
+        match = re.match(r"^/api/studio/drafts/([^/]+)$", path)
+        if not match:
+            self._send_text("Not found", status=HTTPStatus.NOT_FOUND)
+            return
+        draft = self.state_store.get_draft_session(
+            draft_id=match.group(1),
+            registry=self._registry(),
+            runs_dir=self.runs_dir,
+        )
+        self._send_json(
+            {
+                "schema_version": "xrtm.studio.draft.v1",
+                "draft": draft,
+                "canvas": draft["canvas"],
+                "studio": draft["studio"],
+            }
         )
 
     def _handle_legacy_form_post(self, path: str) -> None:
@@ -754,14 +852,14 @@ def render_app_shell_html(*, initial_path: str, query_string: str = "", error: s
             <div class='boot-title-group'>
               <span class='boot-badge'>XRTM WebUI</span>
               <span class='version-pill'>v{__version__}</span>
-              <span class='shell-trust-pill'>Local-only shell</span>
+              <span class='shell-trust-pill'>Shared local shell</span>
             </div>
             <h1>Local forecasting cockpit</h1>
             <p class='shell-copy'>Loading the local-first app shell…</p>
           </div>
           <div class='boot-nav-stack'>
             <span class='boot-badge'>Primary lanes</span>
-            <p class='boot-route-strip'>Overview · Start · Runs · Playground · Operations · Workbench</p>
+            <p class='boot-route-strip'>Hub · Studio · Playground · Observatory · Operations · Advanced</p>
           </div>
         </header>
         <noscript>This WebUI shell needs JavaScript enabled.</noscript>
