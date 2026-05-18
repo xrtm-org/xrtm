@@ -457,6 +457,9 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert ".shell-icon-button" in app_css
         assert ".product-route-line" in app_css
         assert "--workspace-ide-height: clamp(32rem, calc(100vh - 9.75rem), 52rem);" in app_css
+        assert "--workspace-pane-left: minmax(13.5rem, 15rem);" in app_css
+        assert "--workspace-pane-center: minmax(0, 1.16fr);" in app_css
+        assert "--workspace-pane-right: minmax(16rem, 18rem);" in app_css
         assert ".theme-icon-button[data-theme-mode=\"system\"] .theme-icon" in app_css
         assert ":root[data-theme=\"dark\"] .operations-stat-card" in app_css
         assert ":root[data-theme=\"dark\"] .operations-subpanel" in app_css
@@ -510,14 +513,14 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
             {
                 "route": "/studio",
                 "api": "/api/studio",
-                "js_tokens": ("studio-workspace", "studio-ide-panel", "Browse all", "Quick insert"),
+                "js_tokens": ("studio-workspace", "studio-ide-panel", "Browse all", "Quick insert", "Create or resume a local Studio draft"),
                 "css_patterns": (
-                    r"\.studio-workspace \.studio-ide-panel\s*\{[^}]*grid-template-columns:\s*minmax\(12rem,\s*14rem\)\s*minmax\(0,\s*1fr\)\s*minmax\(18rem,\s*20rem\);",
+                    r"\.studio-workspace \.studio-ide-panel\s*\{[^}]*grid-template-columns:\s*var\(--workspace-pane-left\)\s+var\(--workspace-pane-center\)\s+var\(--workspace-pane-right\);",
                     r"\.studio-workspace \.node-palette\s*\{(?=[^}]*min-height:\s*0)(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-workspace \.node-palette-scroll\s*\{(?=[^}]*overflow:\s*auto)(?=[^}]*overscroll-behavior:\s*contain)[^}]*\}",
                     r"\.studio-draft-mode \.studio-ide-panel\s*\{(?=[^}]*height:\s*var\(--workspace-ide-height\))(?=[^}]*min-height:\s*var\(--workspace-ide-height\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-workspace \.workflow-canvas-shell\s*\{(?=[^}]*min-height:\s*0)(?=[^}]*height:\s*100%)[^}]*\}",
-                    r"@media \(max-width:\s*1180px\)\s*\{.*?\.studio-workspace \.studio-ide-panel\s*\{.*?grid-template-columns:\s*minmax\(11rem,\s*13rem\)\s*minmax\(0,\s*1fr\);",
+                    r"@media \(max-width:\s*1180px\)\s*\{.*?\.studio-workspace \.studio-ide-panel\s*\{.*?grid-template-columns:\s*minmax\(12rem,\s*13\.5rem\)\s*minmax\(0,\s*1fr\);",
                     r"@media \(max-width:\s*1024px\)\s*\{.*?\.studio-workspace \.studio-ide-panel\s*\{.*?grid-template-columns:\s*1fr;",
                 ),
             },
@@ -526,10 +529,10 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
                 "api": "/api/playground",
                 "js_tokens": ("playground-shell", "playground-live-workspace", "Single question input"),
                 "css_patterns": (
-                    r"\.playground-live-workspace\s*\{(?=[^}]*min-height:\s*var\(--workspace-ide-height\))[^}]*grid-template-columns:\s*minmax\(13\.5rem,\s*15rem\)\s*minmax\(0,\s*1\.16fr\)\s*minmax\(16rem,\s*18rem\);",
+                    r"\.playground-live-workspace\s*\{(?=[^}]*min-height:\s*var\(--workspace-ide-height\))[^}]*grid-template-columns:\s*var\(--workspace-pane-left\)\s+var\(--workspace-pane-center\)\s+var\(--workspace-pane-right\);",
                     r"\.playground-canvas-panel \.workflow-canvas-stage\s*\{[^}]*min-height:\s*clamp\(22rem,\s*44vh,\s*34rem\);",
                     r"\.live-trace-stack\s*\{(?=[^}]*overflow:\s*auto)(?=[^}]*min-height:\s*0)[^}]*\}",
-                    r"@media \(max-width:\s*1360px\)\s*\{.*?\.playground-live-workspace\s*\{.*?grid-template-columns:\s*12\.5rem\s*minmax\(0,\s*1\.12fr\)\s*16rem;",
+                    r"@media \(max-width:\s*1360px\)\s*\{.*?:root\s*\{.*?--workspace-pane-left:\s*12\.5rem;.*?--workspace-pane-center:\s*minmax\(0,\s*1\.12fr\);.*?--workspace-pane-right:\s*16rem;",
                     r"@media \(max-width:\s*1180px\)\s*\{.*?\.playground-live-workspace\s*\{.*?grid-template-columns:\s*minmax\(12rem,\s*13\.5rem\)\s*minmax\(0,\s*1fr\);",
                     r"@media \(max-width:\s*1024px\)\s*\{.*?\.playground-live-workspace\s*\{.*?grid-template-columns:\s*1fr;.*?min-height:\s*auto;",
                 ),

@@ -4627,9 +4627,12 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   const showStudioDraftIde = isStudio && Boolean(draftId);
   const resumeTarget = (shell?.overview?.resume_target || shell?.hub?.resume_target || {}) as JsonObject;
   const explicitStudioIntent = Boolean(requestedWorkflow || requestedTemplate || requestedMode);
-  const studioResumeHref = !isStudio || draftId || explicitStudioIntent || resumeTarget.kind !== "draft" || !resumeTarget.href
+  const studioResumeTarget = !isStudio || draftId || explicitStudioIntent || resumeTarget.kind !== "draft" || !resumeTarget.href
     ? null
-    : String(resumeTarget.href);
+    : {
+      href: String(resumeTarget.href),
+      label: String(resumeTarget.label || "Resume latest draft"),
+    };
   const studioIntent = useMemo<StudioRouteIntent | null>(() => {
     if (!isStudio || draftId) return null;
     if (requestedMode === "scratch") return { creation_mode: "scratch" };
@@ -4647,7 +4650,10 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     }
     return null;
   }, [draftId, isStudio, requestedMode, requestedTemplate, requestedWorkflow, selectedWorkflow, templates]);
-  const showStudioSetup = !showStudioDraftIde && (!isStudio || studioBootstrapState === "failed" || (!studioIntent && !studioResumeHref));
+  const showStudioSetup = !showStudioDraftIde && (!isStudio || studioBootstrapState === "failed" || !studioIntent);
+  const showWorkbenchSetupRail = showStudioSetup && !isStudio;
+  const showWorkbenchFieldSetup = showStudioSetup && !isStudio;
+  const showWorkbenchIdePanel = !isStudio || showStudioDraftIde || !showStudioSetup;
   const compareActions = ((activeDraft?.compare?.next_actions || []) as JsonObject[]);
   const validationPillValue = activeDraft?.validation?.ok ? (activeDraft?.validation?.stale ? "stale validation" : "validated") : "needs validation";
   const studioDraftTitle = activeDraft?.draft_workflow_name || activeWorkflow?.title || activeWorkflow?.name || "Studio draft";
@@ -4699,12 +4705,6 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
       setStudioBootstrapState("idle");
     }
   }, [draftId, isStudio]);
-
-  useEffect(() => {
-    if (!studioResumeHref || draftId) return;
-    setBusy("Opening Studio graph IDE");
-    navigate(studioResumeHref);
-  }, [draftId, navigate, studioResumeHref]);
 
   useEffect(() => {
     if (!isStudio || draftId || !studioIntent) return;
@@ -4778,7 +4778,6 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     onMutate,
     overviewLatestRun?.run_id,
     studioIntent,
-    studioBootstrapState,
   ]);
 
   useEffect(() => {
@@ -5187,7 +5186,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
       className={isStudio ? `workbench-layout studio-workspace${showStudioDraftIde ? " studio-draft-mode" : ""}` : "workbench-layout"}
       style={showStudioDraftIde ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}
     >
-      {showStudioSetup ? (
+      {showWorkbenchSetupRail ? (
         <aside className="panel step-panel">
           <span className="eyebrow">Journey</span>
           <h2>Inspect → create → author</h2>
@@ -5214,7 +5213,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         {draftId && draft.loading && !draft.data ? <LoadingCard label="Loading draft" /> : null}
         {!draftId && (workflow.loading || authoringCatalog.loading) && !workflow.data ? <LoadingCard label="Loading workflow authoring surface" /> : null}
 
-        {showStudioSetup ? (
+      {showStudioSetup ? (
         <section className="panel hero-panel workbench-hero">
           <span className="eyebrow">{surfaceLabel}</span>
           <h2>{draftId ? "Drag-drop the bounded workflow graph IDE" : "Create a new authored workflow or clone one into a local draft"}</h2>
@@ -5224,7 +5223,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 ? "Move nodes locally, drag safe palette nodes onto the canvas, create/remove edges, edit supported config, validate, save, and run through the Studio API without arbitrary plugin or code editing."
                 : "The legacy workbench route stays compatible with the same safe authoring backend while Studio is the primary graph IDE surface."
               : isStudio
-                ? "Choose a workflow, starter template, or scratch path when you want a new draft. If a local draft already exists, Studio resumes it automatically."
+                ? "Choose a workflow, starter template, or scratch path to open a local draft in the graph IDE. Resume stays available without duplicating the editor inside setup."
                 : "Start from scratch, a template, or an existing workflow. Draft state stays local and resumable while the reusable workflow file remains coherent on disk."}
           </p>
           <div className="meta-row">
@@ -5235,6 +5234,11 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
             {activeDraft?.last_run_id ? <span>Candidate: {activeDraft.last_run_id}</span> : null}
           </div>
           <div className="button-row">
+            {studioResumeTarget ? (
+              <button className="primary-button" onClick={() => navigate(studioResumeTarget.href)}>
+                {studioResumeTarget.label}
+              </button>
+            ) : null}
             {overviewLatestRun?.run_id ? (
               <button className="secondary-button" onClick={() => navigate(`/runs/${overviewLatestRun.run_id}`)}>Inspect latest run</button>
             ) : (
@@ -5249,10 +5253,14 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         <section className="panel section-stack">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">1. Create draft</span>
-              <h3>Start from scratch, template, or clone</h3>
+              <span className="eyebrow">{isStudio ? "Start here" : "1. Create draft"}</span>
+              <h3>{isStudio ? "Create or resume a local Studio draft" : "Start from scratch, template, or clone"}</h3>
             </div>
-            <p className="section-copy">Creation routes all flow through the shared backend authoring service and still land in the local draft + workflow file model.</p>
+            <p className="section-copy">
+              {isStudio
+                ? "Studio setup is only the entry surface. Once a draft opens, workflow fields, graph editing, validation, and run actions stay inside the full editor."
+                : "Creation routes all flow through the shared backend authoring service and still land in the local draft + workflow file model."}
+            </p>
           </div>
           <div className="creation-mode-row">
             {creationModes.map((mode: JsonObject) => (
@@ -5303,6 +5311,11 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
               </label>
               <div className="button-row">
                 <button className="primary-button" onClick={createDraftFromMode} disabled={Boolean(busy) || creationDisabled}>Create draft</button>
+                {studioResumeTarget ? (
+                  <button className="secondary-button" onClick={() => navigate(studioResumeTarget.href)}>
+                    {studioResumeTarget.label}
+                  </button>
+                ) : null}
                 {!draftId && activeWorkflow?.name ? (
                   <button className="secondary-button" onClick={() => navigate(`/workflows/${encodeURIComponent(activeWorkflow.name)}`)}>Open workflow detail</button>
                 ) : null}
@@ -5316,7 +5329,14 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 </div>
                 <SourceBadge source={activeWorkflow?.source || "builtin"} />
               </div>
-              {activeDraft ? (
+              {studioResumeTarget ? (
+                <div className="compact-action-stack">
+                  <p className="helper-text">A local draft is already available. Resume it directly or create a new draft from the selected workflow or template.</p>
+                  <button className="secondary-button" onClick={() => navigate(studioResumeTarget.href)}>
+                    {studioResumeTarget.label}
+                  </button>
+                </div>
+              ) : activeDraft ? (
                 <dl className="context-list">
                   <div><dt>Draft mode</dt><dd>{activeDraft.creation_mode || "clone"}</dd></div>
                   <div><dt>Source</dt><dd>{activeDraft.source_workflow_name || "—"}</dd></div>
@@ -5355,7 +5375,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         </section>
         ) : null}
 
-        {showStudioSetup ? (
+        {showWorkbenchFieldSetup ? (
         <section className="panel section-stack">
           <div className="section-heading">
             <div>
@@ -5462,6 +5482,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         </section>
         ) : null}
 
+        {showWorkbenchIdePanel ? (
         <section className="panel section-stack studio-ide-panel">
           <div className="section-heading">
             <div>
@@ -5485,7 +5506,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
             ) : null}
           </div>
           {!draftId ? (
-            isStudio && (studioIntent || studioResumeHref) && studioBootstrapState !== "failed"
+            isStudio && studioIntent && studioBootstrapState !== "failed"
               ? <LoadingCard label="Opening Studio graph IDE" />
               : <EmptyState title="Create a draft to unlock graph authoring" body="The canvas becomes editable as soon as you open a draft session." />
           ) : (
@@ -5971,8 +5992,9 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
             </>
           )}
         </section>
+        ) : null}
 
-        {showStudioSetup ? (
+        {showWorkbenchFieldSetup ? (
         <section className="panel">
           <div className="section-heading">
             <div>
@@ -6001,7 +6023,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         </section>
         ) : null}
 
-        {showStudioSetup ? (
+        {showWorkbenchFieldSetup ? (
         <section className="panel">
           <div className="section-heading">
             <div>
@@ -6029,8 +6051,8 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         </section>
         ) : null}
       </section>
-      {showStudioSetup ? (
-      <aside className="panel guidance-panel">
+        {showWorkbenchSetupRail ? (
+       <aside className="panel guidance-panel">
         <span className="eyebrow">Next step</span>
         <section className="next-step-card">
           <strong>{nextStep.title}</strong>

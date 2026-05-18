@@ -1060,6 +1060,9 @@ body {
   background: #12171c;
   color: #e6ddd1;
   --workspace-ide-height: clamp(32rem, calc(100vh - 9.75rem), 52rem);
+  --workspace-pane-left: minmax(13.5rem, 15rem);
+  --workspace-pane-center: minmax(0, 1.16fr);
+  --workspace-pane-right: minmax(16rem, 18rem);
   --bg-top: #12171c;
   --bg-bottom: #171d24;
   --plate: #1d252d;
@@ -1816,12 +1819,13 @@ a:focus-visible {
 
 .studio-workspace .studio-ide-panel {
   display: grid;
-  grid-template-columns: minmax(12rem, 14rem) minmax(0, 1fr) minmax(18rem, 20rem);
+  grid-template-columns: var(--workspace-pane-left) var(--workspace-pane-center) var(--workspace-pane-right);
   grid-template-rows: auto auto minmax(540px, auto);
   gap: 1px;
   padding: 0;
   overflow: hidden;
   min-height: 0;
+  width: 100%;
   border-radius: 1rem;
   background: rgba(179, 167, 151, 0.1);
 }
@@ -2030,7 +2034,7 @@ a:focus-visible {
   flex: 1 1 auto;
   min-height: var(--workspace-ide-height);
   display: grid;
-  grid-template-columns: minmax(13.5rem, 15rem) minmax(0, 1.16fr) minmax(16rem, 18rem);
+  grid-template-columns: var(--workspace-pane-left) var(--workspace-pane-center) var(--workspace-pane-right);
   grid-template-rows: minmax(0, 1fr);
   gap: 1px;
   overflow: hidden;
@@ -2865,12 +2869,18 @@ a:focus-visible {
 }
 
 @media (max-width: 1360px) {
+  :root {
+    --workspace-ide-height: clamp(30rem, calc(100vh - 9.25rem), 46rem);
+    --workspace-pane-left: 12.5rem;
+    --workspace-pane-center: minmax(0, 1.12fr);
+    --workspace-pane-right: 16rem;
+  }
   .studio-workspace .studio-ide-panel {
-    grid-template-columns: 11.5rem minmax(0, 1fr) 17rem;
+    grid-template-columns: var(--workspace-pane-left) var(--workspace-pane-center) var(--workspace-pane-right);
   }
   .playground-live-workspace {
-    min-height: clamp(30rem, calc(100vh - 9.25rem), 46rem);
-    grid-template-columns: 12.5rem minmax(0, 1.12fr) 16rem;
+    min-height: var(--workspace-ide-height);
+    grid-template-columns: var(--workspace-pane-left) var(--workspace-pane-center) var(--workspace-pane-right);
   }
   .observatory-lead-grid,
   .observatory-primary-shell,
@@ -2909,8 +2919,12 @@ a:focus-visible {
 
 @media (max-width: 1180px) {
   .studio-workspace .studio-ide-panel {
-    grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr);
+    grid-template-columns: minmax(12rem, 13.5rem) minmax(0, 1fr);
     grid-template-rows: auto auto minmax(460px, auto) auto;
+  }
+  .studio-draft-mode .studio-ide-panel {
+    height: auto;
+    min-height: auto;
   }
   .studio-workspace .authoring-grid {
     grid-column: 1 / -1;
