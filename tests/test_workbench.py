@@ -469,7 +469,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert re.search(r"\.product-main\s*\{[^}]*min-width:\s*0;", app_css, re.S)
         assert re.search(r"\.product-main\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\);", app_css, re.S)
         assert re.search(r"\.product-shell\s*\{(?=[^}]*height:\s*100vh)(?=[^}]*overflow:\s*hidden)[^}]*\}", app_css, re.S)
-        assert re.search(r"\.page-stack\s*\{(?=[^}]*height:\s*100%)(?=[^}]*overflow:\s*auto)(?=[^}]*min-height:\s*0)[^}]*\}", app_css, re.S)
+        assert re.search(r"\.page-stack\s*\{(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*height:\s*100%)(?=[^}]*overflow:\s*auto)(?=[^}]*min-height:\s*0)[^}]*\}", app_css, re.S)
         assert re.search(r"\.table-wrap\s*\{[^}]*overflow-x:\s*auto;", app_css, re.S)
         assert re.search(
             r"\.operations-keyline-list strong,\s*\.operations-detail-strip strong\s*\{(?=[^}]*overflow-wrap:\s*anywhere)(?=[^}]*word-break:\s*break-word)[^}]*\}",
@@ -520,8 +520,9 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
                     r"\.studio-workspace \.node-palette\s*\{(?=[^}]*min-height:\s*0)(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-workspace \.node-palette-scroll\s*\{(?=[^}]*overflow:\s*auto)(?=[^}]*overscroll-behavior:\s*contain)[^}]*\}",
                     r"\.studio-draft-mode \.workbench-main\s*\{(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
-                    r"\.studio-draft-mode \.studio-ide-panel\s*\{(?=[^}]*position:\s*relative)(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\))(?=[^}]*min-height:\s*0)(?=[^}]*overflow:\s*hidden)[^}]*\}",
+                    r"\.studio-draft-mode \.studio-ide-panel\s*\{(?=[^}]*position:\s*relative)(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*min-height:\s*0)(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-draft-mode \.studio-ide-panel > \.section-heading\s*\{(?=[^}]*position:\s*absolute)(?=[^}]*pointer-events:\s*none)[^}]*\}",
+                    r"\.studio-draft-mode \.studio-toolbar\s*\{(?=[^}]*position:\s*absolute)(?=[^}]*backdrop-filter:\s*blur\(12px\))[^}]*\}",
                     r"\.studio-workspace \.workflow-canvas-shell\s*\{(?=[^}]*min-height:\s*0)(?=[^}]*height:\s*100%)[^}]*\}",
                     r"@media \(max-width:\s*1180px\)\s*\{.*?\.studio-workspace \.studio-ide-panel\s*\{.*?grid-template-columns:\s*minmax\(12rem,\s*13\.5rem\)\s*minmax\(0,\s*1fr\);",
                     r"@media \(max-width:\s*1024px\)\s*\{.*?\.studio-workspace \.studio-ide-panel\s*\{.*?grid-template-columns:\s*1fr;",
