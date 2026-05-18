@@ -463,6 +463,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert ":root[data-theme=\"light\"] .studio-workspace .studio-toolbar" in app_css
         assert ".density-disclosure" in app_css
         assert re.search(r"\.product-main\s*\{[^}]*min-width:\s*0;", app_css, re.S)
+        assert re.search(r"\.product-main\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\);", app_css, re.S)
         assert re.search(r"\.product-shell\s*\{(?=[^}]*height:\s*100vh)(?=[^}]*overflow:\s*hidden)[^}]*\}", app_css, re.S)
         assert re.search(r"\.page-stack\s*\{(?=[^}]*overflow:\s*auto)(?=[^}]*min-height:\s*0)[^}]*\}", app_css, re.S)
         assert re.search(r"\.table-wrap\s*\{[^}]*overflow-x:\s*auto;", app_css, re.S)
@@ -603,6 +604,13 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert "shell-status-button" in app_js
         assert "shell-icon-button" in app_js
         assert "Opening Studio graph IDE" in app_js
+        studio_bootstrap_effect = re.search(
+            r"setBusy\(\"Opening Studio graph IDE\"\).*?\}, \[\s*(?P<deps>.*?)\s*\]\);",
+            app_js,
+            re.S,
+        )
+        assert studio_bootstrap_effect is not None
+        assert "studioBootstrapState" not in studio_bootstrap_effect.group("deps")
         for token in (
             "Run first success, bounded demos, or a named workflow without leaving the WebUI.",
             "Validate, inspect, and run a reusable workflow from the shared shell.",

@@ -374,11 +374,11 @@
         console.warn("Unable to persist theme mode.", error);
       }
     }, [resolvedTheme, themeMode]);
-    const navigate = (path) => {
+    const navigate = React.useCallback((path) => {
       window.history.pushState({}, "", path);
       setRoute(currentRoute());
-    };
-    const refreshShell = () => setShellRefresh((value) => value + 1);
+    }, []);
+    const refreshShell = React.useCallback(() => setShellRefresh((value) => value + 1), []);
     const appChrome = shell.data?.app || {};
     const nav = appChrome.nav ?? [
       { label: "Hub", href: "/hub" },
@@ -2214,10 +2214,7 @@
       requestedMode,
       requestedTemplate,
       requestedWorkflow,
-      resumeTarget.href,
-      resumeTarget.kind,
       selectedWorkflow,
-      studioBootstrapState,
       templates
     ]);
     useEffect(() => {
