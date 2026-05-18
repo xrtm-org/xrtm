@@ -1,9 +1,9 @@
 # Getting Started with XRTM
 
 This is the authoritative first-success path for the published
-`xrtm==0.8.4` package.
+`xrtm==0.8.5` package.
 
-The `0.8.4` release promotes the bounded local Hub → Studio → Playground →
+The `0.8.5` release promotes the bounded local Hub → Studio → Playground →
 Observatory product spine on the provider-free baseline. This guide stays
 claim-pinned to that released contract: no calibration dashboard, no
 API/webhook control plane, no arbitrary code/plugin graph editing, no full
@@ -21,7 +21,7 @@ guide that matches your job.
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.8.4
+pip install xrtm==0.8.5
 ```
 
 **Supported Python versions:** `>=3.11,<3.14`
@@ -76,7 +76,7 @@ The released WebUI is a polished local-only React/TypeScript app shell backed
 by a Python JSON API. It gives you the same local forecasting cockpit lanes —
 Hub at `/` and `/hub`, Start, Runs, Workflow detail, Operations, Studio,
 Playground, Observatory, run detail, compare, Advanced visibility, and
-`/workbench` compatibility — without widening the provider-free `0.8.4`
+`/workbench` compatibility — without widening the provider-free `0.8.5`
 capability contract.
 
 With the default local workspace layout, reusable workflows stay in
@@ -110,7 +110,7 @@ xrtm workflow explain my-workflow --workflows-dir .xrtm/workflows
 xrtm workflow run my-workflow --workflows-dir .xrtm/workflows --runs-dir runs
 ```
 
-`xrtm==0.8.4` releases the bounded graph-linked Playground lane. Open
+`xrtm==0.8.5` releases the bounded graph-linked Playground lane. Open
 `http://127.0.0.1:8765/playground` from the same local shell when you want one
 custom question first, optional tiny follow-up batches capped at 5, graph/canvas
 preview, ordered node trace, executed-node highlighting, an honest fallback when
@@ -120,7 +120,7 @@ default, and keep the released runtime wording provider-free unless wider
 validation is published separately.
 
 ```bash
-xrtm playground --workflow demo-provider-free --question "Will the released 0.8.4 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
+xrtm playground --workflow demo-provider-free --question "Will the released 0.8.5 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
 ```
 
 That released Playground command uses the provider-free baseline path and the
