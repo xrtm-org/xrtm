@@ -204,7 +204,7 @@ def _export_run_csv(run_dir: Path, output_path: Path) -> None:
             ),
             "forecast_probability": probability,
             "forecast_confidence": forecast.get("confidence", output.get("confidence")),
-            "forecast_reasoning": forecast.get("reasoning", output.get("reasoning")),
+            "forecast_reasoning": _forecast_reasoning(forecast, output),
             "resolved": _question_resolved(question, fallback=forecast.get("resolved", output.get("resolved"))),
             "outcome": outcome,
             "brier_score": _first_non_empty(
@@ -435,6 +435,36 @@ def _first_non_empty(*values: Any) -> Any:
     for value in values:
         if value not in (None, ""):
             return value
+    return None
+
+
+def _forecast_reasoning(forecast: dict[str, Any], output: dict[str, Any]) -> str | None:
+    reasoning = _first_non_empty(
+        forecast.get("reasoning"),
+        output.get("reasoning"),
+        _nested_get(forecast, ("reasoning_trace", "narrative")),
+        _nested_get(output, ("reasoning_trace", "narrative")),
+    )
+    if reasoning is not None:
+        return str(reasoning)
+    return _first_trace_description(
+        forecast.get("logical_trace"),
+        output.get("logical_trace"),
+        _nested_get(forecast, ("reasoning_trace", "causal_graph", "nodes")),
+        _nested_get(output, ("reasoning_trace", "causal_graph", "nodes")),
+    )
+
+
+def _first_trace_description(*traces: Any) -> str | None:
+    for trace in traces:
+        if not isinstance(trace, list):
+            continue
+        for node in trace:
+            if not isinstance(node, dict):
+                continue
+            description = _first_non_empty(node.get("description"), node.get("event"), node.get("node_id"))
+            if description is not None:
+                return str(description)
     return None
 
 

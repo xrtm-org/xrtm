@@ -4,9 +4,9 @@ This page is the implementation-level source of truth for CLI/WebUI parity in
 `xrtm`. It follows the governance
 [Interface Parity and Claim Ownership Policy](https://github.com/xrtm-org/governance/blob/main/policies/interface-parity-and-claim-ownership-policy.md).
 
-Current baseline: published `xrtm==0.8.4`.
+Current baseline: published `xrtm==0.8.5`.
 
-The `0.8.4` release promotes the unified Hub → Studio → Playground →
+The `0.8.5` release promotes the unified Hub → Studio → Playground →
 Observatory spine on the provider-free local product-shell baseline. The
 published release may claim Hub at `/` and `/hub`, Studio at `/studio`,
 graph-linked Playground trace review, Observatory at `/observatory`, and
@@ -74,7 +74,7 @@ as source-visible or future-release until package/docs/gates graduate together.
 | `xrtm doctor` | Newcomer readiness | `parity-ready` | released | `xrtm.product.doctor.run_doctor`, `doctor_snapshot` | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 complete |
 | `xrtm start` | First-success run | `parity-ready` | released | `xrtm.product.launch.run_start_quickstart` | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 complete |
 | `xrtm demo` | Demo run setup | `partial` | P0 | `xrtm.product.launch.run_demo_workflow` | `xrtm` future-release track | Gate 1 + selective Gate 2 if promoted |
-| `xrtm playground` | Run the bounded exploratory sandbox loop | `parity-ready` | released (`0.8.4`) | `xrtm.product.launch.run_sandbox_session`, `save_sandbox_workflow`, `save_sandbox_profile`, WebUI playground state services | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 provider-free baseline complete; any real-runtime or cloud/API playground claim still needs matching clean-room proof before promotion |
+| `xrtm playground` | Run the bounded exploratory sandbox loop | `parity-ready` | released (`0.8.5`) | `xrtm.product.launch.run_sandbox_session`, `save_sandbox_workflow`, `save_sandbox_profile`, WebUI playground state services | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 provider-free baseline complete; any real-runtime or cloud/API playground claim still needs matching clean-room proof before promotion |
 | `xrtm workflow list` | Workflow discovery | `partial` | P0 | `WorkflowRegistry.list_workflows` | `xrtm` docs | Gate 1 |
 | `xrtm workflow show` | Workflow inspection | `partial` | P0 | `xrtm.product.launch.load_registered_workflow`, `WorkflowRegistry.load` | `xrtm` docs | Gate 1 |
 | `xrtm workflow validate` | Workflow validation | `partial` | P0 | `xrtm.product.launch.validate_registered_workflow`, `WorkflowRegistry.validate` | `xrtm` docs | Gate 1 + WebUI route/API smoke |
@@ -125,7 +125,7 @@ as source-visible or future-release until package/docs/gates graduate together.
 
 ## Released parity proof
 
-The published `0.8.4` release proof should cover:
+The published `0.8.5` release proof should cover:
 
 1. open WebUI from a fresh install
 2. run readiness/doctor from the browser

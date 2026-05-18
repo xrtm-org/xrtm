@@ -732,16 +732,18 @@ def capture_forecastbench_baseline_reference(
     )
     source_path.write_text(raw_js.rstrip() + "\n", encoding="utf-8")
     result.artifact_paths = [source_path, result_path, scorecard_path]
-    result_path.write_text(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    result_payload = _with_reporting_lane_aliases(result.model_dump(mode="json"))
+    scorecard_payload = _with_reporting_lane_aliases(scorecard.model_dump(mode="json"))
+    result_path.write_text(json.dumps(result_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     scorecard_path.write_text(
-        json.dumps(scorecard.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        json.dumps(scorecard_payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return {
         "schema_version": "xrtm.public-benchmark-reference.v1",
         "artifact_paths": [str(path) for path in result.artifact_paths],
-        "lane_result": result.model_dump(mode="json"),
-        "public_scorecard": scorecard.model_dump(mode="json"),
+        "lane_result": result_payload,
+        "public_scorecard": scorecard_payload,
     }
 
 
@@ -1320,6 +1322,18 @@ def _next_public_benchmark_artifact_path(
         if not candidate.exists():
             return candidate
     raise RuntimeError(f"Failed to allocate public benchmark artifact path under {output_dir}")
+
+
+def _with_reporting_lane_aliases(payload: Any) -> Any:
+    if isinstance(payload, list):
+        return [_with_reporting_lane_aliases(item) for item in payload]
+    if not isinstance(payload, dict):
+        return payload
+
+    aliased = {key: _with_reporting_lane_aliases(value) for key, value in payload.items()}
+    if "evaluation_path" in aliased and "reporting_lane" not in aliased:
+        aliased["reporting_lane"] = aliased["evaluation_path"]
+    return aliased
 
 
 def _fetch_public_text(url: str) -> str:
