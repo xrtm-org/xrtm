@@ -893,6 +893,52 @@ def test_competition_dry_run_lists_packs_and_writes_bundle() -> None:
         assert bundle["submission"]["transport"]["token"] == "[redacted]"
 
 
+def test_competition_dry_run_validates_local_workflow_shadow_before_execution() -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem():
+        cloned = runner.invoke(
+            cli,
+            [
+                "workflow",
+                "clone",
+                "metaculus-cup-dryrun",
+                "metaculus-cup-dryrun",
+                "--workflows-dir",
+                "workflows",
+            ],
+        )
+        assert cloned.exit_code == 0, cloned.output
+
+        workflow_path = Path("workflows/metaculus-cup-dryrun.json")
+        payload = json.loads(workflow_path.read_text(encoding="utf-8"))
+        first_node = next(iter(payload["graph"]["nodes"].values()))
+        first_node["implementation"] = "unsafe.custom.plugin_node"
+        workflow_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        dry_run = runner.invoke(
+            cli,
+            [
+                "competition",
+                "dry-run",
+                "metaculus-cup",
+                "--workflows-dir",
+                "workflows",
+                "--runs-dir",
+                "runs",
+                "--provider",
+                "mock",
+                "--limit",
+                "1",
+            ],
+        )
+
+        dry_run_output = _strip_ansi(dry_run.output)
+        assert dry_run.exit_code != 0
+        assert "safe product node library" in dry_run_output
+        assert not Path("runs").exists()
+
+
 def test_profile_starter_scaffolds_repeatable_local_workspace() -> None:
     runner = CliRunner()
 
@@ -1828,7 +1874,9 @@ def test_webui_serves_api_routes() -> None:
                 html = response.read().decode("utf-8")
             assert '"resume_target"' in shell_body
             assert '"demo-provider-free"' in runs_body
-            assert "Hub · Studio · Playground · Observatory · Operations · Advanced" in html
+            assert "Hub · Studio · Playground · Observatory · Batch · Versions · Operations · Control · Advanced" in html
+            assert "Forecasting workspace" in html
+            assert "Shared local shell" not in html
             assert "version-pill" in html
             assert "/static/app.js" in html
         finally:

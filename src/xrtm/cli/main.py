@@ -279,8 +279,9 @@ def _execute_workflow(
     write_report: bool | None = None,
 ) -> PipelineResult:
     try:
+        validated = launch_module.validate_authored_workflow(blueprint=blueprint)
         return run_workflow_blueprint(
-            blueprint,
+            validated,
             command=command,
             runs_dir=runs_dir,
             user=user,

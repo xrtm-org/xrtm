@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import sqlite3
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Lock, Thread
 from typing import Any, Mapping
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from xrtm import __version__
+from xrtm.eval import BrierScoreEvaluator, summarize_binary_forecasts
 from xrtm.product import launch as launch_module
 from xrtm.product.history import compare_runs, resolve_run_dir
 from xrtm.product.providers import local_llm_status
 from xrtm.product.read_models import list_run_records, read_run_detail
-from xrtm.product.sandbox import MAX_SANDBOX_QUESTIONS
+from xrtm.product.sandbox import MAX_SANDBOX_QUESTIONS, SandboxContext, SandboxQuestionInput, run_sandbox_session
 from xrtm.product.workbench import (
     WorkbenchInputError,
     apply_workbench_authoring_action,
@@ -25,12 +32,22 @@ from xrtm.product.workbench import (
     workbench_authoring_catalog,
     workflow_canvas,
 )
-from xrtm.product.workflow_authoring import list_workflow_starter_templates
+from xrtm.product.workflow_authoring import WorkflowAuthoringService, list_workflow_starter_templates
 from xrtm.product.workflows import WorkflowBlueprint, WorkflowRegistry
 
 DEFAULT_APP_DB_NAME = "app-state.db"
 COMPARE_CACHE_SCHEMA_VERSION = "xrtm.webui.compare.v2"
 PLAYGROUND_SESSION_ID = "playground-default"
+WEBHOOK_EVENT_TYPES = (
+    "run.started",
+    "run.completed",
+    "run.failed",
+    "batch.created",
+    "batch.completed",
+    "workflow.version.created",
+)
+WEBHOOK_SIGNING_ALGORITHMS = ("hmac-sha256",)
+_BRIER_SCORE_EVALUATOR = BrierScoreEvaluator()
 
 
 class WebUIStateStore:
@@ -38,6 +55,8 @@ class WebUIStateStore:
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
+        self._batch_worker_lock = Lock()
+        self._batch_workers: dict[str, Thread] = {}
 
     def ensure_schema(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,6 +111,14 @@ class WebUIStateStore:
                     payload_json TEXT NOT NULL,
                     validated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS draft_canvas_positions (
+                    draft_id TEXT NOT NULL,
+                    node_name TEXT NOT NULL,
+                    x INTEGER NOT NULL,
+                    y INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (draft_id, node_name)
+                );
                 CREATE TABLE IF NOT EXISTS compare_cache (
                     candidate_run_id TEXT NOT NULL,
                     baseline_run_id TEXT NOT NULL,
@@ -117,10 +144,88 @@ class WebUIStateStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS workflow_versions (
+                    id TEXT PRIMARY KEY,
+                    workflow_name TEXT NOT NULL,
+                    parent_id TEXT,
+                    label TEXT NOT NULL,
+                    blueprint_json TEXT NOT NULL,
+                    graph_json TEXT NOT NULL,
+                    config_json TEXT NOT NULL DEFAULT '{}',
+                    canvas_json TEXT NOT NULL DEFAULT '{}',
+                    is_default INTEGER NOT NULL DEFAULT 0,
+                    source TEXT NOT NULL,
+                    draft_id TEXT,
+                    source_workflow_name TEXT,
+                    run_provenance_json TEXT NOT NULL DEFAULT '{}',
+                    metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS workflow_versions_workflow_name_idx
+                    ON workflow_versions(workflow_name);
+                CREATE TABLE IF NOT EXISTS batch_runs (
+                    id TEXT PRIMARY KEY,
+                    workflow_name TEXT NOT NULL,
+                    version_id TEXT,
+                    label TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    progress_current INTEGER NOT NULL,
+                    progress_total INTEGER NOT NULL,
+                    row_count INTEGER NOT NULL,
+                    dry_run INTEGER NOT NULL,
+                    definition_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS batch_runs_workflow_name_idx
+                    ON batch_runs(workflow_name);
+                CREATE TABLE IF NOT EXISTS batch_rows (
+                    batch_id TEXT NOT NULL,
+                    row_index INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    input_json TEXT NOT NULL,
+                    result_json TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (batch_id, row_index)
+                );
+                CREATE TABLE IF NOT EXISTS webhook_endpoints (
+                    id TEXT PRIMARY KEY,
+                    url TEXT NOT NULL,
+                    enabled INTEGER NOT NULL,
+                    event_list_json TEXT NOT NULL,
+                    secret TEXT,
+                    secret_hint TEXT,
+                    signing_algorithm TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS webhook_deliveries (
+                    id TEXT PRIMARY KEY,
+                    endpoint_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    attempts INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    response_status INTEGER,
+                    error TEXT,
+                    last_attempt_at TEXT,
+                    next_attempt_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS webhook_deliveries_endpoint_idx
+                    ON webhook_deliveries(endpoint_id, created_at);
                 """
             )
             self._ensure_column(connection, "draft_sessions", "creation_mode", "TEXT NOT NULL DEFAULT 'clone'")
             self._ensure_column(connection, "draft_sessions", "template_id", "TEXT")
+            self._ensure_column(connection, "workflow_versions", "config_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(connection, "workflow_versions", "canvas_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(connection, "workflow_versions", "is_default", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "workflow_versions", "run_provenance_json", "TEXT NOT NULL DEFAULT '{}'")
 
     def refresh_indexes(self, *, runs_dir: Path, registry: WorkflowRegistry) -> None:
         self.ensure_schema()
@@ -207,6 +312,11 @@ class WebUIStateStore:
                 "version": __version__,
                 "subtitle": "Local forecasting cockpit",
                 "summary": "File-backed runs, local workflows, and resumable SQLite state in one muted local shell.",
+                "system_status": {
+                    "tone": "healthy" if local_llm_snapshot.get("healthy") else "warning",
+                    "label": "System healthy" if local_llm_snapshot.get("healthy") else "System needs attention",
+                    "detail": local_llm_detail,
+                },
                 "trust_cues": [
                     "Shared local shell",
                     "File-backed history",
@@ -217,7 +327,10 @@ class WebUIStateStore:
                     {"label": "Studio", "href": "/studio"},
                     {"label": "Playground", "href": "/playground"},
                     {"label": "Observatory", "href": "/observatory"},
+                    {"label": "Batch", "href": "/batch"},
+                    {"label": "Versions", "href": "/versions"},
                     {"label": "Operations", "href": "/operations"},
+                    {"label": "Control", "href": "/api"},
                     {"label": "Advanced", "href": "/advanced"},
                 ],
             },
@@ -285,12 +398,11 @@ class WebUIStateStore:
             },
             "hub": {
                 "hero": {
-                    "eyebrow": "Hub",
-                    "title": "Start locally from a template, then inspect what happened",
+                    "eyebrow": "Entry route",
+                    "title": "Choose a first move",
                     "summary": (
-                        "Use the quick forecast door for a bounded Playground run, or open Studio to build "
-                        "a custom workflow draft. Everything points at local files, local run history, and "
-                        "the local SQLite app state."
+                        "Run the first-success quickstart, open Playground for one bounded question, or "
+                        "enter Studio for a local draft."
                     ),
                 },
                 "doors": [
@@ -299,8 +411,8 @@ class WebUIStateStore:
                         "label": "Quick forecast",
                         "title": "Ask one bounded question",
                         "summary": (
-                            "Open Playground with a starter template selected. Add one question, run locally, "
-                            "then inspect ordered step output and artifacts."
+                            "Open Playground with a starter template selected, run once, and inspect the "
+                            "local trace."
                         ),
                         "primary_cta": {
                             "label": "Open Playground",
@@ -312,16 +424,16 @@ class WebUIStateStore:
                     {
                         "key": "custom-workflow",
                         "label": "Build custom workflow",
-                        "title": "Inspect or create an editable draft",
+                        "title": "Inspect or create a draft",
                         "summary": (
-                            "Open Studio on a selected workflow. Built-ins stay read-only until cloned into "
-                            "a local draft; the graph authoring surface exposes only supported safe edits."
+                            "Open Studio on a selected workflow, then branch into a safe local draft when "
+                            "you need changes."
                         ),
                         "primary_cta": {
                             "label": "Open Studio",
                             "href": f"/studio?workflow={preferred_workflow_name}",
                         },
-                        "secondary_cta": {"label": "Legacy workbench route", "href": "/workbench"},
+                        "secondary_cta": {"label": "Open legacy workbench", "href": "/workbench"},
                         "status": "draft-ready",
                     },
                 ],
@@ -431,6 +543,970 @@ class WebUIStateStore:
             "limits": catalog["limits"],
             "limitations": catalog["limitations"],
         }
+
+    def versions_snapshot(self, *, registry: WorkflowRegistry) -> dict[str, Any]:
+        self.ensure_schema()
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM workflow_versions ORDER BY created_at DESC, id DESC").fetchall()
+        return {
+            "schema_version": "xrtm.webui.versions.v1",
+            "surface": {
+                "name": "Versions",
+                "title": "Workflow version snapshots",
+                "summary": "Immutable local SQLite snapshots of registered workflow or draft blueprints.",
+                "canonical_href": "/versions",
+            },
+            "items": [_workflow_version_payload(row, include_snapshot=True) for row in rows],
+            "defaults": {
+                item["workflow_name"]: item["id"]
+                for item in (_workflow_version_payload(row, include_snapshot=False) for row in rows)
+                if item["is_default"]
+            },
+            "workflow_count": len(registry.list_workflows()),
+            "routes": {
+                "list": {"method": "GET", "href": "/api/versions"},
+                "create": {"method": "POST", "href": "/api/versions"},
+                "get": {"method": "GET", "href": "/api/versions/{version_id}"},
+                "diff": {"method": "GET", "href": "/api/versions/{version_id}/diff/{other_version_id}"},
+                "rollback": {"method": "POST", "href": "/api/versions/{version_id}/rollback"},
+                "set_default": {"method": "PATCH", "href": "/api/versions/{version_id}"},
+            },
+            "guidance": {
+                "summary": "Create snapshots from existing workflows or Studio drafts before batch/API usage.",
+                "no_arbitrary_code": True,
+                "runtime_contract": "Snapshots preserve the shared CLI/WebUI workflow blueprint contract only.",
+            },
+        }
+
+    def create_workflow_version(self, *, registry: WorkflowRegistry, values: Mapping[str, Any]) -> dict[str, Any]:
+        self.ensure_schema()
+        draft_id = _optional_input_string(values.get("draft_id"), field="draft_id")
+        workflow_name = _optional_input_string(values.get("workflow_name"), field="workflow_name")
+        parent_id = _optional_input_string(values.get("parent_id"), field="parent_id")
+        if parent_id is not None:
+            self._workflow_version_row(parent_id)
+        source = "draft" if draft_id else "workflow"
+        source_workflow_name = workflow_name
+        if draft_id:
+            draft = self._draft_row(draft_id)
+            blueprint = self._draft_blueprint(draft_id) or registry.load(str(draft["draft_workflow_name"]))
+            blueprint = launch_module.validate_authored_workflow(blueprint=blueprint, registry=registry)
+            workflow_name = blueprint.name
+            source_workflow_name = str(draft["source_workflow_name"])
+            draft_metadata: dict[str, Any] | None = {
+                "draft_id": draft_id,
+                "draft_workflow_name": draft["draft_workflow_name"],
+                "source_workflow_name": draft["source_workflow_name"],
+                "revision": draft["revision"],
+                "status": draft["status"],
+            }
+        else:
+            if not workflow_name:
+                raise WorkbenchInputError("workflow_name or draft_id is required")
+            blueprint = launch_module.validate_authored_workflow(workflow_name=workflow_name, registry=registry)
+            draft_metadata = None
+        timestamp = _utc_now()
+        label = _optional_input_string(values.get("label"), field="label") or f"{blueprint.name} snapshot {timestamp}"
+        metadata = {
+            "source": source,
+            "draft": draft_metadata,
+            "created_by": "webui-local-api",
+            "runtime_provider": blueprint.runtime.provider,
+            "question_limit": blueprint.questions.limit,
+            "no_arbitrary_code": True,
+        }
+        set_default = _version_default_flag(values.get("set_default", values.get("make_default")), default=None)
+        canvas = self._version_canvas_for_snapshot(blueprint, draft_id=draft_id)
+        created = self._insert_workflow_version(
+            blueprint=blueprint,
+            parent_id=parent_id,
+            label=label,
+            source=source,
+            draft_id=draft_id,
+            source_workflow_name=source_workflow_name,
+            metadata=metadata,
+            run_provenance=_workflow_version_run_provenance(version_id=None, parent_id=parent_id, mode="snapshot"),
+            canvas=canvas,
+            set_default=set_default,
+            created_at=timestamp,
+        )
+        self.dispatch_webhook_event(
+            "workflow.version.created",
+            {
+                "version_id": created["id"],
+                "workflow_name": created["workflow_name"],
+                "label": created["label"],
+                "source": created["source"],
+            },
+        )
+        return created
+
+    def get_workflow_version(self, version_id: str) -> dict[str, Any]:
+        self.ensure_schema()
+        row = self._workflow_version_row(version_id)
+        payload = _workflow_version_payload(row, include_snapshot=True)
+        payload["lineage"] = self._workflow_version_lineage(version_id)
+        return payload
+
+    def workflow_version_blueprint(self, version_id: str) -> WorkflowBlueprint:
+        self.ensure_schema()
+        row = self._workflow_version_row(version_id)
+        return WorkflowBlueprint.from_payload(_json_load(row["blueprint_json"]))
+
+    def record_workflow_version_execution(self, *, version_id: str, run_dir: Path) -> dict[str, Any]:
+        self.ensure_schema()
+        row = self._workflow_version_row(version_id)
+        run_id = run_dir.name
+        timestamp = _utc_now()
+        provenance = _mapping(_json_load(_row_value(row, "run_provenance_json", "{}")))
+        recent_run_ids = [run_id]
+        for value in provenance.get("recent_run_ids", []):
+            if isinstance(value, str) and value != run_id:
+                recent_run_ids.append(value)
+        updated_provenance = {
+            **provenance,
+            "execution_linkage": {
+                "status": "run-linked",
+                "mode": provenance.get("mode") or "snapshot",
+                "notes": [
+                    "Runs created from this version snapshot record local provenance.",
+                    "The control plane stays local-first and reuses shared workflow execution services.",
+                ],
+            },
+            "last_run_id": run_id,
+            "last_run_href": f"/runs/{run_id}",
+            "last_run_at": timestamp,
+            "recent_run_ids": recent_run_ids[:10],
+        }
+        version_artifact = {
+            "version_id": version_id,
+            "workflow_name": str(row["workflow_name"]),
+            "label": str(row["label"]),
+            "recorded_at": timestamp,
+        }
+        version_path = run_dir / "version_run.json"
+        version_path.write_text(_json_dump(version_artifact) + "\n", encoding="utf-8")
+        run_path = run_dir / "run.json"
+        if run_path.exists():
+            run_payload = json.loads(run_path.read_text(encoding="utf-8"))
+            artifacts = run_payload.get("artifacts", {})
+            if isinstance(artifacts, dict):
+                artifacts["version_run.json"] = str(version_path)
+            run_payload["artifacts"] = artifacts
+            run_path.write_text(_json_dump(run_payload) + "\n", encoding="utf-8")
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE workflow_versions SET run_provenance_json = ? WHERE id = ?",
+                (_json_dump(updated_provenance), version_id),
+            )
+        self.dispatch_webhook_event(
+            "run.completed",
+            {
+                "version_id": version_id,
+                "workflow_name": str(row["workflow_name"]),
+                "run_id": run_id,
+                "run_href": f"/runs/{run_id}",
+            },
+        )
+        return updated_provenance
+
+    def set_default_workflow_version(self, version_id: str) -> dict[str, Any]:
+        self.ensure_schema()
+        row = self._workflow_version_row(version_id)
+        workflow_name = str(row["workflow_name"])
+        with self._connect() as connection:
+            connection.execute("UPDATE workflow_versions SET is_default = 0 WHERE workflow_name = ?", (workflow_name,))
+            connection.execute("UPDATE workflow_versions SET is_default = 1 WHERE id = ?", (version_id,))
+        return self.get_workflow_version(version_id)
+
+    def diff_workflow_versions(self, version_id: str, other_version_id: str) -> dict[str, Any]:
+        self.ensure_schema()
+        left = self._workflow_version_row(version_id)
+        right = self._workflow_version_row(other_version_id)
+        sections = {
+            "blueprint": (_json_load(left["blueprint_json"]), _json_load(right["blueprint_json"])),
+            "graph": (_json_load(left["graph_json"]), _json_load(right["graph_json"])),
+            "config": (_json_load(_row_value(left, "config_json", "{}")), _json_load(_row_value(right, "config_json", "{}"))),
+            "canvas": (_json_load(_row_value(left, "canvas_json", "{}")), _json_load(_row_value(right, "canvas_json", "{}"))),
+        }
+        changes = {section: _json_diff(before, after) for section, (before, after) in sections.items()}
+        changed_paths = sorted({change["path"] for section_changes in changes.values() for change in section_changes})
+        return {
+            "schema_version": "xrtm.webui.version-diff.v1",
+            "base": _workflow_version_payload(left, include_snapshot=False),
+            "other": _workflow_version_payload(right, include_snapshot=False),
+            "summary": {
+                "changed": len(changed_paths),
+                "sections": {section: len(section_changes) for section, section_changes in changes.items()},
+                "same_workflow": str(left["workflow_name"]) == str(right["workflow_name"]),
+            },
+            "changed_paths": changed_paths,
+            "changes": changes,
+        }
+
+    def rollback_workflow_version(
+        self,
+        *,
+        registry: WorkflowRegistry,
+        version_id: str,
+        values: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        self.ensure_schema()
+        source_row = self._workflow_version_row(version_id)
+        source_payload = _workflow_version_payload(source_row, include_snapshot=True)
+        blueprint = WorkflowBlueprint.from_payload(_json_load(source_row["blueprint_json"]))
+        target_workflow_name = _optional_input_string(values.get("workflow_name"), field="workflow_name")
+        if target_workflow_name and target_workflow_name != blueprint.name:
+            blueprint = WorkflowAuthoringService(registry).update_metadata(blueprint, name=target_workflow_name)
+        blueprint = launch_module.validate_authored_workflow(blueprint=blueprint, registry=registry)
+
+        mode = _version_rollback_mode(values.get("mode"))
+        overwrite = _optional_input_bool(values.get("overwrite"), field="overwrite", default=mode == "workflow")
+        timestamp = _utc_now()
+        label = _optional_input_string(values.get("label"), field="label") or f"{blueprint.name} rollback from {version_id}"
+        metadata = {
+            "source": f"rollback-{mode}",
+            "created_by": "webui-local-api",
+            "rollback": {
+                "source_version_id": version_id,
+                "source_label": source_payload["label"],
+                "mode": mode,
+            },
+            "runtime_provider": blueprint.runtime.provider,
+            "question_limit": blueprint.questions.limit,
+            "no_arbitrary_code": True,
+        }
+        workflow_path: Path | None = None
+        if mode == "workflow":
+            workflow_path = WorkflowAuthoringService(registry).persist_workflow(blueprint, overwrite=overwrite)
+
+        restored_version = self._insert_workflow_version(
+            blueprint=blueprint,
+            parent_id=version_id,
+            label=label,
+            source=f"rollback-{mode}",
+            draft_id=None,
+            source_workflow_name=str(source_row["workflow_name"]),
+            metadata=metadata,
+            run_provenance=_workflow_version_run_provenance(
+                version_id=None,
+                parent_id=version_id,
+                mode=f"rollback-{mode}",
+            ),
+            canvas=_json_load(_row_value(source_row, "canvas_json", "{}")) or workflow_canvas(blueprint),
+            set_default=_version_default_flag(values.get("set_default", values.get("make_default")), default=True),
+            created_at=timestamp,
+        )
+        result = {
+            "schema_version": "xrtm.webui.version-rollback.v1",
+            "mode": mode,
+            "source_version": source_payload,
+            "version": restored_version,
+            "workflow": {
+                "name": blueprint.name,
+                "persisted": workflow_path is not None,
+                "path": str(workflow_path) if workflow_path is not None else None,
+            },
+        }
+        self.dispatch_webhook_event(
+            "workflow.version.created",
+            {
+                "version_id": restored_version["id"],
+                "workflow_name": restored_version["workflow_name"],
+                "label": restored_version["label"],
+                "source": restored_version["source"],
+            },
+        )
+        return result
+
+    def _insert_workflow_version(
+        self,
+        *,
+        blueprint: WorkflowBlueprint,
+        parent_id: str | None,
+        label: str,
+        source: str,
+        draft_id: str | None,
+        source_workflow_name: str | None,
+        metadata: Mapping[str, Any],
+        run_provenance: Mapping[str, Any],
+        canvas: Mapping[str, Any],
+        set_default: bool | None,
+        created_at: str,
+    ) -> dict[str, Any]:
+        blueprint_payload = blueprint.to_json_dict()
+        version_id = f"version-{uuid.uuid4().hex[:12]}"
+        config = _workflow_version_config(blueprint_payload)
+        is_default = set_default if set_default is not None else not self._workflow_has_default(blueprint.name)
+        provenance = dict(run_provenance)
+        provenance["version_id"] = version_id
+        provenance["workflow_name"] = blueprint.name
+        with self._connect() as connection:
+            if is_default:
+                connection.execute(
+                    "UPDATE workflow_versions SET is_default = 0 WHERE workflow_name = ?",
+                    (blueprint.name,),
+                )
+            connection.execute(
+                """
+                INSERT INTO workflow_versions (
+                    id, workflow_name, parent_id, label, blueprint_json, graph_json, config_json, canvas_json,
+                    is_default, source, draft_id, source_workflow_name, run_provenance_json, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    version_id,
+                    blueprint.name,
+                    parent_id,
+                    label,
+                    _json_dump(blueprint_payload),
+                    _json_dump(blueprint_payload["graph"]),
+                    _json_dump(config),
+                    _json_dump(canvas),
+                    1 if is_default else 0,
+                    source,
+                    draft_id,
+                    source_workflow_name,
+                    _json_dump(provenance),
+                    _json_dump(metadata),
+                    created_at,
+                ),
+            )
+            row = connection.execute("SELECT * FROM workflow_versions WHERE id = ?", (version_id,)).fetchone()
+        assert row is not None
+        return _workflow_version_payload(row, include_snapshot=True)
+
+    def _workflow_has_default(self, workflow_name: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM workflow_versions WHERE workflow_name = ? AND is_default = 1 LIMIT 1",
+                (workflow_name,),
+            ).fetchone()
+        return row is not None
+
+    def _workflow_version_lineage(self, version_id: str) -> list[dict[str, Any]]:
+        lineage: list[dict[str, Any]] = []
+        seen = {version_id}
+        parent_id = _string_or_none(self._workflow_version_row(version_id)["parent_id"])
+        while parent_id and parent_id not in seen:
+            seen.add(parent_id)
+            row = self._workflow_version_row(parent_id)
+            lineage.append(_workflow_version_payload(row, include_snapshot=False))
+            parent_id = _string_or_none(row["parent_id"])
+        return lineage
+
+    def _version_canvas_for_snapshot(self, blueprint: WorkflowBlueprint, *, draft_id: str | None) -> dict[str, Any]:
+        canvas = workflow_canvas(blueprint)
+        if draft_id:
+            canvas = _apply_canvas_positions(canvas, self._draft_canvas_positions(draft_id))
+        return canvas
+
+    def batch_snapshot(self, *, registry: WorkflowRegistry) -> dict[str, Any]:
+        self.ensure_schema()
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM batch_runs ORDER BY created_at DESC, id DESC").fetchall()
+        items = [self._batch_run_payload(str(row["id"]), include_rows=True) for row in rows]
+        running = sum(1 for item in items if item.get("status") in {"queued", "running", "cancel-requested"})
+        staged = sum(1 for item in items if item.get("status") == "staged")
+        completed = sum(1 for item in items if item.get("status") == "completed")
+        with_errors = sum(1 for item in items if item.get("status") in {"completed-with-errors", "failed"})
+        return {
+            "schema_version": "xrtm.webui.batch.v2",
+            "surface": {
+                "name": "Batch",
+                "title": "Batch Runner",
+                "summary": "Stage workflow-backed question tables, execute them locally, and keep row-level provenance connected to Observatory.",
+                "canonical_href": "/batch",
+            },
+            "items": items,
+            "workflow_count": len(registry.list_workflows()),
+            "counts": {
+                "total": len(items),
+                "staged": staged,
+                "running": running,
+                "completed": completed,
+                "with_errors": with_errors,
+            },
+            "routes": {
+                "list": {"method": "GET", "href": "/api/batch"},
+                "create": {"method": "POST", "href": "/api/batch"},
+                "detail": {"method": "GET", "pattern": "/api/batch/{batch_id}"},
+                "run": {"method": "POST", "pattern": "/api/batch/{batch_id}/run"},
+                "cancel": {"method": "PATCH", "pattern": "/api/batch/{batch_id}"},
+                "retry": {"method": "POST", "pattern": "/api/batch/{batch_id}/retry"},
+                "export": {"method": "GET", "pattern": "/api/batch/{batch_id}/export?format=json|csv"},
+            },
+            "execution_policy": {
+                "dry_run_only": False,
+                "no_arbitrary_code": True,
+                "supports_background_execution": True,
+                "supports_cancel": True,
+                "supports_retry": True,
+                "supports_export": True,
+                "runtime_contract": "Batch rows execute through shared workflow snapshots and reuse the same local workflow contract as the CLI and WebUI playground.",
+            },
+        }
+
+    def create_batch_run(self, *, registry: WorkflowRegistry, values: Mapping[str, Any]) -> dict[str, Any]:
+        self.ensure_schema()
+        version_id = _optional_input_string(values.get("version_id"), field="version_id")
+        workflow_name = _optional_input_string(values.get("workflow_name"), field="workflow_name")
+        version: sqlite3.Row | None = None
+        blueprint: WorkflowBlueprint
+        if version_id:
+            version = self._workflow_version_row(version_id)
+            version_workflow_name = str(version["workflow_name"])
+            if workflow_name and workflow_name != version_workflow_name:
+                raise WorkbenchInputError("workflow_name must match version workflow_name")
+            workflow_name = version_workflow_name
+            blueprint = WorkflowBlueprint.from_payload(_json_load(version["blueprint_json"]))
+            launch_module.validate_authored_workflow(blueprint=blueprint, registry=registry)
+        if not workflow_name:
+            raise WorkbenchInputError("workflow_name or version_id is required")
+        if version is None:
+            blueprint = launch_module.validate_authored_workflow(workflow_name=workflow_name, registry=registry)
+        rows = _batch_rows_from_payload(values.get("rows"))
+        timestamp = _utc_now()
+        batch_id = f"batch-{uuid.uuid4().hex[:12]}"
+        label = _optional_input_string(values.get("label"), field="label") or f"{workflow_name} batch run"
+        definition = {
+            "workflow_name": workflow_name,
+            "version_id": version_id,
+            "label": label,
+            "row_count": len(rows),
+            "dry_run": False,
+            "created_by": "webui-local-api",
+            "cli_alignment": "Use shared workflow/version snapshots; execution stays on the shared local workflow contract.",
+            "version_provenance": _batch_version_provenance(version),
+            "blueprint": blueprint.to_json_dict(),
+            "runtime": {
+                "provider": blueprint.runtime.provider,
+                "base_url": blueprint.runtime.base_url,
+                "model": blueprint.runtime.model,
+                "max_tokens": blueprint.runtime.max_tokens,
+                "write_report": blueprint.artifacts.write_report,
+            },
+            "no_arbitrary_code": True,
+        }
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO batch_runs (
+                    id, workflow_name, version_id, label, status, progress_current, progress_total, row_count,
+                    dry_run, definition_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    batch_id,
+                    workflow_name,
+                    version_id,
+                    label,
+                    "staged",
+                    0,
+                    len(rows),
+                    len(rows),
+                    0,
+                    _json_dump(definition),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            connection.executemany(
+                """
+                INSERT INTO batch_rows (
+                    batch_id, row_index, status, input_json, result_json, error, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (batch_id, index, "pending", _json_dump(row), None, None, timestamp, timestamp)
+                    for index, row in enumerate(rows, start=1)
+                ],
+            )
+        created = self._batch_run_payload(batch_id, include_rows=True)
+        self.dispatch_webhook_event(
+            "batch.created",
+            {
+                "batch_id": created["id"],
+                "workflow_name": created["workflow_name"],
+                "version_id": created["version_id"],
+                "label": created["label"],
+                "row_count": created["row_count"],
+                "status": created["status"],
+            },
+        )
+        return created
+
+    def get_batch_run(self, batch_id: str) -> dict[str, Any]:
+        self.ensure_schema()
+        return self._batch_run_payload(batch_id, include_rows=True)
+
+    def start_batch_run(
+        self,
+        *,
+        batch_id: str,
+        registry: WorkflowRegistry,
+        runs_dir: Path,
+        values: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.ensure_schema()
+        payload = self._batch_run_payload(batch_id, include_rows=True)
+        if payload["status"] in {"queued", "running", "cancel-requested"}:
+            raise WorkbenchInputError("batch run is already in progress")
+        pending_rows = [row for row in payload["rows"] if row["status"] == "pending"]
+        if not pending_rows:
+            raise WorkbenchInputError("batch run has no pending rows to execute")
+        wait = _optional_input_bool((values or {}).get("wait"), field="wait", default=False)
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE batch_runs SET status = ?, dry_run = 0, updated_at = ? WHERE id = ?",
+                ("queued", _utc_now(), batch_id),
+            )
+        if wait:
+            self._run_batch_worker(batch_id=batch_id, registry=registry, runs_dir=runs_dir)
+            return self._batch_run_payload(batch_id, include_rows=True)
+        worker = Thread(
+            target=self._run_batch_worker,
+            kwargs={"batch_id": batch_id, "registry": registry, "runs_dir": runs_dir},
+            daemon=True,
+            name=f"xrtm-batch-{batch_id}",
+        )
+        with self._batch_worker_lock:
+            active = self._batch_workers.get(batch_id)
+            if active is not None and active.is_alive():
+                raise WorkbenchInputError("batch run is already in progress")
+            self._batch_workers[batch_id] = worker
+        worker.start()
+        return self._batch_run_payload(batch_id, include_rows=True)
+
+    def cancel_batch_run(self, *, batch_id: str) -> dict[str, Any]:
+        self.ensure_schema()
+        payload = self._batch_run_payload(batch_id, include_rows=True)
+        status = payload["status"]
+        timestamp = _utc_now()
+        with self._connect() as connection:
+            if status == "staged":
+                connection.execute(
+                    """
+                    UPDATE batch_rows
+                    SET status = ?, error = ?, updated_at = ?
+                    WHERE batch_id = ? AND status = ?
+                    """,
+                    ("cancelled", "Cancelled before execution.", timestamp, batch_id, "pending"),
+                )
+                self._sync_batch_progress(connection, batch_id)
+                connection.execute(
+                    "UPDATE batch_runs SET status = ?, updated_at = ? WHERE id = ?",
+                    ("cancelled", timestamp, batch_id),
+                )
+            elif status in {"queued", "running", "cancel-requested"}:
+                connection.execute(
+                    "UPDATE batch_runs SET status = ?, updated_at = ? WHERE id = ?",
+                    ("cancel-requested", timestamp, batch_id),
+                )
+        return self._batch_run_payload(batch_id, include_rows=True)
+
+    def retry_batch_run(
+        self,
+        *,
+        batch_id: str,
+        registry: WorkflowRegistry,
+        runs_dir: Path,
+        values: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.ensure_schema()
+        payload = self._batch_run_payload(batch_id, include_rows=True)
+        if payload["status"] in {"queued", "running", "cancel-requested"}:
+            raise WorkbenchInputError("cannot retry a batch while it is still running")
+        row_indexes = _batch_row_indexes_from_payload((values or {}).get("row_indexes"))
+        retryable = {"failed", "cancelled"}
+        selected = [
+            row["row_index"]
+            for row in payload["rows"]
+            if row["status"] in retryable and (row_indexes is None or row["row_index"] in row_indexes)
+        ]
+        if not selected:
+            raise WorkbenchInputError("batch run has no failed or cancelled rows to retry")
+        timestamp = _utc_now()
+        with self._connect() as connection:
+            connection.executemany(
+                """
+                UPDATE batch_rows
+                SET status = ?, result_json = NULL, error = NULL, updated_at = ?
+                WHERE batch_id = ? AND row_index = ?
+                """,
+                [("pending", timestamp, batch_id, row_index) for row_index in selected],
+            )
+            self._sync_batch_progress(connection, batch_id)
+            connection.execute(
+                "UPDATE batch_runs SET status = ?, updated_at = ? WHERE id = ?",
+                ("staged", timestamp, batch_id),
+            )
+        return self.start_batch_run(batch_id=batch_id, registry=registry, runs_dir=runs_dir, values=values)
+
+    def export_batch_run(self, *, batch_id: str, export_format: str) -> bytes:
+        payload = self._batch_run_payload(batch_id, include_rows=True)
+        normalized_format = export_format.strip().lower()
+        if normalized_format == "json":
+            return (_json_dump(payload) + "\n").encode("utf-8")
+        if normalized_format == "csv":
+            lines = [
+                "batch_id,row_index,status,question,title,run_id,run_href,probability,error",
+            ]
+            for row in payload.get("rows", []):
+                result = _mapping_or_empty(row.get("result"))
+                probability_summary = _mapping_or_empty(result.get("probability_summary"))
+                question = _csv_cell(_string_or_none(_mapping_or_empty(row.get("input")).get("question")) or _string_or_none(_mapping_or_empty(row.get("input")).get("text")) or "")
+                title = _csv_cell(_string_or_none(_mapping_or_empty(row.get("input")).get("title")) or "")
+                run_id = _csv_cell(_string_or_none(result.get("run_id")) or "")
+                run_href = _csv_cell(_string_or_none(result.get("run_href")) or "")
+                probability = _csv_cell(str(probability_summary.get("top_probability") or ""))
+                error = _csv_cell(_string_or_none(row.get("error")) or "")
+                lines.append(
+                    ",".join(
+                        [
+                            _csv_cell(payload["id"]),
+                            str(row["row_index"]),
+                            _csv_cell(str(row["status"])),
+                            question,
+                            title,
+                            run_id,
+                            run_href,
+                            probability,
+                            error,
+                        ]
+                    )
+                )
+            return ("\n".join(lines) + "\n").encode("utf-8")
+        raise WorkbenchInputError("batch export format must be json or csv")
+
+    def api_control_snapshot(self, *, registry: WorkflowRegistry) -> dict[str, Any]:
+        versions = self.versions_snapshot(registry=registry)
+        batches = self.batch_snapshot(registry=registry)
+        webhooks = self.webhooks_snapshot()
+        version_example_id = _string_or_none(_mapping_or_empty((versions.get("items") or [{}])[0]).get("id")) or "{version_id}"
+        batch_example_id = _string_or_none(_mapping_or_empty((batches.get("items") or [{}])[0]).get("id")) or "{batch_id}"
+        return {
+            "schema_version": "xrtm.webui.api-control.v2",
+            "surface": {
+                "name": "Control",
+                "title": "Local control and integration plane",
+                "summary": "Run saved versions, inspect batch and webhook state, and manage local integration settings without leaving the product shell.",
+                "canonical_href": "/api",
+            },
+            "routes": {
+                "versions": {"method": "GET", "href": "/api/versions"},
+                "version_run": {"method": "POST", "pattern": "/api/versions/{version_id}/run"},
+                "runs": {"method": "GET", "pattern": "/api/runs/{run_id}"},
+                "batch": {"method": "GET", "href": "/api/batch"},
+                "batch_detail": {"method": "GET", "pattern": "/api/batch/{batch_id}"},
+                "webhooks": {"method": "GET", "href": "/api/webhooks"},
+            },
+            "counts": {
+                "versions": len(versions["items"]),
+                "batch_runs": len(batches["items"]),
+                "webhook_endpoints": len(webhooks["items"]),
+            },
+            "token_behavior": {
+                "mode": "local-no-auth",
+                "required": False,
+                "reserved_header": "X-XRTM-Token",
+                "notes": [
+                    "The local control plane does not require bearer tokens today.",
+                    "The reserved header documents the future extension point without pretending auth exists already.",
+                ],
+            },
+            "execution_policy": {
+                "no_webui_only_arbitrary_code": True,
+                "provider_categories": ["openai-compatible-endpoint", "coding-agent-cli-contract"],
+                "provider_free_role": "deterministic smoke/baseline mode",
+                "shared_services": {
+                    "authoring": "xrtm.product.workflow_authoring.WorkflowAuthoringService",
+                    "validation": "xrtm.product.launch.validate_authored_workflow",
+                    "explain": "xrtm.product.launch.explain_authored_workflow",
+                    "run": "xrtm.product.launch.run_authored_workflow",
+                    "artifacts": "xrtm.product.artifacts.ArtifactStore",
+                },
+                "summary": "The WebUI API records local state and executes through shared product workflow services; it does not create a separate runtime family.",
+            },
+            "route_examples": [
+                {
+                    "label": "Run a saved version snapshot",
+                    "method": "POST",
+                    "href": f"/api/versions/{version_example_id}/run",
+                    "body": {"user": "local-api"},
+                },
+                {
+                    "label": "Inspect a saved batch",
+                    "method": "GET",
+                    "href": f"/api/batch/{batch_example_id}",
+                },
+                {
+                    "label": "Export batch rows as CSV",
+                    "method": "GET",
+                    "href": f"/api/batch/{batch_example_id}/export?format=csv",
+                },
+            ],
+            "snapshots": {
+                "versions": versions,
+                "batch": batches,
+                "webhooks": webhooks,
+            },
+        }
+
+    def webhooks_snapshot(self) -> dict[str, Any]:
+        self.ensure_schema()
+        with self._connect() as connection:
+            endpoint_rows = connection.execute(
+                "SELECT * FROM webhook_endpoints ORDER BY created_at DESC, id DESC"
+            ).fetchall()
+            delivery_rows = connection.execute(
+                "SELECT * FROM webhook_deliveries ORDER BY created_at DESC, id DESC LIMIT 50"
+            ).fetchall()
+        return {
+            "schema_version": "xrtm.webui.webhooks.v1",
+            "surface": {
+                "name": "Webhooks",
+                "title": "Signed lifecycle webhook endpoints",
+                "summary": "Local endpoint registrations, signed delivery attempts, manual test actions, and retry state for lifecycle events.",
+            },
+            "items": [_webhook_endpoint_payload(row) for row in endpoint_rows],
+            "deliveries": [_webhook_delivery_payload(row) for row in delivery_rows],
+            "event_types": list(WEBHOOK_EVENT_TYPES),
+            "signing_algorithms": list(WEBHOOK_SIGNING_ALGORITHMS),
+            "routes": {
+                "list": {"method": "GET", "href": "/api/webhooks"},
+                "create": {"method": "POST", "href": "/api/webhooks"},
+                "update": {"method": "PATCH", "href": "/api/webhooks/{endpoint_id}"},
+                "delete": {"method": "DELETE", "href": "/api/webhooks/{endpoint_id}"},
+                "test": {"method": "POST", "href": "/api/webhooks/{endpoint_id}/test"},
+                "retry_delivery": {"method": "POST", "href": "/api/webhooks/deliveries/{delivery_id}/retry"},
+            },
+        }
+
+    def create_webhook_endpoint(self, values: Mapping[str, Any]) -> dict[str, Any]:
+        self.ensure_schema()
+        endpoint_id = f"webhook-{uuid.uuid4().hex[:12]}"
+        url = _webhook_url(values.get("url"))
+        events = _webhook_events(values.get("events", values.get("event_types", values.get("lifecycle_events"))))
+        secret = _optional_input_string(values.get("secret"), field="secret", allow_blank=True)
+        signing_algorithm = _webhook_signing_algorithm(values.get("signing_algorithm"))
+        enabled = _optional_input_bool(values.get("enabled"), field="enabled", default=True)
+        timestamp = _utc_now()
+        metadata = {
+            "created_by": "webui-local-api",
+            "delivery_worker": "not-started",
+            "secret_stored": secret is not None,
+        }
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO webhook_endpoints (
+                    id, url, enabled, event_list_json, secret, secret_hint, signing_algorithm,
+                    metadata_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    endpoint_id,
+                    url,
+                    1 if enabled else 0,
+                    _json_dump(events),
+                    secret,
+                    _secret_hint(secret),
+                    signing_algorithm,
+                    _json_dump(metadata),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            row = connection.execute("SELECT * FROM webhook_endpoints WHERE id = ?", (endpoint_id,)).fetchone()
+        assert row is not None
+        return _webhook_endpoint_payload(row)
+
+    def update_webhook_endpoint(self, endpoint_id: str, values: Mapping[str, Any]) -> dict[str, Any]:
+        self.ensure_schema()
+        existing = self._webhook_endpoint_row(endpoint_id)
+        url = _webhook_url(values["url"]) if "url" in values else str(existing["url"])
+        events = (
+            _webhook_events(values.get("events", values.get("event_types", values.get("lifecycle_events"))))
+            if any(key in values for key in ("events", "event_types", "lifecycle_events"))
+            else list(_json_load(existing["event_list_json"]))
+        )
+        enabled = (
+            _optional_input_bool(values.get("enabled"), field="enabled", default=bool(existing["enabled"]))
+            if "enabled" in values
+            else bool(existing["enabled"])
+        )
+        signing_algorithm = (
+            _webhook_signing_algorithm(values.get("signing_algorithm"))
+            if "signing_algorithm" in values
+            else str(existing["signing_algorithm"])
+        )
+        secret = (
+            _optional_input_string(values.get("secret"), field="secret", allow_blank=True)
+            if "secret" in values
+            else _string_or_none(existing["secret"])
+        )
+        metadata = _json_load(existing["metadata_json"])
+        metadata["secret_stored"] = secret is not None
+        timestamp = _utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE webhook_endpoints
+                SET url = ?, enabled = ?, event_list_json = ?, secret = ?, secret_hint = ?,
+                    signing_algorithm = ?, metadata_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    url,
+                    1 if enabled else 0,
+                    _json_dump(events),
+                    secret,
+                    _secret_hint(secret),
+                    signing_algorithm,
+                    _json_dump(metadata),
+                    timestamp,
+                    endpoint_id,
+                ),
+            )
+            row = connection.execute("SELECT * FROM webhook_endpoints WHERE id = ?", (endpoint_id,)).fetchone()
+        assert row is not None
+        return _webhook_endpoint_payload(row)
+
+    def delete_webhook_endpoint(self, endpoint_id: str) -> dict[str, Any]:
+        self.ensure_schema()
+        existing = self._webhook_endpoint_row(endpoint_id)
+        payload = _webhook_endpoint_payload(existing)
+        with self._connect() as connection:
+            connection.execute("DELETE FROM webhook_deliveries WHERE endpoint_id = ?", (endpoint_id,))
+            connection.execute("DELETE FROM webhook_endpoints WHERE id = ?", (endpoint_id,))
+        return {"deleted": True, "endpoint": payload}
+
+    def test_webhook_endpoint(self, endpoint_id: str, values: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        self.ensure_schema()
+        event_type = _optional_input_string((values or {}).get("event_type"), field="event_type") or "run.completed"
+        if event_type not in WEBHOOK_EVENT_TYPES:
+            raise WorkbenchInputError("unsupported webhook event")
+        deliveries = self.dispatch_webhook_event(
+            event_type,
+            {
+                "test": True,
+                "event_type": event_type,
+                "endpoint_id": endpoint_id,
+            },
+            endpoint_id=endpoint_id,
+        )
+        return {"endpoint_id": endpoint_id, "delivery": deliveries[0] if deliveries else None}
+
+    def retry_webhook_delivery(self, delivery_id: str) -> dict[str, Any]:
+        self.ensure_schema()
+        delivery = self._webhook_delivery_row(delivery_id)
+        endpoint = self._webhook_endpoint_row(str(delivery["endpoint_id"]))
+        if not bool(endpoint["enabled"]):
+            raise WorkbenchInputError("cannot retry delivery for a disabled webhook endpoint")
+        return self._deliver_webhook_delivery(delivery_id)
+
+    def dispatch_webhook_event(
+        self,
+        event_type: str,
+        payload: Mapping[str, Any],
+        *,
+        endpoint_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        self.ensure_schema()
+        sanitized = _redact_webhook_payload(dict(payload))
+        timestamp = _utc_now()
+        with self._connect() as connection:
+            endpoint_rows = (
+                [self._webhook_endpoint_row(endpoint_id)]
+                if endpoint_id is not None
+                else connection.execute("SELECT * FROM webhook_endpoints WHERE enabled = 1 ORDER BY created_at DESC, id DESC").fetchall()
+            )
+            delivery_specs: list[tuple[str, str]] = []
+            for endpoint in endpoint_rows:
+                events = _json_load(endpoint["event_list_json"])
+                if endpoint_id is None and event_type not in events:
+                    continue
+                delivery_id = f"delivery-{uuid.uuid4().hex[:12]}"
+                connection.execute(
+                    """
+                    INSERT INTO webhook_deliveries (
+                        id, endpoint_id, event_type, status, attempts, payload_json, response_status, error,
+                        last_attempt_at, next_attempt_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        delivery_id,
+                        str(endpoint["id"]),
+                        event_type,
+                        "queued",
+                        0,
+                        _json_dump({"event_type": event_type, "payload": sanitized}),
+                        None,
+                        None,
+                        None,
+                        None,
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+                delivery_specs.append((delivery_id, str(endpoint["id"])))
+        return [self._deliver_webhook_delivery(delivery_id) for delivery_id, _ in delivery_specs]
+
+    def _deliver_webhook_delivery(self, delivery_id: str) -> dict[str, Any]:
+        delivery = self._webhook_delivery_row(delivery_id)
+        endpoint = self._webhook_endpoint_row(str(delivery["endpoint_id"]))
+        event_payload = _mapping(_json_load(delivery["payload_json"]))
+        body = _json_dump(event_payload).encode("utf-8")
+        attempts = int(delivery["attempts"]) + 1
+        headers = {
+            "Content-Type": "application/json",
+            "X-XRTM-Event": str(delivery["event_type"]),
+            "X-XRTM-Delivery-Id": delivery_id,
+        }
+        secret = _string_or_none(endpoint["secret"])
+        if secret:
+            headers["X-XRTM-Signature"] = "sha256=" + hmac.new(
+                secret.encode("utf-8"),
+                body,
+                hashlib.sha256,
+            ).hexdigest()
+        request = Request(str(endpoint["url"]), data=body, headers=headers, method="POST")
+        status = "delivered"
+        response_status: int | None = None
+        error: str | None = None
+        try:
+            with urlopen(request, timeout=5) as response:
+                response_status = int(getattr(response, "status", response.getcode()))
+        except HTTPError as exc:
+            status = "failed"
+            response_status = exc.code
+            error = exc.read().decode("utf-8", errors="replace").strip() or str(exc)
+        except URLError as exc:
+            status = "failed"
+            error = str(exc.reason)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE webhook_deliveries
+                SET status = ?, attempts = ?, response_status = ?, error = ?, last_attempt_at = ?,
+                    next_attempt_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    attempts,
+                    response_status,
+                    error,
+                    _utc_now(),
+                    _webhook_next_attempt_at(attempts) if status == "failed" else None,
+                    _utc_now(),
+                    delivery_id,
+                ),
+            )
+            row = connection.execute("SELECT * FROM webhook_deliveries WHERE id = ?", (delivery_id,)).fetchone()
+        assert row is not None
+        return _webhook_delivery_payload(row)
 
     def playground_snapshot(self, *, runs_dir: Path, registry: WorkflowRegistry) -> dict[str, Any]:
         self.ensure_schema()
@@ -584,6 +1660,7 @@ class WebUIStateStore:
             "items": items,
             "filters": {"status": status, "provider": provider, "query": query},
             "summary_cards": _run_list_summary_cards(items),
+            "analytics": _observatory_analytics(items=items, runs_dir=runs_dir),
             "empty_state": {
                 "title": "No Observatory runs match the current filter",
                 "body": "Clear filters or start a provider-free workflow to create a run for inspection.",
@@ -630,6 +1707,7 @@ class WebUIStateStore:
         detail = read_run_detail(run_dir)
         run = _mapping(detail.get("run"))
         workflow = _mapping(detail.get("workflow"))
+        version = _mapping(detail.get("version"))
         summary = _mapping(detail.get("summary"))
         forecast_rows = _forecast_rows(detail)
         report = _report_state(run_dir, run_id, run)
@@ -645,6 +1723,7 @@ class WebUIStateStore:
             "run": run,
             "workflow": workflow,
             "summary": summary,
+            "version": version,
             "observatory": {
                 "name": "Observatory",
                 "title": "Run inspector",
@@ -710,6 +1789,7 @@ class WebUIStateStore:
                         "baseline_run_id": run_id,
                     },
                 },
+                {"label": "Open versions", "href": "/versions"},
                 {"label": "Back to workbench", "href": "/workbench"},
             ],
             "baseline_candidates": [
@@ -838,6 +1918,7 @@ class WebUIStateStore:
         baseline_run = self._indexed_run(row["baseline_run_id"]) if row["baseline_run_id"] else None
         last_run = self._indexed_run(row["last_run_id"]) if row["last_run_id"] else None
         base_safe_edit = safe_edit_model(base_blueprint)
+        canvas = self._draft_canvas(draft_id, preview_blueprint, runs_dir=runs_dir, baseline_run_id=row["baseline_run_id"])
         self.set_ui_state("last_draft_id", draft_id)
         return {
             "id": row["id"],
@@ -856,7 +1937,7 @@ class WebUIStateStore:
             "authoring": authoring_model(preview_blueprint),
             "draft_values": values,
             "safe_edit": safe_edit_model(preview_blueprint),
-            "canvas": workflow_canvas(preview_blueprint, read_run_detail(resolve_run_dir(runs_dir, row["baseline_run_id"])) if row["baseline_run_id"] else None),
+            "canvas": canvas,
             "preview_error": preview_error,
             "validation": validation,
             "baseline_run": baseline_run,
@@ -888,7 +1969,7 @@ class WebUIStateStore:
                 draft_id=draft_id,
                 workflow_name=row["draft_workflow_name"],
                 revision=row["revision"],
-                canvas=workflow_canvas(preview_blueprint),
+                canvas=canvas,
                 validation=validation,
             ),
         }
@@ -934,6 +2015,25 @@ class WebUIStateStore:
             )
         return self.get_draft_session(draft_id=draft_id, registry=registry, runs_dir=runs_dir)
 
+    def _draft_canvas(
+        self,
+        draft_id: str,
+        blueprint: WorkflowBlueprint,
+        *,
+        runs_dir: Path,
+        baseline_run_id: str | None,
+    ) -> dict[str, Any]:
+        baseline_detail = read_run_detail(resolve_run_dir(runs_dir, baseline_run_id)) if baseline_run_id else None
+        return _apply_canvas_positions(workflow_canvas(blueprint, baseline_detail), self._draft_canvas_positions(draft_id))
+
+    def _draft_canvas_positions(self, draft_id: str) -> dict[str, dict[str, int]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT node_name, x, y FROM draft_canvas_positions WHERE draft_id = ?",
+                (draft_id,),
+            ).fetchall()
+        return {str(row["node_name"]): {"x": int(row["x"]), "y": int(row["y"])} for row in rows}
+
     def patch_studio_draft_session(
         self,
         *,
@@ -942,6 +2042,22 @@ class WebUIStateStore:
         runs_dir: Path,
         values: Mapping[str, Any],
     ) -> dict[str, Any]:
+        action = values.get("action")
+        if isinstance(action, Mapping) and str(action.get("type") or "") == "move-node":
+            patched = self._move_studio_node(
+                draft_id=draft_id,
+                registry=registry,
+                runs_dir=runs_dir,
+                action=action,
+            )
+            return {
+                "schema_version": "xrtm.studio.mutation.v1",
+                "draft": patched,
+                "validation": patched.get("validation"),
+                "canvas": patched["canvas"],
+                "studio": patched["studio"],
+                "revision": patched["revision"],
+            }
         patched = self.patch_draft_session(
             draft_id=draft_id,
             registry=registry,
@@ -962,6 +2078,44 @@ class WebUIStateStore:
             "studio": validation["draft"]["studio"],
             "revision": patched["revision"],
         }
+
+    def _move_studio_node(
+        self,
+        *,
+        draft_id: str,
+        registry: WorkflowRegistry,
+        runs_dir: Path,
+        action: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        row = self._draft_row(draft_id)
+        blueprint = self._draft_blueprint(draft_id) or registry.load(row["draft_workflow_name"])
+        node_name = str(action.get("node_name") or "").strip()
+        if not node_name:
+            raise WorkbenchInputError("node_name is required")
+        node_names = set(blueprint.graph.nodes) | set(blueprint.graph.parallel_groups)
+        if node_name not in node_names:
+            raise WorkbenchInputError(f"unknown canvas node: {node_name}")
+        position = _mapping(action.get("position"))
+        x = _int_value(position.get("x"), field="position.x", minimum=0, maximum=4000)
+        y = _int_value(position.get("y"), field="position.y", minimum=0, maximum=4000)
+        timestamp = _utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO draft_canvas_positions (draft_id, node_name, x, y, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(draft_id, node_name) DO UPDATE SET
+                    x = excluded.x,
+                    y = excluded.y,
+                    updated_at = excluded.updated_at
+                """,
+                (draft_id, node_name, x, y, timestamp),
+            )
+            connection.execute(
+                "UPDATE draft_sessions SET updated_at = ? WHERE id = ?",
+                (timestamp, draft_id),
+            )
+        return self.get_draft_session(draft_id=draft_id, registry=registry, runs_dir=runs_dir)
 
     def validate_draft_session(
         self,
@@ -1215,6 +2369,306 @@ class WebUIStateStore:
         if row is None:
             return None
         return str(row["value"])
+
+    def _workflow_version_row(self, version_id: str) -> sqlite3.Row:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM workflow_versions WHERE id = ?", (version_id,)).fetchone()
+        if row is None:
+            raise FileNotFoundError(f"workflow version does not exist: {version_id}")
+        return row
+
+    def _batch_run_payload(self, batch_id: str, *, include_rows: bool) -> dict[str, Any]:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM batch_runs WHERE id = ?", (batch_id,)).fetchone()
+            rows = (
+                connection.execute(
+                    "SELECT * FROM batch_rows WHERE batch_id = ? ORDER BY row_index",
+                    (batch_id,),
+                ).fetchall()
+                if include_rows
+                else []
+            )
+        if row is None:
+            raise FileNotFoundError(f"batch run does not exist: {batch_id}")
+        payload = _batch_run_payload(row)
+        counts = self._batch_row_counts(batch_id)
+        payload["summary"] = {
+            "pending_rows": counts.get("pending", 0),
+            "running_rows": counts.get("running", 0),
+            "completed_rows": counts.get("completed", 0),
+            "failed_rows": counts.get("failed", 0),
+            "cancelled_rows": counts.get("cancelled", 0),
+        }
+        payload["routes"] = {
+            "self": f"/api/batch/{batch_id}",
+            "run": f"/api/batch/{batch_id}/run",
+            "cancel": f"/api/batch/{batch_id}",
+            "retry": f"/api/batch/{batch_id}/retry",
+            "export_json": f"/api/batch/{batch_id}/export?format=json",
+            "export_csv": f"/api/batch/{batch_id}/export?format=csv",
+        }
+        if include_rows:
+            payload["rows"] = [_batch_row_payload(batch_row) for batch_row in rows]
+        return payload
+
+    def _run_batch_worker(self, *, batch_id: str, registry: WorkflowRegistry, runs_dir: Path) -> None:
+        try:
+            payload = self._batch_run_payload(batch_id, include_rows=True)
+            definition = _mapping(payload.get("definition"))
+            blueprint = WorkflowBlueprint.from_payload(_mapping(definition.get("blueprint")))
+            context = SandboxContext(
+                context_type="workflow",
+                reference_name=str(definition.get("version_id") or payload["workflow_name"]),
+                source="version" if definition.get("version_id") else "workflow",
+                workflow_name=payload["workflow_name"],
+                blueprint=blueprint,
+            )
+            with self._connect() as connection:
+                connection.execute(
+                    "UPDATE batch_runs SET status = ?, updated_at = ? WHERE id = ?",
+                    ("running", _utc_now(), batch_id),
+                )
+            for row in payload["rows"]:
+                row_index = int(row["row_index"])
+                if self._batch_status(batch_id) == "cancel-requested":
+                    self._cancel_pending_rows(batch_id=batch_id, reason="Cancelled while batch was running.")
+                    break
+                if row["status"] != "pending":
+                    continue
+                timestamp = _utc_now()
+                with self._connect() as connection:
+                    connection.execute(
+                        """
+                        UPDATE batch_rows
+                        SET status = ?, updated_at = ?
+                        WHERE batch_id = ? AND row_index = ?
+                        """,
+                        ("running", timestamp, batch_id, row_index),
+                    )
+                try:
+                    question = _batch_question_input(row["input"], batch_id=batch_id, row_index=row_index)
+                    session = run_sandbox_session(
+                        context=context,
+                        question=question,
+                        runs_dir=runs_dir,
+                        user="xrtm-webui-batch",
+                        command=f"xrtm web batch run {batch_id}",
+                    )
+                    self._annotate_batch_run(
+                        run_dir=session.run_dir,
+                        batch_id=batch_id,
+                        row_index=row_index,
+                        workflow_name=payload["workflow_name"],
+                        version_id=_string_or_none(payload.get("version_id")),
+                    )
+                    detail = read_run_detail(session.run_dir)
+                    result_payload = self._batch_row_result_payload(
+                        batch_id=batch_id,
+                        row_index=row_index,
+                        run_id=session.run_id,
+                        workflow_name=payload["workflow_name"],
+                        version_id=_string_or_none(payload.get("version_id")),
+                        detail=detail,
+                    )
+                    with self._connect() as connection:
+                        connection.execute(
+                            """
+                            UPDATE batch_rows
+                            SET status = ?, result_json = ?, error = NULL, updated_at = ?
+                            WHERE batch_id = ? AND row_index = ?
+                            """,
+                            ("completed", _json_dump(result_payload), _utc_now(), batch_id, row_index),
+                        )
+                        self._sync_batch_progress(connection, batch_id)
+                except Exception as exc:  # pragma: no cover - defensive boundary for worker lifecycle
+                    with self._connect() as connection:
+                        connection.execute(
+                            """
+                            UPDATE batch_rows
+                            SET status = ?, result_json = ?, error = ?, updated_at = ?
+                            WHERE batch_id = ? AND row_index = ?
+                            """,
+                            (
+                                "failed",
+                                _json_dump({"batch_id": batch_id, "row_index": row_index, "error": str(exc)}),
+                                str(exc),
+                                _utc_now(),
+                                batch_id,
+                                row_index,
+                            ),
+                        )
+                        self._sync_batch_progress(connection, batch_id)
+            with self._connect() as connection:
+                final_status = self._derived_batch_status(batch_id)
+                connection.execute(
+                    "UPDATE batch_runs SET status = ?, updated_at = ? WHERE id = ?",
+                    (final_status, _utc_now(), batch_id),
+                )
+                self._sync_batch_progress(connection, batch_id)
+            final_payload = self._batch_run_payload(batch_id, include_rows=False)
+            self.dispatch_webhook_event(
+                "batch.completed",
+                {
+                    "batch_id": batch_id,
+                    "workflow_name": final_payload["workflow_name"],
+                    "version_id": final_payload["version_id"],
+                    "status": final_payload["status"],
+                    "progress": final_payload["progress"],
+                    "summary": final_payload["summary"],
+                },
+            )
+            self.refresh_indexes(runs_dir=runs_dir, registry=registry)
+        finally:
+            with self._batch_worker_lock:
+                self._batch_workers.pop(batch_id, None)
+
+    def _batch_status(self, batch_id: str) -> str:
+        with self._connect() as connection:
+            row = connection.execute("SELECT status FROM batch_runs WHERE id = ?", (batch_id,)).fetchone()
+        if row is None:
+            raise FileNotFoundError(f"batch run does not exist: {batch_id}")
+        return str(row["status"])
+
+    def _batch_row_counts(self, batch_id: str) -> dict[str, int]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT status, COUNT(*) AS count FROM batch_rows WHERE batch_id = ? GROUP BY status",
+                (batch_id,),
+            ).fetchall()
+        return {str(row["status"]): int(row["count"]) for row in rows}
+
+    def _sync_batch_progress(self, connection: sqlite3.Connection, batch_id: str) -> None:
+        rows = connection.execute(
+            "SELECT status, COUNT(*) AS count FROM batch_rows WHERE batch_id = ? GROUP BY status",
+            (batch_id,),
+        ).fetchall()
+        counts = {str(row["status"]): int(row["count"]) for row in rows}
+        current = sum(counts.get(status, 0) for status in ("completed", "failed", "cancelled"))
+        total = sum(counts.values())
+        connection.execute(
+            "UPDATE batch_runs SET progress_current = ?, progress_total = ?, updated_at = ? WHERE id = ?",
+            (current, total, _utc_now(), batch_id),
+        )
+
+    def _derived_batch_status(self, batch_id: str) -> str:
+        status = self._batch_status(batch_id)
+        counts = self._batch_row_counts(batch_id)
+        if status == "cancel-requested":
+            return "cancelled"
+        pending = counts.get("pending", 0) + counts.get("running", 0)
+        failed = counts.get("failed", 0)
+        completed = counts.get("completed", 0)
+        cancelled = counts.get("cancelled", 0)
+        if pending:
+            return "running"
+        if cancelled and not completed and not failed:
+            return "cancelled"
+        if failed and completed:
+            return "completed-with-errors"
+        if failed:
+            return "failed"
+        if completed:
+            return "completed"
+        return "staged"
+
+    def _cancel_pending_rows(self, *, batch_id: str, reason: str) -> None:
+        timestamp = _utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE batch_rows
+                SET status = ?, error = ?, updated_at = ?
+                WHERE batch_id = ? AND status = ?
+                """,
+                ("cancelled", reason, timestamp, batch_id, "pending"),
+            )
+            self._sync_batch_progress(connection, batch_id)
+
+    def _annotate_batch_run(
+        self,
+        *,
+        run_dir: Path,
+        batch_id: str,
+        row_index: int,
+        workflow_name: str,
+        version_id: str | None,
+    ) -> None:
+        sandbox_path = run_dir / "sandbox_session.json"
+        if sandbox_path.exists():
+            payload = json.loads(sandbox_path.read_text(encoding="utf-8"))
+            labeling = dict(payload.get("labeling", {}))
+            labeling.update(
+                {
+                    "classification": "batch",
+                    "surface": "batch",
+                    "display_label": "Batch row execution",
+                    "batch": True,
+                }
+            )
+            payload["labeling"] = labeling
+            payload["batch"] = {
+                "batch_id": batch_id,
+                "row_index": row_index,
+                "workflow_name": workflow_name,
+                "version_id": version_id,
+            }
+            sandbox_path.write_text(_json_dump(payload) + "\n", encoding="utf-8")
+        batch_row_path = run_dir / "batch_row.json"
+        batch_row_payload = {
+            "batch_id": batch_id,
+            "row_index": row_index,
+            "workflow_name": workflow_name,
+            "version_id": version_id,
+        }
+        batch_row_path.write_text(_json_dump(batch_row_payload) + "\n", encoding="utf-8")
+        run_path = run_dir / "run.json"
+        if run_path.exists():
+            run_payload = json.loads(run_path.read_text(encoding="utf-8"))
+            artifacts = run_payload.get("artifacts", {})
+            if isinstance(artifacts, dict):
+                artifacts["batch_row.json"] = str(batch_row_path)
+            run_payload["artifacts"] = artifacts
+            run_path.write_text(_json_dump(run_payload) + "\n", encoding="utf-8")
+
+    def _batch_row_result_payload(
+        self,
+        *,
+        batch_id: str,
+        row_index: int,
+        run_id: str,
+        workflow_name: str,
+        version_id: str | None,
+        detail: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        summary = _mapping(detail.get("summary"))
+        eval_payload = _mapping(detail.get("eval"))
+        forecast_rows = _forecast_rows(detail)
+        return {
+            "batch_id": batch_id,
+            "row_index": row_index,
+            "run_id": run_id,
+            "run_href": f"/runs/{run_id}",
+            "workflow_name": workflow_name,
+            "version_id": version_id,
+            "summary": summary,
+            "probability_summary": _probability_summary(forecast_rows),
+            "score_summary": _score_summary(summary=summary, eval_payload=eval_payload, train_payload=_mapping(detail.get("train"))),
+            "uncertainty_summary": _uncertainty_summary(summary=summary, eval_payload=eval_payload),
+        }
+
+    def _webhook_endpoint_row(self, endpoint_id: str) -> sqlite3.Row:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM webhook_endpoints WHERE id = ?", (endpoint_id,)).fetchone()
+        if row is None:
+            raise FileNotFoundError(f"webhook endpoint does not exist: {endpoint_id}")
+        return row
+
+    def _webhook_delivery_row(self, delivery_id: str) -> sqlite3.Row:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM webhook_deliveries WHERE id = ?", (delivery_id,)).fetchone()
+        if row is None:
+            raise FileNotFoundError(f"webhook delivery does not exist: {delivery_id}")
+        return row
 
     def _draft_row(self, draft_id: str) -> sqlite3.Row:
         with self._connect() as connection:
@@ -1528,6 +2982,366 @@ def _default_draft_values(blueprint: WorkflowBlueprint) -> dict[str, str]:
     return values
 
 
+
+
+def _workflow_version_payload(row: sqlite3.Row, *, include_snapshot: bool) -> dict[str, Any]:
+    version_id = str(row["id"])
+    payload: dict[str, Any] = {
+        "id": version_id,
+        "workflow_name": str(row["workflow_name"]),
+        "parent_id": _string_or_none(row["parent_id"]),
+        "label": str(row["label"]),
+        "is_default": bool(_row_value(row, "is_default", 0)),
+        "source": str(row["source"]),
+        "draft_id": _string_or_none(row["draft_id"]),
+        "source_workflow_name": _string_or_none(row["source_workflow_name"]),
+        "run_provenance": _json_load(_row_value(row, "run_provenance_json", "{}")),
+        "metadata": _json_load(row["metadata_json"]),
+        "created_at": str(row["created_at"]),
+        "href": "/versions",
+        "api_href": f"/api/versions/{version_id}",
+        "routes": {
+            "get": {"method": "GET", "href": f"/api/versions/{version_id}"},
+            "diff": {"method": "GET", "href": f"/api/versions/{version_id}/diff/{{other_version_id}}"},
+            "rollback": {"method": "POST", "href": f"/api/versions/{version_id}/rollback"},
+            "run": {"method": "POST", "href": f"/api/versions/{version_id}/run"},
+            "set_default": {"method": "PATCH", "href": f"/api/versions/{version_id}"},
+        },
+    }
+    if include_snapshot:
+        payload["blueprint"] = _json_load(row["blueprint_json"])
+        payload["graph"] = _json_load(row["graph_json"])
+        payload["config"] = _json_load(_row_value(row, "config_json", "{}"))
+        payload["canvas"] = _json_load(_row_value(row, "canvas_json", "{}"))
+    return payload
+
+
+def _row_value(row: sqlite3.Row, key: str, default: Any) -> Any:
+    return row[key] if key in row.keys() and row[key] is not None else default
+
+
+def _workflow_version_config(blueprint_payload: Mapping[str, Any]) -> dict[str, Any]:
+    graph = _mapping(blueprint_payload.get("graph"))
+    nodes = _mapping(graph.get("nodes"))
+    return {
+        "runtime": _mapping(blueprint_payload.get("runtime")),
+        "questions": _mapping(blueprint_payload.get("questions")),
+        "artifacts": _mapping(blueprint_payload.get("artifacts")),
+        "scoring": _mapping(blueprint_payload.get("scoring")),
+        "node_configs": {
+            node_name: _mapping(_mapping(node_payload).get("config"))
+            for node_name, node_payload in nodes.items()
+            if _mapping(_mapping(node_payload).get("config"))
+        },
+    }
+
+
+def _version_default_flag(value: Any, *, default: bool | None) -> bool | None:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise WorkbenchInputError("set_default must be a boolean")
+    return value
+
+
+def _version_rollback_mode(value: Any) -> str:
+    mode = _optional_input_string(value, field="mode") or "version"
+    if mode == "new_version":
+        mode = "version"
+    if mode not in {"version", "workflow"}:
+        raise WorkbenchInputError("mode must be 'version' or 'workflow'")
+    return mode
+
+
+def _workflow_version_run_provenance(
+    *, version_id: str | None, parent_id: str | None, mode: str
+) -> dict[str, Any]:
+    return {
+        "version_id": version_id,
+        "parent_id": parent_id,
+        "mode": mode,
+        "execution_linkage": {
+            "status": "metadata-only",
+            "summary": "Version snapshots can be referenced by API/batch metadata; no run executor is implicitly launched.",
+        },
+        "run_reference_fields": ["version_id", "workflow_name"],
+    }
+
+
+def _batch_version_provenance(version: sqlite3.Row | None) -> dict[str, Any]:
+    if version is None:
+        return {
+            "version_id": None,
+            "execution_linkage": "workflow-name-only",
+            "summary": "This batch definition references a workflow name, not an immutable version snapshot.",
+        }
+    return {
+        "version_id": str(version["id"]),
+        "workflow_name": str(version["workflow_name"]),
+        "version_label": str(version["label"]),
+        "is_default": bool(_row_value(version, "is_default", 0)),
+        "run_provenance": _json_load(_row_value(version, "run_provenance_json", "{}")),
+        "execution_linkage": "batch-definition-only",
+        "summary": "Dry-run batch rows retain version metadata; execution is not linked to a completed run here.",
+    }
+
+
+def _json_diff(before: Any, after: Any, *, path: str = "") -> list[dict[str, Any]]:
+    if isinstance(before, Mapping) and isinstance(after, Mapping):
+        changes: list[dict[str, Any]] = []
+        keys = sorted(set(before) | set(after))
+        for key in keys:
+            child_path = f"{path}.{key}" if path else str(key)
+            if key not in before:
+                changes.append({"path": child_path, "kind": "added", "before": None, "after": after[key]})
+            elif key not in after:
+                changes.append({"path": child_path, "kind": "removed", "before": before[key], "after": None})
+            else:
+                changes.extend(_json_diff(before[key], after[key], path=child_path))
+        return changes
+    if isinstance(before, list) and isinstance(after, list):
+        changes = []
+        max_length = max(len(before), len(after))
+        for index in range(max_length):
+            child_path = f"{path}[{index}]"
+            if index >= len(before):
+                changes.append({"path": child_path, "kind": "added", "before": None, "after": after[index]})
+            elif index >= len(after):
+                changes.append({"path": child_path, "kind": "removed", "before": before[index], "after": None})
+            else:
+                changes.extend(_json_diff(before[index], after[index], path=child_path))
+        return changes
+    if before == after:
+        return []
+    return [{"path": path or "$", "kind": "changed", "before": before, "after": after}]
+
+
+def _batch_run_payload(row: sqlite3.Row) -> dict[str, Any]:
+    total = int(row["progress_total"])
+    current = int(row["progress_current"])
+    return {
+        "id": str(row["id"]),
+        "workflow_name": str(row["workflow_name"]),
+        "version_id": _string_or_none(row["version_id"]),
+        "label": str(row["label"]),
+        "status": str(row["status"]),
+        "progress": {
+            "current": current,
+            "total": total,
+            "percent": (current / total * 100) if total else 0.0,
+        },
+        "row_count": int(row["row_count"]),
+        "dry_run": bool(row["dry_run"]),
+        "definition": _json_load(row["definition_json"]),
+        "created_at": str(row["created_at"]),
+        "updated_at": str(row["updated_at"]),
+    }
+
+
+def _batch_row_payload(row: sqlite3.Row) -> dict[str, Any]:
+    result = _json_load(row["result_json"]) if row["result_json"] is not None else None
+    return {
+        "batch_id": str(row["batch_id"]),
+        "row_index": int(row["row_index"]),
+        "status": str(row["status"]),
+        "input": _json_load(row["input_json"]),
+        "result": result,
+        "error": _string_or_none(row["error"]),
+        "created_at": str(row["created_at"]),
+        "updated_at": str(row["updated_at"]),
+        "run_id": _string_or_none(_mapping_or_empty(result).get("run_id")),
+        "run_href": _string_or_none(_mapping_or_empty(result).get("run_href")),
+    }
+
+
+def _batch_rows_from_payload(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, str):
+        raw_rows = [line.strip() for line in value.splitlines() if line.strip()]
+    elif isinstance(value, list):
+        raw_rows = value
+    else:
+        raise WorkbenchInputError("rows must be a pasted string or list")
+    if not raw_rows:
+        raise WorkbenchInputError("rows must include at least one row")
+    if len(raw_rows) > 250:
+        raise WorkbenchInputError("rows may not include more than 250 rows")
+    normalized: list[dict[str, Any]] = []
+    for index, raw_row in enumerate(raw_rows, start=1):
+        if isinstance(raw_row, Mapping):
+            normalized.append(dict(raw_row))
+            continue
+        if isinstance(raw_row, str):
+            try:
+                decoded = json.loads(raw_row)
+            except json.JSONDecodeError:
+                normalized.append({"text": raw_row})
+                continue
+            if isinstance(decoded, Mapping):
+                normalized.append(dict(decoded))
+                continue
+        raise WorkbenchInputError(f"row {index} must be an object or text row")
+    return normalized
+
+
+def _batch_row_indexes_from_payload(value: Any) -> list[int] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value:
+        raise WorkbenchInputError("row_indexes must be a non-empty list when provided")
+    indexes: list[int] = []
+    for item in value:
+        if not isinstance(item, int) or item <= 0:
+            raise WorkbenchInputError("row_indexes must contain positive integers")
+        indexes.append(item)
+    return indexes
+
+
+def _batch_question_input(row: Mapping[str, Any], *, batch_id: str, row_index: int) -> SandboxQuestionInput:
+    prompt = _string_or_none(row.get("question")) or _string_or_none(row.get("text")) or _string_or_none(row.get("prompt"))
+    if not prompt:
+        raise WorkbenchInputError("batch row must include question, text, or prompt")
+    raw_tags = row.get("tags")
+    tags = tuple(str(tag).strip() for tag in raw_tags) if isinstance(raw_tags, list) else ()
+    return SandboxQuestionInput(
+        prompt=prompt,
+        title=_string_or_none(row.get("title")),
+        resolution_criteria=_string_or_none(row.get("resolution_criteria")),
+        question_id=_string_or_none(row.get("question_id")) or f"{batch_id}-{row_index}",
+        tags=(*tags, "batch"),
+    )
+
+
+def _mapping_or_empty(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _csv_cell(value: str) -> str:
+    escaped = value.replace('"', '""')
+    return f'"{escaped}"'
+
+
+def _webhook_endpoint_payload(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "url": str(row["url"]),
+        "enabled": bool(row["enabled"]),
+        "events": _json_load(row["event_list_json"]),
+        "signing": {
+            "algorithm": str(row["signing_algorithm"]),
+            "secret_set": row["secret"] is not None,
+            "secret_hint": _string_or_none(row["secret_hint"]),
+        },
+        "metadata": _json_load(row["metadata_json"]),
+        "created_at": str(row["created_at"]),
+        "updated_at": str(row["updated_at"]),
+    }
+
+
+def _webhook_delivery_payload(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "endpoint_id": str(row["endpoint_id"]),
+        "event_type": str(row["event_type"]),
+        "status": str(row["status"]),
+        "attempts": int(row["attempts"]),
+        "payload": _json_load(row["payload_json"]),
+        "response_status": row["response_status"],
+        "error": _string_or_none(row["error"]),
+        "last_attempt_at": _string_or_none(row["last_attempt_at"]),
+        "next_attempt_at": _string_or_none(row["next_attempt_at"]),
+        "created_at": str(row["created_at"]),
+        "updated_at": str(row["updated_at"]),
+    }
+
+
+def _webhook_next_attempt_at(attempts: int) -> str | None:
+    if attempts >= 3:
+        return None
+    return (datetime.now(UTC) + timedelta(minutes=5)).isoformat()
+
+
+def _redact_webhook_payload(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized_key = str(key).lower()
+            if any(token in normalized_key for token in ("secret", "api_key", "token", "authorization")):
+                redacted[str(key)] = "[redacted]"
+            else:
+                redacted[str(key)] = _redact_webhook_payload(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_webhook_payload(item) for item in value]
+    return value
+
+
+def _webhook_url(value: Any) -> str:
+    url = _required_input_string(value, field="url")
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise WorkbenchInputError("url must be an http or https URL")
+    if parsed.username or parsed.password:
+        raise WorkbenchInputError("url must not include credentials")
+    return url
+
+
+def _webhook_events(value: Any) -> list[str]:
+    if value is None:
+        return ["run.completed"]
+    raw_events = [value] if isinstance(value, str) else value
+    if not isinstance(raw_events, list) or not raw_events:
+        raise WorkbenchInputError("events must be a non-empty list")
+    events: list[str] = []
+    for event in raw_events:
+        if not isinstance(event, str) or not event.strip():
+            raise WorkbenchInputError("events must contain non-empty strings")
+        normalized = event.strip()
+        if normalized not in WEBHOOK_EVENT_TYPES:
+            raise WorkbenchInputError(f"unsupported webhook event: {normalized}")
+        if normalized not in events:
+            events.append(normalized)
+    return events
+
+
+def _webhook_signing_algorithm(value: Any) -> str:
+    algorithm = _optional_input_string(value, field="signing_algorithm") or WEBHOOK_SIGNING_ALGORITHMS[0]
+    if algorithm not in WEBHOOK_SIGNING_ALGORITHMS:
+        raise WorkbenchInputError("signing_algorithm must be hmac-sha256")
+    return algorithm
+
+
+def _secret_hint(secret: str | None) -> str | None:
+    if secret is None:
+        return None
+    if len(secret) <= 8:
+        return "set"
+    return f"{secret[:4]}…{secret[-4:]}"
+
+
+def _required_input_string(value: Any, *, field: str) -> str:
+    text = _optional_input_string(value, field=field)
+    if not text:
+        raise WorkbenchInputError(f"{field} is required")
+    return text
+
+
+def _optional_input_string(value: Any, *, field: str, allow_blank: bool = False) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise WorkbenchInputError(f"{field} must be a string when provided")
+    text = value.strip()
+    if not text and not allow_blank:
+        return None
+    return text or None
+
+
+def _optional_input_bool(value: Any, *, field: str, default: bool) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise WorkbenchInputError(f"{field} must be a boolean")
+    return value
 
 
 def _playground_context_type_or_default(value: Any, *, default: str) -> str:
@@ -1930,10 +3744,296 @@ def _run_list_summary_cards(items: list[dict[str, Any]]) -> list[dict[str, Any]]
     ]
 
 
+def _observatory_analytics(*, items: list[dict[str, Any]], runs_dir: Path) -> dict[str, Any]:
+    """Aggregate released run artifacts into dashboard-ready Observatory analytics."""
+
+    bin_count = 10
+    uncertainty_bins: list[dict[str, Any]] = [
+        {
+            "index": index,
+            "label": f"{index * 10}-{(index + 1) * 10}%",
+            "lower": index / bin_count,
+            "upper": (index + 1) / bin_count,
+            "count": 0,
+            "observed_true": 0,
+            "probability_sum": 0.0,
+        }
+        for index in range(bin_count)
+    ]
+    workflow_scores: dict[str, dict[str, Any]] = {}
+    version_scores: dict[str, dict[str, Any]] = {}
+    brier_scores: list[float] = []
+    ece_scores: list[float] = []
+    log_scores: list[float] = []
+    score_pairs: list[tuple[float, bool]] = []
+    probabilities: list[float] = []
+    score_history: list[dict[str, Any]] = []
+    resolved_rows = 0
+    row_count = 0
+
+    for item in items[:50]:
+        run_id = item.get("run_id")
+        if not run_id:
+            continue
+        run_dir = resolve_run_dir(runs_dir, str(run_id))
+        detail = read_run_detail(run_dir)
+        workflow = _mapping(detail.get("workflow"))
+        workflow_name = str(workflow.get("name") or workflow.get("title") or "unknown")
+        row_summary = workflow_scores.setdefault(
+            workflow_name,
+            {
+                "workflow": workflow_name,
+                "label": workflow.get("title") or workflow_name,
+                "runs": 0,
+                "brier_scores": [],
+                "ece_scores": [],
+                "log_scores": [],
+                "score_pairs": [],
+                "probabilities": [],
+            },
+        )
+        version_ref = _run_version_reference(run_dir=run_dir)
+        version_summary: dict[str, Any] | None = None
+        if version_ref is not None:
+            version_summary = version_scores.setdefault(
+                version_ref["version_id"],
+                {
+                    "version_id": version_ref["version_id"],
+                    "label": version_ref["label"],
+                    "workflow_name": version_ref["workflow_name"],
+                    "runs": 0,
+                    "brier_scores": [],
+                    "ece_scores": [],
+                    "log_scores": [],
+                    "score_pairs": [],
+                    "probabilities": [],
+                },
+            )
+        row_summary["runs"] += 1
+        if version_summary is not None:
+            version_summary["runs"] += 1
+        summary = _mapping(detail.get("summary"))
+        eval_summary = _mapping(summary.get("eval"))
+        eval_payload = _mapping(detail.get("eval"))
+        eval_stats = _mapping(eval_payload.get("summary_statistics"))
+        brier = _first_float(eval_summary.get("brier_score"), eval_stats.get("brier_score"))
+        ece = _first_float(eval_summary.get("ece"), eval_stats.get("ece"), eval_summary.get("calibration_error"))
+        log_score = _first_float(eval_summary.get("log_score"), eval_stats.get("log_score"))
+        if brier is not None:
+            brier_scores.append(brier)
+            row_summary["brier_scores"].append(brier)
+            if version_summary is not None:
+                version_summary["brier_scores"].append(brier)
+        if ece is not None:
+            ece_scores.append(ece)
+            row_summary["ece_scores"].append(ece)
+            if version_summary is not None:
+                version_summary["ece_scores"].append(ece)
+        if log_score is not None:
+            log_scores.append(log_score)
+            row_summary["log_scores"].append(log_score)
+            if version_summary is not None:
+                version_summary["log_scores"].append(log_score)
+        if brier is not None or ece is not None or log_score is not None:
+            score_history.append(
+                {
+                    "run_id": run_id,
+                    "updated_at": item.get("updated_at"),
+                    "workflow": workflow_name,
+                    "version_id": version_ref["version_id"] if version_ref is not None else None,
+                    "label": version_ref["label"] if version_ref is not None else workflow.get("title") or workflow_name,
+                    "brier": brier,
+                    "ece": ece,
+                    "log_score": log_score,
+                }
+            )
+        for row in _forecast_rows(detail):
+            probability = row.get("probability")
+            if not isinstance(probability, (int, float)):
+                continue
+            probability_float = max(0.0, min(1.0, float(probability)))
+            probabilities.append(probability_float)
+            row_summary["probabilities"].append(probability_float)
+            if version_summary is not None:
+                version_summary["probabilities"].append(probability_float)
+            row_count += 1
+            index = min(bin_count - 1, int(probability_float * bin_count))
+            uncertainty_bins[index]["count"] += 1
+            uncertainty_bins[index]["probability_sum"] += probability_float
+            if isinstance(row.get("outcome"), bool):
+                outcome = bool(row["outcome"])
+                resolved_rows += 1
+                score_pairs.append((probability_float, outcome))
+                row_summary["score_pairs"].append((probability_float, outcome))
+                if version_summary is not None:
+                    version_summary["score_pairs"].append((probability_float, outcome))
+                uncertainty_bins[index]["observed_true"] += 1 if outcome else 0
+
+    score_summary = summarize_binary_forecasts(score_pairs, num_bins=bin_count)
+    workflow_rows = []
+    for value in workflow_scores.values():
+        workflow_score_summary = summarize_binary_forecasts(value["score_pairs"], num_bins=bin_count)
+        workflow_brier = _first_float(workflow_score_summary.get("brier_score"), _mean(value["brier_scores"]))
+        workflow_ece = _first_float(workflow_score_summary.get("ece"), _mean(value["ece_scores"]))
+        workflow_log_score = _first_float(workflow_score_summary.get("log_score"), _mean(value["log_scores"]))
+        workflow_rows.append(
+            {
+                "workflow": value["workflow"],
+                "label": value["label"],
+                "runs": value["runs"],
+                "brier": workflow_brier,
+                "ece": workflow_ece,
+                "log_score": workflow_log_score,
+                "avg_probability": _mean(value["probabilities"]),
+                "status": _calibration_status(workflow_brier, workflow_ece),
+            }
+        )
+    workflow_rows.sort(key=lambda row: (row["brier"] is None, row["brier"] if row["brier"] is not None else 999.0))
+    version_rows = []
+    for value in version_scores.values():
+        version_score_summary = summarize_binary_forecasts(value["score_pairs"], num_bins=bin_count)
+        version_brier = _first_float(version_score_summary.get("brier_score"), _mean(value["brier_scores"]))
+        version_ece = _first_float(version_score_summary.get("ece"), _mean(value["ece_scores"]))
+        version_log_score = _first_float(version_score_summary.get("log_score"), _mean(value["log_scores"]))
+        version_rows.append(
+            {
+                "version_id": value["version_id"],
+                "label": value["label"],
+                "workflow_name": value["workflow_name"],
+                "runs": value["runs"],
+                "brier": version_brier,
+                "ece": version_ece,
+                "log_score": version_log_score,
+                "avg_probability": _mean(value["probabilities"]),
+                "status": _calibration_status(version_brier, version_ece),
+            }
+        )
+    version_rows.sort(key=lambda row: (row["brier"] is None, row["brier"] if row["brier"] is not None else 999.0))
+    resolved_score_count = int(score_summary["resolved_count"])
+    return {
+        "available": bool(items),
+        "resolved_rows": resolved_rows,
+        "forecast_rows": row_count,
+        "calibration_curve": score_summary["calibration_curve"],
+        "uncertainty_distribution": [
+            {
+                "label": bucket["label"],
+                "count": bucket["count"],
+                "observed_true": bucket["observed_true"],
+                "mean_probability": (bucket["probability_sum"] / bucket["count"]) if bucket["count"] else None,
+            }
+            for bucket in uncertainty_bins
+        ],
+        "summary": {
+            "brier": _first_float(score_summary.get("brier_score"), _mean(brier_scores)),
+            "ece": _first_float(score_summary.get("ece"), _mean(ece_scores)),
+            "log_score": _first_float(score_summary.get("log_score"), _mean(log_scores)),
+            "average_probability": _mean(probabilities),
+            "reliability": score_summary.get("reliability") if resolved_score_count else None,
+            "resolution": score_summary.get("resolution") if resolved_score_count else None,
+            "uncertainty": score_summary.get("uncertainty") if resolved_score_count else None,
+            "resolved_score_rows": resolved_score_count,
+            "workflow_count": len(workflow_rows),
+            "version_count": len(version_rows),
+            "run_count": len(items),
+        },
+        "workflow_scores": workflow_rows,
+        "version_scores": version_rows,
+        "score_history": list(reversed(score_history[-12:])),
+        "empty_state": {
+            "title": "Not enough resolved forecast evidence",
+            "body": "Run batches or workflows with probabilities and outcomes to populate calibration and uncertainty analytics.",
+        },
+    }
+
+
+def _run_version_reference(*, run_dir: Path) -> dict[str, str] | None:
+    version_path = run_dir / "version_run.json"
+    if version_path.exists():
+        payload = _mapping(json.loads(version_path.read_text(encoding="utf-8")))
+        version_id = _string_or_none(payload.get("version_id"))
+        if version_id:
+            return {
+                "version_id": version_id,
+                "label": _string_or_none(payload.get("label")) or version_id,
+                "workflow_name": _string_or_none(payload.get("workflow_name")) or "unknown",
+            }
+    batch_path = run_dir / "batch_row.json"
+    if batch_path.exists():
+        payload = _mapping(json.loads(batch_path.read_text(encoding="utf-8")))
+        version_id = _string_or_none(payload.get("version_id"))
+        if version_id:
+            return {
+                "version_id": version_id,
+                "label": version_id,
+                "workflow_name": _string_or_none(payload.get("workflow_name")) or "unknown",
+            }
+    return None
+
+
+def _first_float(*values: Any) -> float | None:
+    for value in values:
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
+
+
+def _apply_canvas_positions(canvas: dict[str, Any], positions: Mapping[str, Mapping[str, int]]) -> dict[str, Any]:
+    if not positions:
+        return canvas
+    updated = dict(canvas)
+    nodes = []
+    applied = False
+    for node in canvas.get("nodes", []):
+        next_node = dict(node)
+        node_name = str(next_node.get("name") or "")
+        position = positions.get(node_name)
+        if position is not None:
+            x = int(position["x"])
+            y = int(position["y"])
+            next_node["x"] = x
+            next_node["y"] = y
+            next_node["position"] = {"x": x, "y": y, "source": "draft-canvas-layout", "persisted": True}
+            next_node["position_persisted"] = True
+            applied = True
+        nodes.append(next_node)
+    updated["nodes"] = nodes
+    layout = dict(_mapping(updated.get("layout")))
+    layout["positions_persisted"] = applied
+    layout["position_source"] = "draft-canvas-layout" if applied else layout.get("position_source", "derived")
+    layout["note"] = (
+        "Canvas positions include persisted draft layout coordinates."
+        if applied
+        else layout.get("note", "Canvas positions are derived from graph topology.")
+    )
+    updated["layout"] = layout
+    return updated
+
+
+def _int_value(value: Any, *, field: str, minimum: int, maximum: int) -> int:
+    if not isinstance(value, int):
+        raise WorkbenchInputError(f"{field} must be an integer")
+    if value < minimum or value > maximum:
+        raise WorkbenchInputError(f"{field} must be between {minimum} and {maximum}")
+    return value
+
+
+def _calibration_status(brier: float | None, ece: float | None) -> str:
+    if brier is None and ece is None:
+        return "insufficient evidence"
+    score = brier if brier is not None else ece
+    if score is not None and score <= 0.15:
+        return "well calibrated"
+    if score is not None and score <= 0.25:
+        return "calibrated"
+    return "needs review"
+
+
 def _decorate_run_list_item(run: dict[str, Any]) -> dict[str, Any]:
     item = dict(run)
     run_id = str(item.get("run_id") or "")
     workflow = _mapping(item.get("workflow"))
+    version = _mapping(item.get("version"))
     summary = _mapping(item.get("summary"))
     artifacts = _mapping(item.get("artifacts"))
     report_path = artifacts.get("report.html")
@@ -1951,6 +4051,8 @@ def _decorate_run_list_item(run: dict[str, Any]) -> dict[str, Any]:
             f"{item.get('status') or 'unknown'} · {item.get('provider') or 'unknown provider'}"
             f" · {_count_label(int(forecast_count), 'forecast') if isinstance(forecast_count, int) else 'forecast count unknown'}"
         ),
+        "version_label": version.get("label") or version.get("version_id"),
+        "version_id": version.get("version_id"),
         "inspect_href": f"/runs/{run_id}",
         "alias_href": f"/observatory/{run_id}",
         "report_available": report_available,
@@ -2615,9 +4717,10 @@ def _first_non_empty(*values: Any) -> Any:
 
 
 def _brier_score(probability: Any, outcome: Any) -> float | None:
-    if isinstance(probability, (int, float)) and isinstance(outcome, bool):
-        return (float(probability) - float(outcome)) ** 2
-    return None
+    try:
+        return _BRIER_SCORE_EVALUATOR.score(probability, outcome)
+    except ValueError:
+        return None
 
 
 
