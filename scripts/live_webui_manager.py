@@ -32,6 +32,14 @@ DEFAULT_WORKFLOWS_DIR = Path(".xrtm/workflows")
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 30.0
 DEFAULT_STOP_TIMEOUT_SECONDS = 10.0
 DEFAULT_LOG_LINES = 50
+ROUTE_SMOKE_PATHS = (
+    "/studio?mode=scratch",
+    "/playground",
+    "/api/studio",
+    "/api/playground",
+    "/static/app.js",
+    "/static/app.css",
+)
 _INSTANCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -231,6 +239,7 @@ class LiveWebUIManager:
                 "log_file": str(self.paths.log_file),
                 "pid": process.pid,
                 "pid_start_time": pid_start_time,
+                "repo_head": self.current_repo_head(),
                 "started_at": _utc_now(),
                 "status": "starting",
             }
@@ -283,7 +292,11 @@ class LiveWebUIManager:
         )
         active = self._active_process(state)
         port_open = self.port_open(config.host, config.port)
+        started_repo_head = state.get("repo_head") if isinstance(state.get("repo_head"), str) else None
+        current_repo_head = self.current_repo_head()
         status = "running" if active is not None else "stopped"
+        if active is not None and started_repo_head and current_repo_head and started_repo_head != current_repo_head:
+            status = "running-outdated-checkout"
         if active is None and port_open:
             status = "unmanaged-port-active"
         return {
@@ -298,6 +311,8 @@ class LiveWebUIManager:
             "state_file": str(self.paths.state_file),
             "runs_dir": str(config.runs_dir),
             "workflows_dir": str(config.workflows_dir),
+            "repo_head": started_repo_head,
+            "current_repo_head": current_repo_head,
         }
 
     def status_text(self) -> str:
@@ -312,8 +327,14 @@ class LiveWebUIManager:
             f"Runs:   {snapshot['runs_dir']}",
             f"Flows:  {snapshot['workflows_dir']}",
         ]
+        if snapshot.get("repo_head"):
+            lines.append(f"Start:  {snapshot['repo_head']}")
+        if snapshot.get("current_repo_head"):
+            lines.append(f"HEAD:   {snapshot['current_repo_head']}")
         if snapshot["status"] == "unmanaged-port-active":
             lines.append("Note: the URL is active, but not with the manager-owned PID.")
+        if snapshot["status"] == "running-outdated-checkout":
+            lines.append("Note: the managed process is serving an older checkout than the current repo HEAD; restart required.")
         return "\n".join(lines)
 
     def logs_text(self, *, lines: int = DEFAULT_LOG_LINES) -> str:
@@ -334,6 +355,19 @@ class LiveWebUIManager:
             return None
         return int(suffix[19])
 
+    def current_repo_head(self) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(self.paths.repo_root), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        head = result.stdout.strip()
+        return head or None
+
     def wait_for_ready(self, url: str, *, process: subprocess.Popen[str], timeout: float) -> None:
         deadline = time.monotonic() + timeout
         health_url = f"{url}/api/health"
@@ -345,12 +379,26 @@ class LiveWebUIManager:
             try:
                 with urlopen(health_url, timeout=1.0) as response:
                     if response.status == 200:
+                        self.route_smoke(url)
                         return
             except URLError:
                 time.sleep(0.5)
                 continue
             time.sleep(0.5)
         raise LiveWebUIError(f"Timed out waiting for {health_url}.\n\n{self.tail_logs()}")
+
+    def route_smoke(self, url: str) -> None:
+        for path in ROUTE_SMOKE_PATHS:
+            target = f"{url}{path}"
+            try:
+                with urlopen(target, timeout=2.0) as response:
+                    if response.status != 200:
+                        raise LiveWebUIError(
+                            f"live-webui route smoke expected 200 from {target}, got {response.status}.\n\n{self.tail_logs()}"
+                        )
+                    response.read(1)
+            except URLError as exc:
+                raise LiveWebUIError(f"live-webui route smoke failed for {target}.\n\n{self.tail_logs()}") from exc
 
     def tail_logs(self, *, lines: int = DEFAULT_LOG_LINES) -> str:
         if not self.paths.log_file.exists():
