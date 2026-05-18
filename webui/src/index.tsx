@@ -12,6 +12,10 @@ type JsonObject = Record<string, any>;
 type Route = { path: string; search: string };
 type ThemeMode = "system" | "light" | "dark";
 type ResolvedTheme = "light" | "dark";
+type StudioRouteIntent =
+  | { creation_mode: "scratch" }
+  | { creation_mode: "template"; template_id: string | null }
+  | { creation_mode: "clone"; source_workflow_name: string };
 
 const ReactDOMClient = ReactDOM as typeof import("react-dom/client") & typeof import("react-dom");
 const { useEffect, useMemo, useState } = React;
@@ -4623,7 +4627,27 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   const showStudioDraftIde = isStudio && Boolean(draftId);
   const resumeTarget = (shell?.overview?.resume_target || shell?.hub?.resume_target || {}) as JsonObject;
   const explicitStudioIntent = Boolean(requestedWorkflow || requestedTemplate || requestedMode);
-  const showStudioSetup = !showStudioDraftIde && (!isStudio || studioBootstrapState === "failed" || !explicitStudioIntent);
+  const studioResumeHref = !isStudio || draftId || explicitStudioIntent || resumeTarget.kind !== "draft" || !resumeTarget.href
+    ? null
+    : String(resumeTarget.href);
+  const studioIntent = useMemo<StudioRouteIntent | null>(() => {
+    if (!isStudio || draftId) return null;
+    if (requestedMode === "scratch") return { creation_mode: "scratch" };
+    if (requestedTemplate || requestedMode === "template") {
+      return {
+        creation_mode: "template",
+        template_id: String(requestedTemplate || templates[0]?.template_id || "") || null,
+      };
+    }
+    if (requestedWorkflow || requestedMode === "clone") {
+      return {
+        creation_mode: "clone",
+        source_workflow_name: requestedWorkflow || selectedWorkflow,
+      };
+    }
+    return null;
+  }, [draftId, isStudio, requestedMode, requestedTemplate, requestedWorkflow, selectedWorkflow, templates]);
+  const showStudioSetup = !showStudioDraftIde && (!isStudio || studioBootstrapState === "failed" || (!studioIntent && !studioResumeHref));
   const compareActions = ((activeDraft?.compare?.next_actions || []) as JsonObject[]);
   const validationPillValue = activeDraft?.validation?.ok ? (activeDraft?.validation?.stale ? "stale validation" : "validated") : "needs validation";
   const studioDraftTitle = activeDraft?.draft_workflow_name || activeWorkflow?.title || activeWorkflow?.name || "Studio draft";
@@ -4671,26 +4695,21 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   }, [busy, draftId]);
 
   useEffect(() => {
-    if (isStudio && !draftId) {
+    if (!isStudio || draftId) {
       setStudioBootstrapState("idle");
     }
-  }, [draftId, isStudio, route.search]);
+  }, [draftId, isStudio]);
 
   useEffect(() => {
-    if (!isStudio) {
-      setStudioBootstrapState("idle");
-      return;
-    }
-    if (draftId) {
-      setStudioBootstrapState("idle");
-      return;
-    }
-    if (!explicitStudioIntent) {
-      setStudioBootstrapState("idle");
-      return;
-    }
+    if (!studioResumeHref || draftId) return;
+    setBusy("Opening Studio graph IDE");
+    navigate(studioResumeHref);
+  }, [draftId, navigate, studioResumeHref]);
+
+  useEffect(() => {
+    if (!isStudio || draftId || !studioIntent) return;
     if (studioBootstrapState === "bootstrapping" || studioBootstrapState === "failed") return;
-    if (requestedMode === "template" && !requestedTemplate && authoringCatalog.loading) return;
+    if (studioIntent.creation_mode === "template" && !studioIntent.template_id && authoringCatalog.loading) return;
     if (authoringCatalog.error) {
       setStudioBootstrapState("failed");
       return;
@@ -4699,11 +4718,9 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     let cancelled = false;
 
     async function openStudioGraphIde() {
-      let payload: JsonObject | null = null;
-      if (requestedMode === "scratch") {
-        payload = { creation_mode: "scratch" };
-      } else if (requestedTemplate || requestedMode === "template") {
-        const templateId = String(requestedTemplate || templates[0]?.template_id || "");
+      let payload: JsonObject = { creation_mode: studioIntent.creation_mode };
+      if (studioIntent.creation_mode === "template") {
+        const templateId = String(studioIntent.template_id || "");
         if (!templateId) {
           setStudioBootstrapState("failed");
           setActionNotice({
@@ -4713,9 +4730,9 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
           });
           return;
         }
-        payload = { creation_mode: "template", template_id: templateId };
-      } else {
-        const sourceWorkflowName = requestedWorkflow || selectedWorkflow;
+        payload.template_id = templateId;
+      } else if (studioIntent.creation_mode === "clone") {
+        const sourceWorkflowName = studioIntent.source_workflow_name;
         if (!sourceWorkflowName) {
           setStudioBootstrapState("failed");
           setActionNotice({
@@ -4725,7 +4742,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
           });
           return;
         }
-        payload = { creation_mode: "clone", source_workflow_name: sourceWorkflowName };
+        payload.source_workflow_name = sourceWorkflowName;
       }
 
       if (overviewLatestRun?.run_id) payload.baseline_run_id = overviewLatestRun.run_id;
@@ -4756,16 +4773,12 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     authoringCatalog.loading,
     draftApiBase,
     draftId,
-    explicitStudioIntent,
     isStudio,
     navigate,
     onMutate,
     overviewLatestRun?.run_id,
-    requestedMode,
-    requestedTemplate,
-    requestedWorkflow,
-    selectedWorkflow,
-    templates,
+    studioIntent,
+    studioBootstrapState,
   ]);
 
   useEffect(() => {
@@ -5211,7 +5224,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 ? "Move nodes locally, drag safe palette nodes onto the canvas, create/remove edges, edit supported config, validate, save, and run through the Studio API without arbitrary plugin or code editing."
                 : "The legacy workbench route stays compatible with the same safe authoring backend while Studio is the primary graph IDE surface."
               : isStudio
-                ? "Choose a workflow, starter template, or scratch path before Studio creates a local draft. Entry stays explicit instead of mutating state on arrival."
+                ? "Choose a workflow, starter template, or scratch path when you want a new draft. If a local draft already exists, Studio resumes it automatically."
                 : "Start from scratch, a template, or an existing workflow. Draft state stays local and resumable while the reusable workflow file remains coherent on disk."}
           </p>
           <div className="meta-row">
@@ -5222,11 +5235,6 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
             {activeDraft?.last_run_id ? <span>Candidate: {activeDraft.last_run_id}</span> : null}
           </div>
           <div className="button-row">
-            {isStudio && !draftId && resumeTarget.kind === "draft" && resumeTarget.href ? (
-              <button className="primary-button" onClick={() => navigate(String(resumeTarget.href))}>
-                {String(resumeTarget.label || "Resume latest draft")}
-              </button>
-            ) : null}
             {overviewLatestRun?.run_id ? (
               <button className="secondary-button" onClick={() => navigate(`/runs/${overviewLatestRun.run_id}`)}>Inspect latest run</button>
             ) : (
@@ -5477,7 +5485,9 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
             ) : null}
           </div>
           {!draftId ? (
-            <EmptyState title="Create a draft to unlock graph authoring" body="The canvas becomes editable as soon as you open a draft session." />
+            isStudio && (studioIntent || studioResumeHref) && studioBootstrapState !== "failed"
+              ? <LoadingCard label="Opening Studio graph IDE" />
+              : <EmptyState title="Create a draft to unlock graph authoring" body="The canvas becomes editable as soon as you open a draft session." />
           ) : (
             <>
               <div className="studio-toolbar">

@@ -1059,6 +1059,7 @@ body {
   color-scheme: dark;
   background: #12171c;
   color: #e6ddd1;
+  --workspace-ide-height: clamp(32rem, calc(100vh - 9.75rem), 52rem);
   --bg-top: #12171c;
   --bg-bottom: #171d24;
   --plate: #1d252d;
@@ -1830,7 +1831,8 @@ a:focus-visible {
 }
 
 .studio-draft-mode .studio-ide-panel {
-  height: 100%;
+  height: var(--workspace-ide-height);
+  min-height: var(--workspace-ide-height);
   grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
 }
@@ -1913,7 +1915,8 @@ a:focus-visible {
   grid-column: 2;
   grid-row: 3;
   min-width: 0;
-  min-height: 560px;
+  min-height: 0;
+  height: 100%;
   border: 0;
   border-radius: 0;
   overflow: auto;
@@ -1921,7 +1924,7 @@ a:focus-visible {
 }
 
 .studio-workspace .workflow-canvas-stage {
-  min-height: 560px;
+  min-height: 100%;
 }
 
 .studio-workspace .authoring-grid {
@@ -2025,7 +2028,7 @@ a:focus-visible {
 
 .playground-live-workspace {
   flex: 1 1 auto;
-  min-height: clamp(32rem, calc(100vh - 9.75rem), 52rem);
+  min-height: var(--workspace-ide-height);
   display: grid;
   grid-template-columns: minmax(13.5rem, 15rem) minmax(0, 1.16fr) minmax(16rem, 18rem);
   grid-template-rows: minmax(0, 1fr);
