@@ -1844,9 +1844,10 @@ a:focus-visible {
 }
 
 .studio-draft-mode .studio-ide-panel {
+  position: relative;
   height: 100%;
   min-height: 0;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -1855,6 +1856,40 @@ a:focus-visible {
   padding: 1rem 1rem 0.9rem;
   border-bottom: 1px solid rgba(179, 167, 151, 0.12);
   background: rgba(26, 34, 41, 0.94);
+}
+
+.studio-draft-mode .studio-ide-panel > .section-heading {
+  position: absolute;
+  top: 4.15rem;
+  left: 15.75rem;
+  right: 18.85rem;
+  z-index: 3;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid rgba(179, 167, 151, 0.14);
+  border-radius: 0.85rem;
+  background: linear-gradient(180deg, rgba(26, 34, 41, 0.8), rgba(20, 27, 33, 0.72));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.studio-draft-mode .studio-ide-panel > .section-heading h3 {
+  font-size: 1rem;
+}
+
+.studio-draft-mode .studio-ide-panel > .section-heading .section-copy {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(236, 228, 216, 0.76);
+  max-width: 52rem;
+}
+
+.studio-draft-mode .studio-ide-panel > .section-heading .meta-row {
+  gap: 0.45rem 0.75rem;
+  font-size: 0.78rem;
+  color: rgba(221, 212, 199, 0.88);
 }
 
 .studio-workspace .studio-toolbar {
@@ -1934,6 +1969,16 @@ a:focus-visible {
   border-radius: 0;
   overflow: auto;
   overscroll-behavior: contain;
+}
+
+.studio-draft-mode .node-palette,
+.studio-draft-mode .workflow-canvas-shell,
+.studio-draft-mode .authoring-grid {
+  grid-row: 2;
+}
+
+.studio-draft-mode .workflow-canvas-shell {
+  padding-top: 4.75rem;
 }
 
 .studio-workspace .workflow-canvas-stage {
@@ -2938,6 +2983,15 @@ a:focus-visible {
   .studio-draft-mode .studio-ide-panel {
     height: auto;
     min-height: auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .studio-draft-mode .studio-ide-panel > .section-heading {
+    top: 4.05rem;
+    left: 0.95rem;
+    right: 0.95rem;
+  }
+  .studio-draft-mode .workflow-canvas-shell {
+    padding-top: 4.5rem;
   }
   .studio-workspace .authoring-grid {
     grid-column: 1 / -1;
@@ -2962,6 +3016,18 @@ a:focus-visible {
     grid-template-columns: 1fr;
     grid-template-rows: auto;
   }
+  .studio-draft-mode .studio-ide-panel > .section-heading {
+    position: static;
+    inset: auto;
+    padding: 1rem 1rem 0.9rem;
+    border: 0;
+    border-bottom: 1px solid rgba(179, 167, 151, 0.12);
+    border-radius: 0;
+    background: rgba(26, 34, 41, 0.94);
+    box-shadow: none;
+    backdrop-filter: none;
+    pointer-events: auto;
+  }
   .studio-workspace .studio-ide-panel > *,
   .studio-workspace .node-palette,
   .studio-workspace .workflow-canvas-shell,
@@ -2973,6 +3039,9 @@ a:focus-visible {
   }
   .studio-workspace .authoring-grid {
     max-height: none;
+  }
+  .studio-draft-mode .workflow-canvas-shell {
+    padding-top: 0;
   }
   .studio-workspace .node-palette {
     height: auto;
