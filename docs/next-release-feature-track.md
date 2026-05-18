@@ -7,9 +7,16 @@
 > surface.
 >
 > This release keeps the runtime claim provider-free unless separate real-runtime
-> validation widens it. It does not claim a calibration dashboard, API/webhook
-> control plane, arbitrary code/plugin graph editing, a full persistent
-> collaborative canvas layout, or a commercial runtime path.
+> validation widens it. The published `0.8.4` baseline does not claim a
+> calibration dashboard, API/webhook control plane, arbitrary code/plugin graph
+> editing, a full persistent collaborative canvas layout, or a commercial
+> runtime path.
+>
+> Current source tip now includes future-release candidates for Batch Runner,
+> Version snapshots, API Control, signed webhook delivery, version-aware
+> Observatory analytics, and the more focused three-panel Studio/Playground
+> surfaces. Those may exist in source and local preview, but they must stay out
+> of released claims until the corresponding package/docs/gates move together.
 
 Use this together with the governance repo's [Feature Status and Graduation Policy](https://github.com/xrtm-org/governance/blob/main/policies/feature-status-and-graduation-policy.md), [Release Readiness Policy](https://github.com/xrtm-org/governance/blob/main/policies/release-readiness-policy.md), [Stack Versioning Policy](https://github.com/xrtm-org/governance/blob/main/policies/stack-versioning-policy.md), and [Interface Parity and Claim Ownership Policy](https://github.com/xrtm-org/governance/blob/main/policies/interface-parity-and-claim-ownership-policy.md).
 
@@ -30,6 +37,9 @@ run through Playground, and inspect evidence in Observatory.
 | Studio | Primary `/studio` route for a true drag-drop graph IDE over XRTM workflows, backed by `/api/studio` wrappers, graph snapshots, the node palette/catalog, and safe draft validate/save/run actions. | Bounded to the existing workflow schema, built-in node catalog, and safe workflow-authoring service. It is not arbitrary code/plugin editing and not a generic diagramming app. |
 | Playground | Graph-linked exploratory run loop for quick forecasts and iterative runs, with graph/canvas preview, ordered node trace, executed-node highlighting, and an honest fallback when no graph trace artifact exists. | Playground executes and traces selected workflow states; Studio remains the primary graph authoring surface. |
 | Observatory | `/observatory` alias for the run inspector, with clearer probability/result/score/trace/export/compare review and an honest uncertainty empty state. | Inspect released run/artifact data honestly; do not imply a shipped calibration dashboard, webhook system, provider/runtime expansion, or persistent collaborative canvas layout beyond validated evidence. |
+| Batch Runner | `/batch`, provider-free row execution, live parsed-row table preview, cancel/retry/export, and row links back into Observatory. | Source-visible future-release candidate only until release docs and Gate 2 proof intentionally widen the train. |
+| Versions | `/versions`, snapshot diffs/rollback, default selection, version-run provenance, Studio snapshot handoff, and saved-version execution. | Source-visible future-release candidate only; keep claims local-first and provider-free until graduated. |
+| API Control | `/api` with version-run route examples, local token-behavior contract, batch status, webhook controls, and signed delivery logs. | Source-visible future-release candidate only; do not market it as hosted SaaS or a commercial control plane. |
 
 ### Blessed user paths
 
@@ -56,13 +66,17 @@ local workflows do not break while the product language moves to Studio.
 - Add a real OpenAI-compatible or coding-agent-CLI runtime proof only if release
   claims widen beyond the provider-free product-shell baseline. If cloud/API
   support is advertised, include a commercial OpenAI-compatible profile.
+- If Batch / Versions / API / Webhooks graduate from source-visible to released
+  claims, extend Gate 2 to cover provider-free version execution, batch run
+  lifecycle, signed webhook test delivery, and local export/report review.
 
 ## Locked WebUI design language for the 0.8.x UX train
 
 The WebUI style contract for this train is:
 
-> **muted and postal, monochromatic muted plate, neo minimalism, card-based
-> design with layered elements when appropriate, approachable sophistication**
+> **muted and postal, monochromatic-muted plate for colors, neo
+> minimalism, card-based design with layered elements when appropriate, the
+> design philosophy is approachable sophistication**
 
 Implementation guidance:
 
@@ -73,6 +87,12 @@ Implementation guidance:
 - keep the UI polished and trustworthy without becoming cold, flashy, or overly
   enterprise-heavy
 - keep version/release trust cues visible and stylistically coherent in the app
+
+Permanent references for this style contract:
+
+- `.github/copilot-instructions.md`
+- `.github/skills/webui-design/SKILL.md`
+- `docs/webui-design-language.md`
 
 ## Status legend
 

@@ -7,12 +7,16 @@ This page is the implementation-level source of truth for CLI/WebUI parity in
 Current baseline: published `xrtm==0.8.4`.
 
 The `0.8.4` release promotes the unified Hub → Studio → Playground →
-Observatory spine on the provider-free local product-shell baseline. The release
-may claim Hub at `/` and `/hub`, Studio at `/studio`, graph-linked Playground
-trace review, Observatory at `/observatory`, and `/workbench` compatibility
-without implying a calibration dashboard, API/webhook control plane, arbitrary
-code/plugin graph editing, full persistent collaborative canvas layout, or
-commercial runtime path.
+Observatory spine on the provider-free local product-shell baseline. The
+published release may claim Hub at `/` and `/hub`, Studio at `/studio`,
+graph-linked Playground trace review, Observatory at `/observatory`, and
+`/workbench` compatibility without implying a calibration dashboard, API/webhook
+control plane, arbitrary code/plugin graph editing, full persistent
+collaborative canvas layout, or commercial runtime path.
+
+Source tip now also contains future-release product candidates for Batch,
+Versions, API Control, and signed webhook delivery. Keep those surfaces marked
+as source-visible or future-release until package/docs/gates graduate together.
 
 ## Status legend
 
@@ -50,6 +54,10 @@ commercial runtime path.
 | Playground exploratory loop | `/playground`, `GET/PATCH /api/playground`, `POST /api/playground/run`, `POST /api/playground/runs/<run-id>/save-workflow\|save-profile` | `xrtm.product.launch.run_sandbox_session`, `save_sandbox_workflow`, `save_sandbox_profile`, WebUI playground state services | `parity-ready` | Shared sandbox state, one-custom-question-first flow, read-only step inspection, and explicit save-back wiring ship in both interfaces for the released provider-free sandbox contract. |
 | Playground graph trace | `/playground` trace panel and links from `/studio` to `/playground` runs | Sandbox session/run services plus trace read model linking workflow/draft node IDs to run steps/artifacts when graph trace artifacts exist | `parity-ready` | Released graph/canvas preview, ordered node trace, graph trace artifact state, executed-node highlighting, and an honest fallback when no graph trace artifact exists. |
 | Studio graph IDE | `/studio`, `GET /api/studio*` wrappers, graph snapshots, draft APIs, `GET /api/authoring/catalog` | `WorkflowAuthoringService`, draft services, built-in node catalog, validation/persistence services | `parity-ready` | Primary bounded drag-drop graph IDE over the existing workflow schema/node catalog. Supports local node dragging, palette click/drag-to-canvas add-node, node/edge/workflow selection, edge create/remove, entry setting, contextual inspector, and validate/save/run through Studio APIs. It is not arbitrary code/plugin editing or a generic diagramming app. |
+| Version snapshots | `/versions`, `GET/POST /api/versions`, `GET /api/versions/<id>`, `GET /api/versions/<id>/diff/<other-id>`, `POST /api/versions/<id>/rollback`, `POST /api/versions/<id>/run` | Workflow version snapshot services, shared authored-workflow runner, provenance hooks | `future-release` | Source now includes immutable workflow snapshots, diffs, rollback, and version-run provenance. Keep release claims provider-free and local-first until release gates widen intentionally. |
+| Batch Runner | `/batch`, `GET/POST /api/batch`, `GET /api/batch/<id>`, `POST /api/batch/<id>/run`, `PATCH /api/batch/<id>`, `POST /api/batch/<id>/retry`, `GET /api/batch/<id>/export?format=json\|csv` | Batch state store, shared sandbox execution for row runs, Observatory read models | `future-release` | Source now stages local workflow-backed batches, executes provider-free row runs, exposes progress/cancel/retry/export, and labels resulting runs as batch evidence. Do not promote this as a released cloud/API/database mode without Gate 2 evidence. |
+| API Control plane | `/api`, `GET /api/api-control`, version-run routes, batch routes, run detail routes | Local API control-plane read model over shared workflow execution services | `future-release` | Source now exposes local version execution, route examples, token-behavior documentation, and batch/webhook management without creating a separate runtime family. |
+| Signed webhook delivery | `/api`, `GET/POST/PATCH/DELETE /api/webhooks`, `POST /api/webhooks/<id>/test`, `POST /api/webhooks/deliveries/<id>/retry` | Webhook registry, signed delivery, retry logging, local redaction rules | `future-release` | Source now includes signed lifecycle delivery, retry/failure logging, manual tests, and local redaction. Keep claims local-first and do not imply hosted SaaS/event infrastructure. |
 | Workbench compatibility | `/workbench`, `GET /api/authoring/catalog`, `POST /api/drafts`, `PATCH /api/drafts/<id>` | Same `WorkflowAuthoringService` and draft services as Studio | `parity-ready` | Preserved as the compatibility route while `/studio` is the primary authoring route. |
 | Draft validate | `/workbench`, `/studio`, `POST /api/drafts/<id>/validate` and Studio API wrappers | Shared authored-workflow validation service | `parity-ready` | Shared authored-workflow validation backs CLI and WebUI draft flows. |
 | Draft run | `/workbench`, `/studio`, `POST /api/drafts/<id>/run` and Studio API wrappers | Shared authored-workflow run wiring | `parity-ready` | Shared authored-workflow run wiring backs CLI and WebUI draft execution. |
@@ -137,6 +145,15 @@ The published `0.8.4` release proof should cover:
 13. Studio-to-Playground graph trace
 14. Observatory drill-down into run steps/artifacts/evidence
 15. provider-free baseline, with real runtime proof added only if claims widen
+16. future-release Batch / Versions / API / Webhooks stay out of released docs until
+    Gate 1 + Gate 2 evidence and package/docs graduation move together
+
+## Shared authoring and execution contract
+
+- WebUI graph authoring surfaces (`/studio`, `/workbench`, and draft APIs) must call the same `WorkflowAuthoringService` and `xrtm.product.launch` validation/explain/run services used by CLI workflow commands.
+- Node/plugin/code behavior is limited to the built-in product node catalog. New node behavior, if added, must enter the shared catalog and pass `validate_authored_workflow` before any CLI or WebUI explain/run path can execute it; there is no WebUI-only arbitrary-code path.
+- Version snapshots and batch definitions are local state surfaces only: they must validate referenced workflow/draft blueprints through the shared authored-workflow contract and may not introduce a separate runtime executor.
+- Run history, reports, exports, comparisons, and artifact cleanup stay file-backed through the shared history/report/artifact services so CLI, TUI, and WebUI inspect the same evidence.
 
 ## Known decisions for P2
 

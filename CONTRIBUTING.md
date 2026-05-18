@@ -81,8 +81,9 @@ If your change touches one of them:
 When changing the WebUI during the `0.8.x` train, keep the style contract
 explicit instead of reinterpreting it from scratch each time:
 
-> **muted and postal, monochromatic muted plate, neo minimalism, card-based
-> design with layered elements when appropriate, approachable sophistication**
+> **muted and postal, monochromatic-muted plate for colors, neo
+> minimalism, card-based design with layered elements when appropriate, the
+> design philosophy is approachable sophistication**
 
 Practical guidance:
 
@@ -99,6 +100,12 @@ Practical guidance:
 
 Keep capability claims tied to their release gates. Do not smuggle new
 capability families into a release under the label of design work.
+
+Persistent references for this design language now live in:
+
+- `.github/copilot-instructions.md`
+- `.github/skills/webui-design/SKILL.md`
+- `docs/webui-design-language.md`
 
 ## Validation before opening a PR
 

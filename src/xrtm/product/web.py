@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-import tempfile
+import uuid
 from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -52,6 +52,9 @@ _APP_ROUTES = [
     re.compile(r"^/observatory$"),
     re.compile(r"^/playground$"),
     re.compile(r"^/studio$"),
+    re.compile(r"^/batch$"),
+    re.compile(r"^/versions$"),
+    re.compile(r"^/api$"),
     re.compile(r"^/operations$"),
     re.compile(r"^/advanced$"),
     re.compile(r"^/workbench$"),
@@ -61,6 +64,26 @@ _APP_ROUTES = [
     re.compile(r"^/runs/[^/]+/compare/[^/]+$"),
     re.compile(r"^/observatory/[^/]+/compare/[^/]+$"),
 ]
+_THEME_BOOTSTRAP_SCRIPT = """
+(function () {
+  var storageKey = "xrtm.webui.themeMode";
+  var mode = "system";
+  try {
+    var stored = window.localStorage.getItem(storageKey);
+    if (stored === "light" || stored === "dark" || stored === "system") {
+      mode = stored;
+    }
+  } catch (error) {
+    console.warn("Unable to read stored theme mode.", error);
+  }
+  var prefersDark = typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  var resolved = mode === "system" ? (prefersDark ? "dark" : "light") : mode;
+  var root = document.documentElement;
+  root.dataset.themeMode = mode;
+  root.dataset.theme = resolved;
+  root.style.colorScheme = resolved;
+})();
+""".strip()
 
 
 
@@ -127,6 +150,42 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/studio/catalog":
                 self._send_json(self.state_store.studio_catalog(registry=self._registry()))
+                return
+            if path == "/api/batch":
+                self._send_json(self.state_store.batch_snapshot(registry=self._registry()))
+                return
+            batch_export_match = re.match(r"^/api/batch/([^/]+)/export$", path)
+            if batch_export_match:
+                export_format = _export_format_from_query(parsed.query)
+                content_type = "text/csv; charset=utf-8" if export_format == "csv" else "application/json; charset=utf-8"
+                self._send_bytes(
+                    self.state_store.export_batch_run(batch_id=batch_export_match.group(1), export_format=export_format),
+                    content_type=content_type,
+                    filename=f"{batch_export_match.group(1)}.{export_format}",
+                )
+                return
+            batch_match = re.match(r"^/api/batch/([^/]+)$", path)
+            if batch_match:
+                self._send_json(self.state_store.get_batch_run(batch_match.group(1)))
+                return
+            if path == "/api/versions":
+                self._send_json(self.state_store.versions_snapshot(registry=self._registry()))
+                return
+            version_diff_match = re.match(r"^/api/versions/([^/]+)/diff/([^/]+)$", path)
+            if version_diff_match:
+                self._send_json(
+                    self.state_store.diff_workflow_versions(version_diff_match.group(1), version_diff_match.group(2))
+                )
+                return
+            version_match = re.match(r"^/api/versions/([^/]+)$", path)
+            if version_match:
+                self._send_json(self.state_store.get_workflow_version(version_match.group(1)))
+                return
+            if path == "/api/api-control":
+                self._send_json(self.state_store.api_control_snapshot(registry=self._registry()))
+                return
+            if path == "/api/webhooks":
+                self._send_json(self.state_store.webhooks_snapshot())
                 return
             if path == "/api/workflows":
                 self.state_store.refresh_indexes(runs_dir=self.runs_dir, registry=self._registry())
@@ -312,6 +371,103 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         "canvas": draft["canvas"],
                         "studio": draft["studio"],
                     },
+                    status=HTTPStatus.CREATED,
+                )
+                return
+            if path == "/api/versions":
+                self._send_json(
+                    self.state_store.create_workflow_version(
+                        registry=self._registry(),
+                        values=self._read_json(),
+                    ),
+                    status=HTTPStatus.CREATED,
+                )
+                return
+            version_rollback = re.match(r"^/api/versions/([^/]+)/rollback$", path)
+            if version_rollback:
+                self._send_json(
+                    self.state_store.rollback_workflow_version(
+                        registry=self._registry(),
+                        version_id=version_rollback.group(1),
+                        values=self._read_json(),
+                    ),
+                    status=HTTPStatus.CREATED,
+                )
+                return
+            version_run = re.match(r"^/api/versions/([^/]+)/run$", path)
+            if version_run:
+                payload = self._read_json()
+                blueprint = self.state_store.workflow_version_blueprint(version_run.group(1))
+                result = launch_module.run_authored_workflow(
+                    blueprint=blueprint,
+                    registry=self._registry(),
+                    command=f"xrtm web version run {version_run.group(1)}",
+                    runs_dir=self.runs_dir,
+                    user=_optional_json_value(payload, "user") or "xrtm-webui-api",
+                )
+                self.state_store.record_workflow_version_execution(
+                    version_id=version_run.group(1),
+                    run_dir=result.run.run_dir,
+                )
+                self._send_json(
+                    {
+                        **_run_result_payload(result),
+                        "version_id": version_run.group(1),
+                        "workflow_name": blueprint.name,
+                    },
+                    status=HTTPStatus.CREATED,
+                )
+                return
+            if path == "/api/batch":
+                self._send_json(
+                    self.state_store.create_batch_run(
+                        registry=self._registry(),
+                        values=self._read_json(),
+                    ),
+                    status=HTTPStatus.CREATED,
+                )
+                return
+            batch_run = re.match(r"^/api/batch/([^/]+)/run$", path)
+            if batch_run:
+                self._send_json(
+                    self.state_store.start_batch_run(
+                        batch_id=batch_run.group(1),
+                        registry=self._registry(),
+                        runs_dir=self.runs_dir,
+                        values=self._read_json(),
+                    ),
+                    status=HTTPStatus.CREATED,
+                )
+                return
+            batch_retry = re.match(r"^/api/batch/([^/]+)/retry$", path)
+            if batch_retry:
+                self._send_json(
+                    self.state_store.retry_batch_run(
+                        batch_id=batch_retry.group(1),
+                        registry=self._registry(),
+                        runs_dir=self.runs_dir,
+                        values=self._read_json(),
+                    ),
+                    status=HTTPStatus.CREATED,
+                )
+                return
+            if path == "/api/webhooks":
+                self._send_json(
+                    self.state_store.create_webhook_endpoint(self._read_json()),
+                    status=HTTPStatus.CREATED,
+                )
+                return
+            webhook_test = re.match(r"^/api/webhooks/([^/]+)/test$", path)
+            if webhook_test:
+                self._send_json(
+                    self.state_store.test_webhook_endpoint(webhook_test.group(1), self._read_json()),
+                    status=HTTPStatus.CREATED,
+                )
+                return
+            webhook_retry = re.match(r"^/api/webhooks/deliveries/([^/]+)/retry$", path)
+            if webhook_retry:
+                self._send_json(
+                    self.state_store.retry_webhook_delivery(webhook_retry.group(1)),
                     status=HTTPStatus.CREATED,
                 )
                 return
@@ -555,6 +711,39 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     )
                 )
                 return
+            webhook_match = re.match(r"^/api/webhooks/([^/]+)$", path)
+            if webhook_match:
+                self._send_json(
+                    self.state_store.update_webhook_endpoint(webhook_match.group(1), self._read_json())
+                )
+                return
+            version_match = re.match(r"^/api/versions/([^/]+)$", path)
+            if version_match:
+                payload = self._read_json()
+                if payload.get("set_default") is not True:
+                    raise WorkbenchInputError("versions PATCH currently supports set_default=true only")
+                self._send_json(self.state_store.set_default_workflow_version(version_match.group(1)))
+                return
+            batch_match = re.match(r"^/api/batch/([^/]+)$", path)
+            if batch_match:
+                payload = self._read_json()
+                action = _optional_json_value(payload, "action") or "cancel"
+                if action != "cancel":
+                    raise WorkbenchInputError("batch action must be 'cancel'")
+                self._send_json(self.state_store.cancel_batch_run(batch_id=batch_match.group(1)))
+                return
+            self._send_text("Not found", status=HTTPStatus.NOT_FOUND)
+        except (WorkbenchInputError, FileNotFoundError, ValueError) as exc:
+            self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+
+    def do_DELETE(self) -> None:  # noqa: N802 - stdlib handler API
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path).rstrip("/") or "/"
+        try:
+            webhook_match = re.match(r"^/api/webhooks/([^/]+)$", path)
+            if webhook_match:
+                self._send_json(self.state_store.delete_webhook_endpoint(webhook_match.group(1)))
+                return
             self._send_text("Not found", status=HTTPStatus.NOT_FOUND)
         except (WorkbenchInputError, FileNotFoundError, ValueError) as exc:
             self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -706,11 +895,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
     def _send_run_export(self, run_id: str, query_string: str) -> None:
         export_format = _export_format_from_query(query_string)
-        with tempfile.TemporaryDirectory(prefix="xrtm-webui-export-") as temp_dir:
-            output_path = Path(temp_dir) / f"{run_id}.{export_format}"
+        output_dir = self.runs_dir / ".webui-exports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{run_id}-{uuid.uuid4().hex[:8]}.{export_format}"
+        try:
             export_run(_safe_run_dir(self.runs_dir, run_id), output_path, format=export_format)
             content_type = "text/csv; charset=utf-8" if export_format == "csv" else "application/json; charset=utf-8"
-            self._send_bytes(output_path.read_bytes(), content_type=content_type, filename=output_path.name)
+            body = output_path.read_bytes()
+        finally:
+            output_path.unlink(missing_ok=True)
+        self._send_bytes(body, content_type=content_type, filename=f"{run_id}.{export_format}")
 
     def _send_static(self, relative_path: str) -> None:
         path = (_STATIC_ROOT / relative_path).resolve()
@@ -842,6 +1036,7 @@ def render_app_shell_html(*, initial_path: str, query_string: str = "", error: s
     <meta charset='utf-8'>
     <meta name='viewport' content='width=device-width, initial-scale=1'>
     <title>XRTM WebUI</title>
+    <script>{_THEME_BOOTSTRAP_SCRIPT}</script>
     <link rel='stylesheet' href='/static/app.css'>
   </head>
   <body>
@@ -850,16 +1045,13 @@ def render_app_shell_html(*, initial_path: str, query_string: str = "", error: s
         <header class='boot-header'>
           <div class='boot-copy-stack'>
             <div class='boot-title-group'>
-              <span class='boot-badge'>XRTM WebUI</span>
+              <h1>Forecasting workspace</h1>
               <span class='version-pill'>v{__version__}</span>
-              <span class='shell-trust-pill'>Shared local shell</span>
             </div>
-            <h1>Local forecasting cockpit</h1>
             <p class='shell-copy'>Loading the local-first app shell…</p>
           </div>
           <div class='boot-nav-stack'>
-            <span class='boot-badge'>Primary lanes</span>
-            <p class='boot-route-strip'>Hub · Studio · Playground · Observatory · Operations · Advanced</p>
+            <p class='boot-route-strip'>Hub · Studio · Playground · Observatory · Batch · Versions · Operations · Control · Advanced</p>
           </div>
         </header>
         <noscript>This WebUI shell needs JavaScript enabled.</noscript>

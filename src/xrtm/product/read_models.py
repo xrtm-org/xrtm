@@ -94,6 +94,9 @@ def read_run_detail(run_dir: Path) -> dict[str, Any]:
         detail["workflow"] = workflow
     if sandbox:
         detail["sandbox"] = sandbox
+    version = _version_summary(run_dir)
+    if version:
+        detail["version"] = version
     monitor_path = run_dir / "monitor.json"
     if monitor_path.exists():
         monitor = _read_optional_json(monitor_path)
@@ -126,6 +129,9 @@ def _read_run_record(run_dir: Path) -> dict[str, Any] | None:
     sandbox = _sandbox_summary(_read_sandbox_session(run_dir))
     if sandbox:
         run["sandbox"] = sandbox
+    version = _version_summary(run_dir)
+    if version:
+        run["version"] = version
     return run
 
 
@@ -153,6 +159,7 @@ def _read_sandbox_session(run_dir: Path) -> dict[str, Any]:
 def _search_text(run: dict[str, Any]) -> str:
     workflow = run.get("workflow", {})
     sandbox = run.get("sandbox", {})
+    version = run.get("version", {})
     values = [
         run.get("run_id"),
         run.get("status"),
@@ -166,8 +173,33 @@ def _search_text(run: dict[str, Any]) -> str:
         sandbox.get("classification") if isinstance(sandbox, dict) else None,
         sandbox.get("surface") if isinstance(sandbox, dict) else None,
         sandbox.get("workflow_name") if isinstance(sandbox, dict) else None,
+        version.get("version_id") if isinstance(version, dict) else None,
+        version.get("label") if isinstance(version, dict) else None,
+        version.get("workflow_name") if isinstance(version, dict) else None,
     ]
     return " ".join(str(value) for value in values if value is not None)
+
+
+def _version_summary(run_dir: Path) -> dict[str, Any]:
+    version_payload = _read_optional_json(run_dir / "version_run.json")
+    version_id = version_payload.get("version_id")
+    if version_id is not None:
+        return {
+            "version_id": version_id,
+            "label": version_payload.get("label") or version_id,
+            "workflow_name": version_payload.get("workflow_name"),
+            "source": "version-run",
+        }
+    batch_payload = _read_optional_json(run_dir / "batch_row.json")
+    batch_version_id = batch_payload.get("version_id")
+    if batch_version_id is not None:
+        return {
+            "version_id": batch_version_id,
+            "label": batch_payload.get("version_label") or batch_version_id,
+            "workflow_name": batch_payload.get("workflow_name"),
+            "source": "batch-row",
+        }
+    return {}
 
 
 def _workflow_summary(blueprint: dict[str, Any], graph_trace: list[dict[str, Any]]) -> dict[str, Any]:

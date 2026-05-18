@@ -8,8 +8,11 @@ import math
 from pathlib import Path
 from typing import Any
 
+from xrtm.eval import BrierScoreEvaluator
 from xrtm.product.artifacts import ArtifactStore
 from xrtm.product.read_models import list_run_records, read_run_detail
+
+_BRIER_SCORE_EVALUATOR = BrierScoreEvaluator()
 
 
 def list_runs(
@@ -457,14 +460,10 @@ def _question_resolved(question: dict[str, Any], *, fallback: Any) -> bool | Non
 
 
 def _brier_score(probability: Any, outcome: bool | None) -> float | None:
-    if outcome is None or probability in (None, ""):
-        return None
     try:
-        probability_value = float(probability)
-    except (TypeError, ValueError):
+        return _BRIER_SCORE_EVALUATOR.score(probability, outcome)
+    except ValueError:
         return None
-    target = 1.0 if outcome else 0.0
-    return (probability_value - target) ** 2
 
 
 def _stringify_tags(tags: Any) -> str | None:

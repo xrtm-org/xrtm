@@ -36,6 +36,13 @@ not claim a calibration dashboard, API/webhook control plane, arbitrary
 code/plugin graph editing, full persistent collaborative canvas layout, or
 commercial runtime path without separate validation.
 
+Current source tip also includes a fuller **future-release candidate** product
+train: Batch Runner, immutable Version snapshots, local API Control, signed
+webhook delivery, version-aware Observatory analytics, and the more focused
+three-panel Studio/Playground surfaces. Those source-visible capabilities are
+tracked in [docs/next-release-feature-track.md](docs/next-release-feature-track.md)
+and should stay out of release claims until package/docs/gates move together.
+
 This README intentionally stays short so the first-run commands live in one
 place.
 
