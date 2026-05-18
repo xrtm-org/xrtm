@@ -521,11 +521,11 @@ function App(): React.ReactElement {
     }
   }, [resolvedTheme, themeMode]);
 
-  const navigate = (path: string) => {
+  const navigate = React.useCallback((path: string) => {
     window.history.pushState({}, "", path);
     setRoute(currentRoute());
-  };
-  const refreshShell = () => setShellRefresh((value) => value + 1);
+  }, []);
+  const refreshShell = React.useCallback(() => setShellRefresh((value) => value + 1), []);
 
   const appChrome = (shell.data?.app || {}) as JsonObject;
   const nav = appChrome.nav ?? [
@@ -4764,10 +4764,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     requestedMode,
     requestedTemplate,
     requestedWorkflow,
-    resumeTarget.href,
-    resumeTarget.kind,
     selectedWorkflow,
-    studioBootstrapState,
     templates,
   ]);
 
