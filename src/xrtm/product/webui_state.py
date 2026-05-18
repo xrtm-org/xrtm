@@ -18,6 +18,7 @@ from urllib.request import Request, urlopen
 
 from xrtm import __version__
 from xrtm.eval import BrierScoreEvaluator, EvaluationResult, ExpectedCalibrationErrorEvaluator
+
 try:
     from xrtm.eval import summarize_binary_forecasts
 except ImportError:
