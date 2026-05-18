@@ -133,6 +133,7 @@ def test_manager_start_restart_stop_updates_pid_state_end_to_end(
         return state
 
     monkeypatch.setattr(manager, "ensure_frontend_assets", fake_ensure_frontend_assets)
+    monkeypatch.setattr(manager, "current_repo_head", lambda: "abc123")
     monkeypatch.setattr(
         manager,
         "build_launch_command",
@@ -149,6 +150,7 @@ def test_manager_start_restart_stop_updates_pid_state_end_to_end(
 
     started = manager.start(config)
     assert started["status"] == "running"
+    assert started["repo_head"] == "abc123"
     assert paths.pid_file.exists()
     with urlopen(f"http://127.0.0.1:{port}/api/health", timeout=5) as response:
         payload = json.loads(response.read().decode("utf-8"))
@@ -163,6 +165,8 @@ def test_manager_start_restart_stop_updates_pid_state_end_to_end(
     assert snapshot["status"] == "running"
     assert snapshot["pid"] == restarted["pid"]
     assert snapshot["url"] == f"http://127.0.0.1:{port}"
+    assert snapshot["repo_head"] == "abc123"
+    assert snapshot["current_repo_head"] == "abc123"
 
     stopped = manager.stop()
     assert stopped["status"] == "stopped"
@@ -219,6 +223,34 @@ def test_shared_and_isolated_instances_use_separate_defaults(tmp_path: Path) -> 
     assert shared_config.port == 8765
     assert isolated_config.host == "127.0.0.1"
     assert isolated_config.port == 8876
+
+
+def test_status_snapshot_marks_outdated_checkout_when_repo_head_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_module()
+    manager = module.LiveWebUIManager(_manager_paths(tmp_path, module, instance_name="validation"))
+    manager.save_state(
+        {
+            "host": "127.0.0.1",
+            "port": 8876,
+            "url": "http://127.0.0.1:8876",
+            "pid": 4242,
+            "pid_start_time": 111,
+            "repo_head": "abc123",
+            "log_file": str(manager.paths.log_file),
+        }
+    )
+
+    monkeypatch.setattr(manager, "_active_process", lambda _state: 4242)
+    monkeypatch.setattr(manager, "port_open", lambda _host, _port: True)
+    monkeypatch.setattr(manager, "current_repo_head", lambda: "def456")
+
+    snapshot = manager.status_snapshot()
+    assert snapshot["status"] == "running-outdated-checkout"
+    assert snapshot["repo_head"] == "abc123"
+    assert snapshot["current_repo_head"] == "def456"
+    assert "older checkout" in manager.status_text()
 
 
 def test_shared_instance_requires_explicit_ack_for_mutations(tmp_path: Path) -> None:

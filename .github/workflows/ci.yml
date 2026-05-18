@@ -321,6 +321,127 @@ jobs:
           "$release_smoke_bin"/xrtm report html --latest --runs-dir /tmp/xrtm-release-smoke
           "$release_smoke_bin"/xrtm web --runs-dir /tmp/xrtm-release-smoke --smoke
 
+  live-webui-route-smoke:
+    name: Live WebUI route smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve workspace refs
+        id: workspace-refs
+        shell: bash
+        env:
+          INPUT_COORDINATION_CONTEXT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.coordination_context || '' }}
+          INPUT_DATA_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.data_ref || '' }}
+          INPUT_EVAL_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.eval_ref || '' }}
+          INPUT_FORECAST_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.forecast_ref || '' }}
+          INPUT_TRAIN_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.train_ref || '' }}
+        run: |
+          default_ref="main"
+
+          requested_ref() {
+            local value="$1"
+            if [ -n "$value" ]; then
+              printf '%s' "$value"
+            else
+              printf '%s' "$default_ref"
+            fi
+          }
+
+          {
+            echo "coordination_context=${INPUT_COORDINATION_CONTEXT}"
+            echo "data_ref=$(requested_ref "$INPUT_DATA_REF")"
+            echo "eval_ref=$(requested_ref "$INPUT_EVAL_REF")"
+            echo "forecast_ref=$(requested_ref "$INPUT_FORECAST_REF")"
+            echo "train_ref=$(requested_ref "$INPUT_TRAIN_REF")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout workspace siblings
+        id: workspace-siblings
+        shell: bash
+        run: |
+          checkout_repo() {
+            local repo="$1"
+            local ref="$2"
+            git init -q "$repo"
+            git -C "$repo" remote add origin "https://github.com/xrtm-org/${repo}.git"
+            git -C "$repo" fetch --depth 1 --quiet origin "$ref"
+            git -C "$repo" checkout --detach --quiet FETCH_HEAD
+            git -C "$repo" rev-parse HEAD
+          }
+
+          data_sha="$(checkout_repo data "${{ steps.workspace-refs.outputs.data_ref }}")"
+          eval_sha="$(checkout_repo eval "${{ steps.workspace-refs.outputs.eval_ref }}")"
+          forecast_sha="$(checkout_repo forecast "${{ steps.workspace-refs.outputs.forecast_ref }}")"
+          train_sha="$(checkout_repo train "${{ steps.workspace-refs.outputs.train_ref }}")"
+
+          {
+            echo "data_sha=$data_sha"
+            echo "eval_sha=$eval_sha"
+            echo "forecast_sha=$forecast_sha"
+            echo "train_sha=$train_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install release-track workspace
+        run: |
+          uv pip install --system -e ./data -e ./eval -e ./forecast -e ./train -e .
+
+      - name: Start isolated live WebUI and smoke routes
+        shell: bash
+        run: |
+          cleanup() {
+            python scripts/live_webui_manager.py stop --instance gate1-route-smoke || true
+          }
+          trap cleanup EXIT
+
+          python scripts/live_webui_manager.py start --instance gate1-route-smoke --host 127.0.0.1 --port 8876 --timeout 60
+          python - <<'PY'
+          import json
+          from urllib.request import Request, urlopen
+
+          base = "http://127.0.0.1:8876"
+          for path in (
+              "/studio?mode=scratch",
+              "/playground",
+              "/api/studio",
+              "/api/playground",
+              "/static/app.js",
+              "/static/app.css",
+          ):
+              with urlopen(f"{base}{path}", timeout=10) as response:
+                  assert response.status == 200, path
+
+          request = Request(
+              f"{base}/api/studio/drafts",
+              data=json.dumps({"creation_mode": "scratch"}).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urlopen(request, timeout=10) as response:
+              created = json.loads(response.read().decode("utf-8"))
+
+          draft = created.get("draft", created)
+          draft_id = draft.get("id")
+          assert draft_id, created
+
+          with urlopen(f"{base}/studio?draft={draft_id}", timeout=10) as response:
+              html = response.read().decode("utf-8")
+
+          assert 'initial_path": "/studio"' in html or 'initial_path":"/studio"' in html
+          PY
+
   provider-free-cleanroom:
     name: Provider-free clean-room (${{ github.event.inputs.cleanroom_artifact_source }})
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.cleanroom_artifact_source != 'skip'
