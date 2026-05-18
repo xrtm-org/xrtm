@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import sqlite3
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -16,7 +17,11 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from xrtm import __version__
-from xrtm.eval import BrierScoreEvaluator, summarize_binary_forecasts
+from xrtm.eval import BrierScoreEvaluator, EvaluationResult, ExpectedCalibrationErrorEvaluator
+try:
+    from xrtm.eval import summarize_binary_forecasts
+except ImportError:
+    summarize_binary_forecasts = None
 from xrtm.product import launch as launch_module
 from xrtm.product.history import compare_runs, resolve_run_dir
 from xrtm.product.providers import local_llm_status
@@ -48,6 +53,110 @@ WEBHOOK_EVENT_TYPES = (
 )
 WEBHOOK_SIGNING_ALGORITHMS = ("hmac-sha256",)
 _BRIER_SCORE_EVALUATOR = BrierScoreEvaluator()
+
+
+def _log_score(probability: float, outcome: bool) -> float:
+    epsilon = 1e-12
+    bounded = min(max(probability, epsilon), 1.0 - epsilon)
+    if outcome:
+        return -math.log(bounded)
+    return -math.log(1.0 - bounded)
+
+
+def _normalize_binary_probability(value: Any) -> float:
+    probability = float(value)
+    if not math.isfinite(probability) or probability < 0.0 or probability > 1.0:
+        raise ValueError("probability must be between 0 and 1")
+    return probability
+
+
+def _normalize_binary_outcome(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    raise ValueError("outcome must be a boolean")
+
+
+def _reliability_bin_dump(bin_item: Any) -> dict[str, Any]:
+    if hasattr(bin_item, "model_dump"):
+        return bin_item.model_dump()
+    return {
+        "count": getattr(bin_item, "count", 0),
+        "mean_prediction": getattr(bin_item, "mean_prediction", 0.0),
+        "mean_ground_truth": getattr(bin_item, "mean_ground_truth", 0.0),
+    }
+
+
+def _fallback_summarize_binary_forecasts(
+    records: list[tuple[Any, Any]],
+    *,
+    num_bins: int = 10,
+) -> dict[str, Any]:
+    results: list[EvaluationResult] = []
+    log_scores: list[float] = []
+    skipped_count = 0
+
+    for index, (prediction, ground_truth) in enumerate(records):
+        try:
+            probability = _normalize_binary_probability(prediction)
+            outcome = _normalize_binary_outcome(ground_truth)
+        except (TypeError, ValueError):
+            skipped_count += 1
+            continue
+        results.append(
+            EvaluationResult(
+                subject_id=str(index),
+                score=_BRIER_SCORE_EVALUATOR.score(probability, outcome),
+                ground_truth=outcome,
+                prediction=probability,
+                metadata={"metric": "Brier Score"},
+            )
+        )
+        log_scores.append(_log_score(probability, outcome))
+
+    valid_count = len(results)
+    mean_brier = sum(result.score for result in results) / valid_count if valid_count else None
+    mean_log_score = sum(log_scores) / valid_count if valid_count else None
+    ece, reliability_bins = ExpectedCalibrationErrorEvaluator(num_bins=num_bins).compute_calibration_data(results)
+    decomposition = _BRIER_SCORE_EVALUATOR.compute_decomposition(results, num_bins=num_bins)
+
+    calibration_curve = []
+    for index, reliability_bin in enumerate(reliability_bins):
+        count = reliability_bin.count
+        probability_sum = reliability_bin.mean_prediction * count if count else 0.0
+        observed_true = int(round(reliability_bin.mean_ground_truth * count)) if count else 0
+        calibration_curve.append(
+            {
+                "index": index,
+                "label": f"{round(index * 100 / num_bins)}-{round((index + 1) * 100 / num_bins)}%",
+                "lower": index / num_bins,
+                "upper": (index + 1) / num_bins,
+                "count": count,
+                "observed_true": observed_true,
+                "probability_sum": probability_sum,
+                "mean_probability": reliability_bin.mean_prediction if count else None,
+                "observed_frequency": reliability_bin.mean_ground_truth if count else None,
+            }
+        )
+
+    return {
+        "resolved_count": valid_count,
+        "skipped_count": skipped_count,
+        "brier_score": mean_brier,
+        "ece": ece if valid_count else None,
+        "log_score": mean_log_score,
+        "reliability": decomposition.reliability if valid_count else None,
+        "resolution": decomposition.resolution if valid_count else None,
+        "uncertainty": decomposition.uncertainty if valid_count else None,
+        "decomposed_brier_score": decomposition.score if valid_count else None,
+        "reliability_bins": [_reliability_bin_dump(bin_item) for bin_item in reliability_bins],
+        "calibration_curve": calibration_curve,
+    }
+
+
+def _summarize_binary_forecasts(records: list[tuple[Any, Any]], *, num_bins: int = 10) -> dict[str, Any]:
+    if summarize_binary_forecasts is not None:
+        return summarize_binary_forecasts(records, num_bins=num_bins)
+    return _fallback_summarize_binary_forecasts(records, num_bins=num_bins)
 
 
 class WebUIStateStore:
@@ -3869,10 +3978,10 @@ def _observatory_analytics(*, items: list[dict[str, Any]], runs_dir: Path) -> di
                     version_summary["score_pairs"].append((probability_float, outcome))
                 uncertainty_bins[index]["observed_true"] += 1 if outcome else 0
 
-    score_summary = summarize_binary_forecasts(score_pairs, num_bins=bin_count)
+    score_summary = _summarize_binary_forecasts(score_pairs, num_bins=bin_count)
     workflow_rows = []
     for value in workflow_scores.values():
-        workflow_score_summary = summarize_binary_forecasts(value["score_pairs"], num_bins=bin_count)
+        workflow_score_summary = _summarize_binary_forecasts(value["score_pairs"], num_bins=bin_count)
         workflow_brier = _first_float(workflow_score_summary.get("brier_score"), _mean(value["brier_scores"]))
         workflow_ece = _first_float(workflow_score_summary.get("ece"), _mean(value["ece_scores"]))
         workflow_log_score = _first_float(workflow_score_summary.get("log_score"), _mean(value["log_scores"]))
@@ -3891,7 +4000,7 @@ def _observatory_analytics(*, items: list[dict[str, Any]], runs_dir: Path) -> di
     workflow_rows.sort(key=lambda row: (row["brier"] is None, row["brier"] if row["brier"] is not None else 999.0))
     version_rows = []
     for value in version_scores.values():
-        version_score_summary = summarize_binary_forecasts(value["score_pairs"], num_bins=bin_count)
+        version_score_summary = _summarize_binary_forecasts(value["score_pairs"], num_bins=bin_count)
         version_brier = _first_float(version_score_summary.get("brier_score"), _mean(value["brier_scores"]))
         version_ece = _first_float(version_score_summary.get("ece"), _mean(value["ece_scores"]))
         version_log_score = _first_float(version_score_summary.get("log_score"), _mean(value["log_scores"]))

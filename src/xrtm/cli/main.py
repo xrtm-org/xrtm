@@ -72,24 +72,29 @@ from xrtm.product.profiles import (
 from xrtm.product.providers import local_llm_status
 from xrtm.product.reports import render_html_report
 from xrtm.product.tui import render_tui_once, run_tui
-from xrtm.product.validation import (
-    BenchmarkArmOptions,
-    BenchmarkCompareOptions,
-    BenchmarkStressOptions,
-    ValidationOptions,
-    ValidationSafetyError,
-    ValidationTierError,
-    list_validation_corpora,
-    prepare_validation_corpus,
-    run_benchmark_compare,
-    run_benchmark_stress_suite,
-    run_validation,
-)
 from xrtm.product.web import create_web_server, web_snapshot
 from xrtm.product.workbench import workbench_snapshot as workflow_workbench_snapshot
 from xrtm.product.workflow_runner import run_workflow_blueprint
 from xrtm.product.workflows import DEFAULT_LOCAL_WORKFLOWS_DIR, NodeSpec, WorkflowBlueprint, WorkflowRegistry
 from xrtm.version import __version__
+
+try:
+    from xrtm.product.validation import (
+        BenchmarkArmOptions,
+        BenchmarkCompareOptions,
+        BenchmarkStressOptions,
+        ValidationOptions,
+        ValidationSafetyError,
+        ValidationTierError,
+        list_validation_corpora,
+        prepare_validation_corpus,
+        run_benchmark_compare,
+        run_benchmark_stress_suite,
+        run_validation,
+    )
+    _VALIDATION_IMPORT_ERROR: ImportError | None = None
+except ImportError as exc:
+    _VALIDATION_IMPORT_ERROR = exc
 
 console = Console()
 _WORKFLOW_PROVIDER_CHOICES = ("mock", "local-llm")
@@ -98,6 +103,15 @@ _WORKFLOW_TEMPLATES = list_workflow_starter_templates()
 _WORKFLOW_TEMPLATE_CHOICES = tuple(template.template_id for template in _WORKFLOW_TEMPLATES)
 _BUILTIN_WORKFLOW_NODES = {definition.name: definition for definition in list_builtin_workflow_nodes()}
 _BUILTIN_WORKFLOW_NODE_CHOICES = tuple(_BUILTIN_WORKFLOW_NODES)
+
+
+def _require_validation_stack() -> None:
+    if _VALIDATION_IMPORT_ERROR is None:
+        return
+    raise click.ClickException(
+        "Validation and benchmark commands require the advanced corpus/eval stack. "
+        "Install support-package versions that provide the released validation APIs."
+    ) from _VALIDATION_IMPORT_ERROR
 
 
 @click.group()
@@ -124,6 +138,7 @@ def _validation_options_from_args(
     allow_unsafe_local_llm: bool,
     no_artifacts: bool,
 ) -> ValidationOptions:
+    _require_validation_stack()
     return ValidationOptions(
         corpus_id=corpus_id,
         command=command,
@@ -162,6 +177,7 @@ def _run_validation_command(
     no_artifacts: bool,
     report_title: str,
 ) -> None:
+    _require_validation_stack()
     try:
         report = run_validation(
             _validation_options_from_args(
@@ -194,6 +210,7 @@ def _list_registered_corpora(
     release_gate_only: bool,
     title: str,
 ) -> None:
+    _require_validation_stack()
     from xrtm.data.corpora import CorpusTier
 
     tier_enum = CorpusTier(tier) if tier else None
@@ -214,6 +231,7 @@ def _prepare_registered_corpus(
     fixture_preview: bool,
     title: str,
 ) -> None:
+    _require_validation_stack()
     try:
         report = prepare_validation_corpus(
             corpus_id,
@@ -471,6 +489,7 @@ def _benchmark_arm_options(
     api_key: str | None,
     max_tokens: int,
 ) -> BenchmarkArmOptions:
+    _require_validation_stack()
     return BenchmarkArmOptions(
         label=label,
         provider=provider,
@@ -2456,6 +2475,7 @@ def benchmark_compare(
     candidate_max_tokens: int,
 ) -> None:
     """Compare a baseline arm against a candidate arm on one frozen benchmark slice."""
+    _require_validation_stack()
     baseline_arm, candidate_arm = _default_benchmark_arms(
         baseline_label=baseline_label,
         baseline_provider=baseline_provider,
@@ -2537,6 +2557,7 @@ def benchmark_stress(
     candidate_max_tokens: int,
 ) -> None:
     """Run a repeated baseline-vs-candidate stress suite on one frozen slice."""
+    _require_validation_stack()
     baseline_arm, candidate_arm = _default_benchmark_arms(
         baseline_label=baseline_label,
         baseline_provider=baseline_provider,
