@@ -731,6 +731,7 @@ function HubPage({ shell, navigate }: { shell: JsonObject | null; navigate: (pat
       : "Quickstart, Playground, and Studio are ready when you want a first local run or draft.";
   const workflowDisclosureTitle = `Indexed workflows · ${workflows.length}`;
 
+
   return (
     <main className="page-grid hub-page">
       <section className="panel hero-panel hub-hero">
@@ -4191,6 +4192,98 @@ function ComparePage({
   );
 }
 
+function WorkspaceModeBar({
+  mode,
+  navigate,
+  studioHref,
+  playgroundHref,
+}: {
+  mode: "studio" | "playground";
+  navigate: (path: string) => void;
+  studioHref: string;
+  playgroundHref: string;
+}): React.ReactElement {
+  const modeCopy = mode === "studio"
+    ? {
+        eyebrow: "Workspace mode",
+        title: "Studio authoring",
+        detail: "Edit the workflow graph, then switch to Playground to run and inspect it.",
+      }
+    : {
+        eyebrow: "Workspace mode",
+        title: "Playground execution",
+        detail: "Run a bounded question, inspect the trace, then switch back to Studio to edit.",
+      };
+  return (
+    <div className="workspace-mode-bar">
+      <div className="workspace-mode-copy">
+        <span className="eyebrow">{modeCopy.eyebrow}</span>
+        <strong>{modeCopy.title}</strong>
+        <span>{modeCopy.detail}</span>
+      </div>
+      <div className="workspace-mode-toggle" role="group" aria-label="Workspace mode">
+        <button
+          className={mode === "studio" ? "secondary-button active workspace-mode-button" : "secondary-button workspace-mode-button"}
+          type="button"
+          aria-current={mode === "studio" ? "page" : undefined}
+          onClick={() => navigate(studioHref)}
+        >
+          Studio
+        </button>
+        <button
+          className={mode === "playground" ? "secondary-button active workspace-mode-button" : "secondary-button workspace-mode-button"}
+          type="button"
+          aria-current={mode === "playground" ? "page" : undefined}
+          onClick={() => navigate(playgroundHref)}
+        >
+          Playground
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function WorkspacePanelAdapter({
+  frameClassName,
+  leftPanel,
+  centerPanel,
+  rightPanel,
+}: {
+  frameClassName: string;
+  leftPanel: React.ReactNode;
+  centerPanel: React.ReactNode;
+  rightPanel: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <div className={frameClassName}>
+      {leftPanel}
+      {centerPanel}
+      {rightPanel}
+    </div>
+  );
+}
+
+function WorkspaceModeShell({
+  mode,
+  navigate,
+  studioHref,
+  playgroundHref,
+  children,
+}: {
+  mode: "studio" | "playground";
+  navigate: (path: string) => void;
+  studioHref: string;
+  playgroundHref: string;
+  children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <section className={`workspace-live-shell workspace-mode-${mode}`}>
+      <WorkspaceModeBar mode={mode} navigate={navigate} studioHref={studioHref} playgroundHref={playgroundHref} />
+      {children}
+    </section>
+  );
+}
+
 function PlaygroundPage({
   route,
   shell,
@@ -4244,6 +4337,12 @@ function PlaygroundPage({
   const resultProbability = resultProbabilityCard?.value ?? lastResult?.probability_summary?.probability ?? lastResult?.run_summary?.probability;
   const secondarySummaryCards = summaryCards.filter((card) => card !== resultProbabilityCard);
   const latestRunSummary = lastResult?.run_summary?.summary || lastResult?.labeling?.notes?.[0] || "Use the playground for exploratory local analysis, not release-grade evidence.";
+  const studioModeHref = contextType === "workflow" && workflowName
+    ? `/studio?workflow=${encodeURIComponent(workflowName)}`
+    : contextType === "template" && templateId
+      ? `/studio?template=${encodeURIComponent(templateId)}`
+      : "/studio";
+  const playgroundModeHref = route.search ? `/playground?${route.search}` : "/playground";
 
   useEffect(() => {
     if (!session) return;
@@ -4336,207 +4435,239 @@ function PlaygroundPage({
     }
   }
 
+  function PlaygroundInputPanel(): React.ReactElement {
+    return (
+      <aside className="playground-input-panel">
+        <div className="surface-header playground-panel-header">
+          <div>
+            <span className="eyebrow">Single question input</span>
+            <strong>{contextPreview?.title || contextPreview?.reference_name || "Choose a forecasting context"}</strong>
+          </div>
+          <StatusPill value={String(lastResult?.run?.status || session?.status || "ready")} />
+        </div>
+        <div className="playground-form-stack">
+          <section className="playground-section-card">
+            <label>
+              <span>Query</span>
+              <textarea
+                className="text-area-input playground-query-input"
+                value={questionPrompt}
+                onChange={(event) => setQuestionPrompt(event.target.value)}
+                placeholder="Will the proposed merger between Company X and Y be approved by regulators before Q3?"
+              />
+            </label>
+          </section>
+          <section className="playground-section-card">
+            <div className="two-field-grid">
+              <label>
+                <span>Context</span>
+                <select value={contextType} onChange={(event) => setContextType(event.target.value)}>
+                  <option value="workflow">Workflow</option>
+                  <option value="template">Template</option>
+                </select>
+              </label>
+              {contextType === "workflow" ? (
+                <label>
+                  <span>Workflow</span>
+                  <select value={workflowName} onChange={(event) => setWorkflowName(event.target.value)}>
+                    {workflows.map((item: JsonObject) => (
+                      <option key={item.name} value={item.name}>{item.title || item.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label>
+                  <span>Template</span>
+                  <select value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
+                    {templates.map((item: JsonObject) => (
+                      <option key={item.template_id} value={item.template_id}>{item.title}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <DensityDisclosure
+              className="playground-options-disclosure"
+              title="Advanced run options"
+              detail="Keep optional metadata and tuning nearby without crowding the main prompt."
+            >
+              <div className="two-field-grid">
+                <label>
+                  <span>Optional title</span>
+                  <input value={questionTitle} onChange={(event) => setQuestionTitle(event.target.value)} placeholder="Auto-derived when blank" />
+                </label>
+                <label>
+                  <span>Resolution criteria</span>
+                  <input value={resolutionCriteria} onChange={(event) => setResolutionCriteria(event.target.value)} placeholder="Visible later in Observatory" />
+                </label>
+              </div>
+              <div className="two-field-grid">
+                <label>
+                  <span>Confidence threshold</span>
+                  <div className="read-only-field" aria-readonly="true">
+                    <strong>10%</strong>
+                    <span>Fixed local baseline</span>
+                  </div>
+                </label>
+                <label>
+                  <span>Research depth</span>
+                  <div className="read-only-field" aria-readonly="true">
+                    <strong>Standard</strong>
+                    <span>Shared playground default</span>
+                  </div>
+                </label>
+              </div>
+            </DensityDisclosure>
+          </section>
+        </div>
+        <div className="button-row playground-action-row">
+          <button className="primary-button" onClick={runPlayground} disabled={Boolean(busy) || !readyToRun}>
+            {busy === "Running playground session" ? busy : "Run forecast"}
+          </button>
+          <button className="secondary-button" onClick={persistPlaygroundState} disabled={Boolean(busy)}>Save state</button>
+        </div>
+        {contextPreview ? (
+          <DensityDisclosure
+            className="playground-section-card playground-inline-disclosure playground-context-disclosure"
+            title={String(contextPreview.reference_name || "Context preview")}
+            detail={`Bounded ${contextPreview.context_type || contextType} context. Open for entry, runtime, and route handoff only when you need supporting detail.`}
+          >
+            <span className="source-pill local">{contextPreview.context_type || contextType}</span>
+            <p className="helper-text">{contextPreview.description || "The playground keeps context bounded to a workflow or starter template."}</p>
+            <dl className="context-list compact-context-list">
+              <div><dt>Entry</dt><dd>{contextPreview.entry || "—"}</dd></div>
+              <div><dt>Runtime</dt><dd>{contextPreview.runtime?.provider || "mock"}</dd></div>
+              <div><dt>Question limit</dt><dd>{formatValue(contextPreview.questions_limit)}</dd></div>
+            </dl>
+            <div className="button-row">
+              {contextType === "workflow" && workflowName ? (
+                <button className="secondary-button" onClick={() => navigate(`/studio?workflow=${encodeURIComponent(workflowName)}`)}>
+                  Open in Studio
+                </button>
+              ) : null}
+              <button className="secondary-button" onClick={() => navigate("/runs")}>Open Observatory</button>
+            </div>
+          </DensityDisclosure>
+        ) : null}
+      </aside>
+    );
+  }
+
+  function PlaygroundCanvasPanel(): React.ReactElement {
+    return (
+      <section className="playground-canvas-panel">
+        <PlaygroundGraphTracePreview
+          canvas={((lastResult?.canvas || contextPreview?.canvas || {}) as JsonObject)}
+          traceItems={orderedTrace}
+          activeNodeId={String(activeStep?.node_id || "")}
+          onSelectNode={selectTraceNode}
+        />
+      </section>
+    );
+  }
+
+  function PlaygroundTracePanel(): React.ReactElement {
+    return (
+      <aside className="live-trace-panel">
+        <div className="surface-header">
+          <div>
+            <span className="eyebrow">Live Execution Trace</span>
+            <h3>{activeStep?.label || activeStep?.node_id || "Ready to run"}</h3>
+          </div>
+        </div>
+        {lastResult ? (
+          <article className="forecast-result-card">
+            <span className="eyebrow">{lastResult.run_id || "Latest exploratory run"}</span>
+            <strong>{resultProbability != null ? formatProbability(resultProbability) : "Forecast ready"}</strong>
+            <span>{lastResult?.run_summary?.summary || lastResult?.labeling?.display_label || "Agent agreement"}</span>
+            <p className="helper-text playground-run-note">{latestRunSummary}</p>
+            <div className="result-sparkline" aria-hidden="true"><span /><span /><span /><span /></div>
+            <div className="button-row">
+              <button className="secondary-button" onClick={() => navigate(`/runs/${lastResult.run_id}`)}>Inspect run detail</button>
+              {lastResult.report?.available ? <a className="secondary-link" href={lastResult.report.href} target="_blank" rel="noreferrer">Open report</a> : null}
+            </div>
+          </article>
+        ) : null}
+        {secondarySummaryCards.length ? (
+          <DensityDisclosure
+            className="trace-detail-card playground-inline-disclosure playground-metrics-disclosure"
+            title="Run metrics"
+            detail="Keep secondary summary cards nearby without interrupting the default result → trace → inspector scan path."
+          >
+            <div className="stats-grid playground-trace-stats">
+              {secondarySummaryCards.map((card: JsonObject) => (
+                <MetricCard key={String(card.label)} label={String(card.label)} value={card.value} />
+              ))}
+            </div>
+          </DensityDisclosure>
+        ) : null}
+        {graphTraceArtifact.available === false && resultTrace.source === "sandbox" ? (
+          <Message
+            tone="warning"
+            title={graphTraceArtifact.empty_state?.title || "No graph trace artifact"}
+            body={graphTraceArtifact.empty_state?.body || "Showing sandbox inspection steps without claiming a persisted graph_trace.jsonl artifact."}
+          />
+        ) : null}
+        <div className="live-trace-stack">
+          {(orderedTrace.length ? orderedTrace : preRunTraceItems).map((item: JsonObject) => (
+            <button
+              key={`${item.order}-${item.node_id || item.label}`}
+              type="button"
+              className={String(activeStep?.node_id || "") === String(item.node_id || "") ? "trace-stage active" : "trace-stage"}
+              onClick={() => item.node_id ? selectTraceNode(String(item.node_id)) : undefined}
+              disabled={!item.node_id}
+            >
+              <span className="trace-ring" />
+              <strong>{item.label || item.node_id}</strong>
+              <StatusPill value={String(item.status || "pending")} />
+              {!item.node_id && item.detail ? <span className="trace-stage-note">{item.detail}</span> : null}
+            </button>
+          ))}
+        </div>
+        <article className="trace-detail-card">
+          <div className="surface-header">
+            <strong>{activeStep?.label || activeStep?.node_id || "Awaiting first trace step"}</strong>
+            <StatusPill value={String(activeStep?.status || "pending")} />
+          </div>
+          <dl className="context-list compact-context-list">
+            <div><dt>Node</dt><dd>{activeStep?.node_id || "—"}</dd></div>
+            <div><dt>Route</dt><dd>{formatValue(activeStep?.route) || "default"}</dd></div>
+            <div><dt>Latency</dt><dd>{formatValue(activeStep?.latency_seconds) || "—"}</dd></div>
+          </dl>
+          <p className="helper-text">{activeStep?.output_preview || lastResult?.run_summary?.summary || "Run the playground to inspect ordered sandbox outputs."}</p>
+          <div className="button-row">
+            <button className="secondary-button" onClick={() => navigate("/studio")}>Open Studio</button>
+          </div>
+        </article>
+      </aside>
+    );
+  }
+
+  function PlaygroundWorkspaceAdapter(): React.ReactElement {
+    return (
+      <WorkspacePanelAdapter
+        frameClassName="playground-live-workspace"
+        leftPanel={<PlaygroundInputPanel />}
+        centerPanel={<PlaygroundCanvasPanel />}
+        rightPanel={<PlaygroundTracePanel />}
+      />
+    );
+  }
+
   return (
     <main className="page-grid playground-shell">
       {resource.error ? <Message tone="error" title="Playground unavailable" body={resource.error} /> : null}
       {notice ? <Message tone={notice.tone} title={notice.title} body={notice.body} /> : null}
       {resource.loading && !resource.data ? <LoadingCard label="Loading playground" /> : null}
 
-      <section className="playground-live-workspace">
-        <aside className="playground-input-panel">
-          <div className="surface-header playground-panel-header">
-            <div>
-              <span className="eyebrow">Single question input</span>
-              <strong>{contextPreview?.title || contextPreview?.reference_name || "Choose a forecasting context"}</strong>
-            </div>
-            <StatusPill value={String(lastResult?.run?.status || session?.status || "ready")} />
-          </div>
-          <div className="playground-form-stack">
-            <section className="playground-section-card">
-              <label>
-                <span>Query</span>
-                <textarea
-                  className="text-area-input playground-query-input"
-                  value={questionPrompt}
-                  onChange={(event) => setQuestionPrompt(event.target.value)}
-                  placeholder="Will the proposed merger between Company X and Y be approved by regulators before Q3?"
-                />
-              </label>
-            </section>
-            <section className="playground-section-card">
-              <div className="two-field-grid">
-                <label>
-                  <span>Context</span>
-                  <select value={contextType} onChange={(event) => setContextType(event.target.value)}>
-                    <option value="workflow">Workflow</option>
-                    <option value="template">Template</option>
-                  </select>
-                </label>
-                {contextType === "workflow" ? (
-                  <label>
-                    <span>Workflow</span>
-                    <select value={workflowName} onChange={(event) => setWorkflowName(event.target.value)}>
-                      {workflows.map((item: JsonObject) => (
-                        <option key={item.name} value={item.name}>{item.title || item.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <label>
-                    <span>Template</span>
-                    <select value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
-                      {templates.map((item: JsonObject) => (
-                        <option key={item.template_id} value={item.template_id}>{item.title}</option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-              </div>
-              <DensityDisclosure
-                className="playground-options-disclosure"
-                title="Advanced run options"
-                detail="Keep optional metadata and tuning nearby without crowding the main prompt."
-              >
-                <div className="two-field-grid">
-                  <label>
-                    <span>Optional title</span>
-                    <input value={questionTitle} onChange={(event) => setQuestionTitle(event.target.value)} placeholder="Auto-derived when blank" />
-                  </label>
-                  <label>
-                    <span>Resolution criteria</span>
-                    <input value={resolutionCriteria} onChange={(event) => setResolutionCriteria(event.target.value)} placeholder="Visible later in Observatory" />
-                  </label>
-                </div>
-                <div className="two-field-grid">
-                  <label>
-                    <span>Confidence threshold</span>
-                    <div className="read-only-field" aria-readonly="true">
-                      <strong>10%</strong>
-                      <span>Fixed local baseline</span>
-                    </div>
-                  </label>
-                  <label>
-                    <span>Research depth</span>
-                    <div className="read-only-field" aria-readonly="true">
-                      <strong>Standard</strong>
-                      <span>Shared playground default</span>
-                    </div>
-                  </label>
-                </div>
-              </DensityDisclosure>
-            </section>
-          </div>
-          <div className="button-row playground-action-row">
-            <button className="primary-button" onClick={runPlayground} disabled={Boolean(busy) || !readyToRun}>
-              {busy === "Running playground session" ? busy : "Run forecast"}
-            </button>
-            <button className="secondary-button" onClick={persistPlaygroundState} disabled={Boolean(busy)}>Save state</button>
-          </div>
-          {contextPreview ? (
-            <DensityDisclosure
-              className="playground-section-card playground-inline-disclosure playground-context-disclosure"
-              title={String(contextPreview.reference_name || "Context preview")}
-              detail={`Bounded ${contextPreview.context_type || contextType} context. Open for entry, runtime, and route handoff only when you need supporting detail.`}
-            >
-              <span className="source-pill local">{contextPreview.context_type || contextType}</span>
-              <p className="helper-text">{contextPreview.description || "The playground keeps context bounded to a workflow or starter template."}</p>
-              <dl className="context-list compact-context-list">
-                <div><dt>Entry</dt><dd>{contextPreview.entry || "—"}</dd></div>
-                <div><dt>Runtime</dt><dd>{contextPreview.runtime?.provider || "mock"}</dd></div>
-                <div><dt>Question limit</dt><dd>{formatValue(contextPreview.questions_limit)}</dd></div>
-              </dl>
-              <div className="button-row">
-                {contextType === "workflow" && workflowName ? (
-                  <button className="secondary-button" onClick={() => navigate(`/studio?workflow=${encodeURIComponent(workflowName)}`)}>
-                    Open in Studio
-                  </button>
-                ) : null}
-                <button className="secondary-button" onClick={() => navigate("/runs")}>Open Observatory</button>
-              </div>
-            </DensityDisclosure>
-          ) : null}
-        </aside>
-        <section className="playground-canvas-panel">
-          <PlaygroundGraphTracePreview
-            canvas={((lastResult?.canvas || contextPreview?.canvas || {}) as JsonObject)}
-            traceItems={orderedTrace}
-            activeNodeId={String(activeStep?.node_id || "")}
-            onSelectNode={selectTraceNode}
-          />
-        </section>
-        <aside className="live-trace-panel">
-          <div className="surface-header">
-            <div>
-              <span className="eyebrow">Live Execution Trace</span>
-              <h3>{activeStep?.label || activeStep?.node_id || "Ready to run"}</h3>
-            </div>
-          </div>
-          {lastResult ? (
-            <article className="forecast-result-card">
-              <span className="eyebrow">{lastResult.run_id || "Latest exploratory run"}</span>
-              <strong>{resultProbability != null ? formatProbability(resultProbability) : "Forecast ready"}</strong>
-              <span>{lastResult?.run_summary?.summary || lastResult?.labeling?.display_label || "Agent agreement"}</span>
-              <p className="helper-text playground-run-note">{latestRunSummary}</p>
-              <div className="result-sparkline" aria-hidden="true"><span /><span /><span /><span /></div>
-              <div className="button-row">
-                <button className="secondary-button" onClick={() => navigate(`/runs/${lastResult.run_id}`)}>Inspect run detail</button>
-                {lastResult.report?.available ? <a className="secondary-link" href={lastResult.report.href} target="_blank" rel="noreferrer">Open report</a> : null}
-              </div>
-            </article>
-          ) : null}
-          {secondarySummaryCards.length ? (
-            <DensityDisclosure
-              className="trace-detail-card playground-inline-disclosure playground-metrics-disclosure"
-              title="Run metrics"
-              detail="Keep secondary summary cards nearby without interrupting the default result → trace → inspector scan path."
-            >
-              <div className="stats-grid playground-trace-stats">
-                {secondarySummaryCards.map((card: JsonObject) => (
-                  <MetricCard key={String(card.label)} label={String(card.label)} value={card.value} />
-                ))}
-              </div>
-            </DensityDisclosure>
-          ) : null}
-          {graphTraceArtifact.available === false && resultTrace.source === "sandbox" ? (
-            <Message
-              tone="warning"
-              title={graphTraceArtifact.empty_state?.title || "No graph trace artifact"}
-              body={graphTraceArtifact.empty_state?.body || "Showing sandbox inspection steps without claiming a persisted graph_trace.jsonl artifact."}
-            />
-          ) : null}
-          <div className="live-trace-stack">
-              {(orderedTrace.length ? orderedTrace : preRunTraceItems).map((item: JsonObject) => (
-              <button
-                  key={`${item.order}-${item.node_id || item.label}`}
-                  type="button"
-                  className={String(activeStep?.node_id || "") === String(item.node_id || "") ? "trace-stage active" : "trace-stage"}
-                  onClick={() => item.node_id ? selectTraceNode(String(item.node_id)) : undefined}
-                  disabled={!item.node_id}
-                >
-                  <span className="trace-ring" />
-                  <strong>{item.label || item.node_id}</strong>
-                  <StatusPill value={String(item.status || "pending")} />
-                  {!item.node_id && item.detail ? <span className="trace-stage-note">{item.detail}</span> : null}
-                </button>
-            ))}
-          </div>
-          <article className="trace-detail-card">
-            <div className="surface-header">
-              <strong>{activeStep?.label || activeStep?.node_id || "Awaiting first trace step"}</strong>
-              <StatusPill value={String(activeStep?.status || "pending")} />
-            </div>
-            <dl className="context-list compact-context-list">
-              <div><dt>Node</dt><dd>{activeStep?.node_id || "—"}</dd></div>
-              <div><dt>Route</dt><dd>{formatValue(activeStep?.route) || "default"}</dd></div>
-              <div><dt>Latency</dt><dd>{formatValue(activeStep?.latency_seconds) || "—"}</dd></div>
-            </dl>
-            <p className="helper-text">{activeStep?.output_preview || lastResult?.run_summary?.summary || "Run the playground to inspect ordered sandbox outputs."}</p>
-            <div className="button-row">
-              <button className="secondary-button" onClick={() => navigate("/studio")}>Open Studio</button>
-            </div>
-          </article>
-        </aside>
-      </section>
+      <WorkspaceModeShell
+        mode="playground"
+        navigate={navigate}
+        studioHref={studioModeHref}
+        playgroundHref={playgroundModeHref}
+      >
+        <PlaygroundWorkspaceAdapter />
+      </WorkspaceModeShell>
     </main>
   );
 }
@@ -4551,6 +4682,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   const isStudio = route.path === "/studio";
   const surfaceLabel = isStudio ? "Studio" : "Workbench";
   const surfaceBase = isStudio ? "/studio" : "/workbench";
+  const studioModeHref = route.search ? `${surfaceBase}?${route.search}` : surfaceBase;
   const draftApiBase = isStudio ? `${bootstrap.api_root}/studio/drafts` : `${bootstrap.api_root}/drafts`;
   const catalogUrl = isStudio ? `${bootstrap.api_root}/studio/catalog` : `${bootstrap.api_root}/authoring/catalog`;
   const workflows = useJsonResource(`${bootstrap.api_root}/workflows`, [route.search]);
@@ -4657,6 +4789,13 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   const compareActions = ((activeDraft?.compare?.next_actions || []) as JsonObject[]);
   const validationPillValue = activeDraft?.validation?.ok ? (activeDraft?.validation?.stale ? "stale validation" : "validated") : "needs validation";
   const studioDraftTitle = activeDraft?.draft_workflow_name || activeWorkflow?.title || activeWorkflow?.name || "Studio draft";
+  const playgroundModeHref = activeDraft?.draft_workflow_name
+    ? `/playground?context=workflow&workflow=${encodeURIComponent(String(activeDraft.draft_workflow_name))}`
+    : requestedTemplate
+      ? `/playground?context=template&template=${encodeURIComponent(requestedTemplate)}`
+      : selectedWorkflow
+        ? `/playground?context=workflow&workflow=${encodeURIComponent(selectedWorkflow)}`
+        : "/playground";
   const normalizedPaletteQuery = paletteQuery.trim().toLowerCase();
   const paletteGroups = useMemo(() => {
     const grouped = new Map<string, JsonObject[]>();
@@ -5181,6 +5320,838 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     }
   }
 
+  function StudioDraftPalettePanel(): React.ReactElement {
+    return (
+      <section className="playground-input-panel studio-palette-panel node-palette" aria-label="Studio node palette">
+        <div>
+          <span className="eyebrow">Quick add</span>
+          <p>Search or insert one safe node first. Open the grouped library only when the quick path is not enough.</p>
+        </div>
+        <div className="node-palette-toolbar">
+          <label className="node-palette-search">
+            <span className="eyebrow">Quick insert</span>
+            <input
+              type="search"
+              value={paletteQuery}
+              onChange={(event) => setPaletteQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && paletteTopMatch && !busy) {
+                  event.preventDefault();
+                  void addPaletteTopMatch();
+                }
+              }}
+              placeholder="Search nodes, then press Enter to insert the top match"
+              aria-label="Search studio node palette"
+            />
+          </label>
+          <div className="node-palette-actions">
+            <button className="secondary-button" type="button" onClick={() => void addPaletteTopMatch()} disabled={Boolean(busy) || !paletteTopMatch}>
+              {paletteTopMatch ? `Insert ${paletteTopMatch.label || paletteTopMatch.name}` : "No matching node"}
+            </button>
+          </div>
+        </div>
+        <details
+          className="density-disclosure studio-library-disclosure"
+          open={normalizedPaletteQuery ? true : paletteLibraryOpen || undefined}
+          onToggle={(event) => {
+            if (normalizedPaletteQuery) return;
+            setPaletteLibraryOpen((event.currentTarget as HTMLDetailsElement).open);
+          }}
+        >
+          <summary>
+            <div className="density-disclosure-copy">
+              <strong>{normalizedPaletteQuery ? `${filteredPaletteItems.length} matching nodes` : `Browse all ${nodeCatalog.length} safe nodes`}</strong>
+              <p>
+                {normalizedPaletteQuery
+                  ? paletteTopMatch
+                    ? `Enter inserts ${paletteTopMatch.label || paletteTopMatch.name}.`
+                    : "Adjust the search to find another node."
+                  : "Keep the full library collapsed until you need the grouped catalog."}
+              </p>
+            </div>
+          </summary>
+          <div className="density-disclosure-body">
+            <p className="helper-text node-palette-status">
+              {normalizedPaletteQuery
+                ? `${filteredPaletteItems.length} of ${nodeCatalog.length} nodes match the current search.`
+                : `Grouped library · ${nodeCatalog.length} safe nodes available by category.`}
+            </p>
+            <div className="node-palette-scroll">
+              {filteredPaletteGroups.length ? (
+                filteredPaletteGroups.map((group, index) => (
+                  <details
+                    key={group.key}
+                    className="palette-group-card"
+                    open={Boolean(normalizedPaletteQuery) || index === 0 || undefined}
+                  >
+                    <summary>
+                      <span>{group.label}</span>
+                      <small>{group.items.length} nodes</small>
+                    </summary>
+                    <div className="node-palette-grid">
+                      {group.items.map((item: JsonObject) => (
+                        <button
+                          key={item.implementation}
+                          type="button"
+                          className="palette-node-card"
+                          draggable={item.draggable !== false}
+                          onDragStart={(event: React.DragEvent<HTMLButtonElement>) => {
+                            event.dataTransfer.setData("application/xrtm-node-implementation", String(item.implementation || ""));
+                            event.dataTransfer.effectAllowed = "copy";
+                          }}
+                          onClick={() => void addPaletteNode(item)}
+                          disabled={Boolean(busy)}
+                        >
+                          <strong>{item.label || item.name}</strong>
+                          <span>{item.kind}</span>
+                          <small>{item.summary || item.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </details>
+                ))
+              ) : (
+                <div className="palette-empty-state">
+                  <strong>No safe nodes match that search.</strong>
+                  <span>Try a kind, label, or implementation name such as router, scorer, or baseline.</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </details>
+      </section>
+    );
+  }
+
+  function StudioDraftCanvasPanel(): React.ReactElement {
+    return (
+      <section className="playground-canvas-panel studio-canvas-panel">
+        <WorkflowCanvasSurface
+          canvas={activeCanvas}
+          entry={String(activeGraph.entry || "")}
+          selectedNodeName={inspectorMode === "node" ? selectedNodeName : ""}
+          selectedEdgeId={inspectorMode === "edge" ? selectedEdgeId : ""}
+          localPositions={localPositions}
+          edgeDraftFrom={edgeDraftFrom}
+          onMoveNode={(name, position) => setLocalPositions((current) => ({ ...current, [name]: position }))}
+          onMoveEnd={(name, position) => void persistNodePosition(name, position)}
+          onSelectNode={selectNodeInspector}
+          onSelectEdge={selectEdgeInspector}
+          onSelectWorkflow={selectWorkflowInspector}
+          onAddNodeFromPalette={(implementation, position) => void addPaletteNode(implementation, position)}
+          onCreateEdge={(from, to) => void createEdgeFromCanvas(from, to)}
+        />
+      </section>
+    );
+  }
+
+  function StudioDraftSidePanel(): React.ReactElement {
+    return (
+      <div className="live-trace-panel studio-side-panel authoring-grid">
+        <div className="studio-live-meta">
+          <div>
+            <span className="eyebrow">Studio</span>
+            <strong>{studioDraftTitle}</strong>
+          </div>
+          <div className="meta-row">
+            <SourceBadge source={activeWorkflow?.source || "builtin"} />
+            <StatusPill value={validationPillValue} />
+            {activeDraft?.revision != null ? <span>Revision {activeDraft.revision}</span> : null}
+          </div>
+        </div>
+        <div className="studio-rail-tabs" role="tablist" aria-label="Studio side panel">
+          <button
+            id="studio-rail-tab-inspect"
+            role="tab"
+            aria-selected={studioRailMode === "inspect"}
+            aria-controls="studio-side-panel-inspect"
+            tabIndex={studioRailMode === "inspect" ? 0 : -1}
+            className={studioRailMode === "inspect" ? "secondary-button active" : "secondary-button"}
+            type="button"
+            onClick={() => setStudioRailMode("inspect")}
+          >
+            Inspector
+          </button>
+          <button
+            id="studio-rail-tab-run"
+            role="tab"
+            aria-selected={studioRailMode === "run"}
+            aria-controls="studio-side-panel-run"
+            tabIndex={studioRailMode === "run" ? 0 : -1}
+            className={studioRailMode === "run" ? "secondary-button active" : "secondary-button"}
+            type="button"
+            onClick={() => setStudioRailMode("run")}
+          >
+            Run
+          </button>
+          <button
+            id="studio-rail-tab-tools"
+            role="tab"
+            aria-selected={studioRailMode === "tools"}
+            aria-controls="studio-side-panel-tools"
+            tabIndex={studioRailMode === "tools" ? 0 : -1}
+            className={studioRailMode === "tools" ? "secondary-button active" : "secondary-button"}
+            type="button"
+            onClick={() => setStudioRailMode("tools")}
+          >
+            Tools
+          </button>
+        </div>
+        {studioRailMode === "inspect" ? (
+          <section
+            id="studio-side-panel-inspect"
+            role="tabpanel"
+            aria-labelledby="studio-rail-tab-inspect"
+            className="surface-card section-stack"
+          >
+            <div className="surface-header">
+              <div>
+                <strong>Context inspector</strong>
+                <p>
+                  {inspectorMode === "workflow"
+                    ? "Edit supported workflow settings without leaving the draft IDE."
+                    : inspectorMode === "edge"
+                      ? selectedEdge ? `Inspect ${selectedEdge.from} → ${selectedEdge.to}.` : "Select an edge from the canvas or list."
+                      : selectedNode ? `Edit ${selectedNode.name} inline.` : "Select a node from the canvas to edit it."}
+                </p>
+              </div>
+              {inspectorMode === "workflow" ? <StatusPill value="workflow" /> : inspectorMode === "edge" ? <StatusPill value={selectedEdge?.read_only ? "read-only edge" : "edge"} /> : selectedNode ? <StatusPill value={selectedNode.kind || "node"} /> : null}
+            </div>
+            {inspectorMode === "workflow" ? (
+              <>
+                <dl className="context-list compact-context-list">
+                  <div><dt>Workflow</dt><dd>{activeDraft?.draft_workflow_name || activeWorkflow?.name || "—"}</dd></div>
+                  <div><dt>Entry</dt><dd>{activeGraph.entry || "—"}</dd></div>
+                  <div><dt>Revision</dt><dd>{activeDraft?.revision ?? "—"}</dd></div>
+                </dl>
+                <div className="inspector-form-grid">
+                  <div className="two-field-grid">
+                    <label>
+                      <span>Title</span>
+                      <input value={coreForm.title || ""} onChange={(event) => setCoreForm((current) => ({ ...current, title: event.target.value }))} />
+                    </label>
+                    <label>
+                      <span>Workflow kind</span>
+                      <input value={coreForm.workflow_kind || ""} onChange={(event) => setCoreForm((current) => ({ ...current, workflow_kind: event.target.value }))} list="studio-workflow-kind-options" />
+                    </label>
+                  </div>
+                  <datalist id="studio-workflow-kind-options">
+                    {((authoringCatalog.data?.workflow_kind_options || []) as string[]).map((item) => <option key={item} value={item} />)}
+                  </datalist>
+                  <label>
+                    <span>Description</span>
+                    <textarea className="text-area-input" value={coreForm.description || ""} onChange={(event) => setCoreForm((current) => ({ ...current, description: event.target.value }))} />
+                  </label>
+                  <DensityDisclosure
+                    className="studio-disclosure studio-inline-disclosure"
+                    title="Runtime and run bounds"
+                    detail="Keep provider, question limits, and model tuning nearby without crowding the default workflow overview."
+                  >
+                    <div className="two-field-grid">
+                      <label>
+                        <span>Runtime provider</span>
+                        <select value={coreForm.runtime_provider || "mock"} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_provider: event.target.value }))}>
+                          {((authoringCatalog.data?.runtime_provider_options || []) as string[]).map((item) => <option key={item} value={item}>{item}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Question limit</span>
+                        <input type="number" min={1} max={25} value={coreForm.questions_limit || ""} onChange={(event) => setCoreForm((current) => ({ ...current, questions_limit: event.target.value }))} />
+                      </label>
+                    </div>
+                    <div className="two-field-grid">
+                      <label>
+                        <span>Runtime model</span>
+                        <input value={coreForm.runtime_model || ""} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_model: event.target.value }))} placeholder="phi-4-mini" />
+                      </label>
+                      <label>
+                        <span>Max tokens</span>
+                        <input type="number" min={1} value={coreForm.runtime_max_tokens || ""} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_max_tokens: event.target.value }))} />
+                      </label>
+                    </div>
+                  </DensityDisclosure>
+                  <div className="button-row">
+                    <button className="primary-button" onClick={applyCoreFields} disabled={Boolean(busy)}>Apply workflow fields</button>
+                  </div>
+                </div>
+              </>
+            ) : inspectorMode === "edge" ? (
+              selectedEdge ? (
+                <>
+                  <dl className="context-list compact-context-list">
+                    <div><dt>From</dt><dd>{selectedEdge.from || selectedEdge.source || "—"}</dd></div>
+                    <div><dt>To</dt><dd>{selectedEdge.to || selectedEdge.target || "—"}</dd></div>
+                    <div><dt>Kind</dt><dd>{selectedEdge.kind || "edge"}</dd></div>
+                    <div><dt>Editable</dt><dd>{selectedEdge.read_only ? "No" : "Yes"}</dd></div>
+                  </dl>
+                  <button className="secondary-button" onClick={() => void removeEdge(String(selectedEdge.from), String(selectedEdge.to))} disabled={Boolean(busy) || Boolean(selectedEdge.read_only)}>Remove selected edge</button>
+                </>
+              ) : (
+                <EmptyState title="No edge selected" body="Pick an edge from the canvas curve or edge list to inspect it." />
+              )
+            ) : selectedNode ? (
+              <>
+                <dl className="context-list compact-context-list">
+                  <div><dt>Implementation</dt><dd>{selectedNode.implementation || "—"}</dd></div>
+                  <div><dt>Runtime</dt><dd>{selectedNode.runtime || "—"}</dd></div>
+                  <div><dt>Entry</dt><dd>{selectedNode.is_entry ? "Yes" : "No"}</dd></div>
+                </dl>
+                <label>
+                  <span>Description</span>
+                  <textarea className="text-area-input" value={nodeForm.description || ""} onChange={(event) => setNodeForm((current) => ({ ...current, description: event.target.value }))} />
+                </label>
+                <label>
+                  <span>Runtime label</span>
+                  <input value={nodeForm.runtime || ""} onChange={(event) => setNodeForm((current) => ({ ...current, runtime: event.target.value }))} placeholder="Optional runtime tag" />
+                </label>
+                <label>
+                  <span>Optional</span>
+                  <select value={nodeForm.optional || "false"} onChange={(event) => setNodeForm((current) => ({ ...current, optional: event.target.value }))}>
+                    <option value="false">false</option>
+                    <option value="true">true</option>
+                  </select>
+                </label>
+                {((selectedNode.aggregate_weights || []) as JsonObject[]).map((item) => {
+                  const key = `weight:${String(item.name)}`;
+                  return (
+                    <label key={key}>
+                      <span>{item.name} weight</span>
+                      <input type="number" min={0} max={100} value={nodeForm[key] || ""} onChange={(event) => setNodeForm((current) => ({ ...current, [key]: event.target.value }))} />
+                    </label>
+                  );
+                })}
+                <div className="button-row">
+                  <button className="primary-button" onClick={applyNodeUpdates} disabled={Boolean(busy)}>Apply node changes</button>
+                  <button className="secondary-button" onClick={() => void setEntry(String(selectedNode.name))} disabled={Boolean(busy) || selectedNode.is_entry}>Set as entry</button>
+                  <button className="secondary-button" onClick={() => setEdgeDraftFrom(String(selectedNode.name))} disabled={Boolean(busy)}>Start edge here</button>
+                  <button className="secondary-button" onClick={removeSelectedNode} disabled={Boolean(busy)}>Remove node</button>
+                </div>
+              </>
+            ) : (
+              <EmptyState title="No node selected" body="Pick a node from the canvas to edit its supported fields." />
+            )}
+          </section>
+        ) : null}
+        {studioRailMode === "run" ? (
+          <section
+            id="studio-side-panel-run"
+            role="tabpanel"
+            aria-labelledby="studio-rail-tab-run"
+            className="surface-card section-stack studio-publish-card"
+          >
+            <div className="surface-header">
+              <div>
+                <strong>Validate + run</strong>
+                <p>Use one control stack for validation, version snapshots, candidate runs, and compare handoff.</p>
+              </div>
+              <StatusPill value={validationPillValue} />
+            </div>
+            <Message tone={validationStatus.tone} title={validationStatus.title} body={validationStatus.body} />
+            {validationFixes.length ? (
+              <ul className="teaching-list">
+                {validationFixes.map((note) => <li key={note}>{note}</li>)}
+              </ul>
+            ) : null}
+            <section className="next-step-card">
+              <strong>{nextStep.title}</strong>
+              <p>{nextStep.detail}</p>
+            </section>
+            <div className="action-stack compact-action-stack">
+              <button className="secondary-button" onClick={createVersionSnapshotFromDraft} disabled={Boolean(busy)}>Save version snapshot</button>
+              <button className="secondary-button" onClick={validateDraft} disabled={Boolean(busy)}>Save + validate</button>
+              <button className="primary-button" disabled={Boolean(busy) || runDisabled} onClick={runDraft}>Run candidate</button>
+              {activeDraft?.last_run_id ? <button className="secondary-button" onClick={() => navigate(`/runs/${activeDraft.last_run_id}`)}>Inspect candidate</button> : null}
+              <button className="secondary-button" onClick={() => navigate("/versions")}>Open Versions</button>
+            </div>
+            {compareActions.length ? (
+              <div className="action-stack compact-action-stack">
+                {compareActions.slice(0, 2).map((action: JsonObject, index: number) => (
+                  <button key={action.href || action.label || index} className={index === 0 ? "primary-button" : "secondary-button"} onClick={() => navigate(String(action.href || "/runs"))}>
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+        {studioRailMode === "tools" ? (
+          <section
+            id="studio-side-panel-tools"
+            role="tabpanel"
+            aria-labelledby="studio-rail-tab-tools"
+            className="section-stack"
+          >
+            <DensityDisclosure
+              className="surface-card section-stack studio-disclosure"
+              title="Add safe node"
+              detail="Open the explicit add-node form only when palette click or drag-drop is not enough."
+            >
+              <label>
+                <span>Node name</span>
+                <input value={addNodeForm.node_name || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, node_name: event.target.value }))} placeholder="question_context_2" />
+              </label>
+              <label>
+                <span>Implementation</span>
+                <select value={addNodeForm.implementation || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, implementation: event.target.value }))}>
+                  {nodeCatalog.map((item: JsonObject) => (
+                    <option key={item.implementation} value={item.implementation}>{item.name} · {item.kind}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="two-field-grid">
+                <label>
+                  <span>Incoming from</span>
+                  <select value={addNodeForm.incoming_from || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, incoming_from: event.target.value }))}>
+                    <option value="">None</option>
+                    {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Outgoing to</span>
+                  <select value={addNodeForm.outgoing_to || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, outgoing_to: event.target.value }))}>
+                    <option value="">None</option>
+                    {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                  </select>
+                </label>
+              </div>
+              <label>
+                <span>Description</span>
+                <textarea className="text-area-input" value={addNodeForm.description || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, description: event.target.value }))} />
+              </label>
+              <div className="two-field-grid">
+                <label>
+                  <span>Runtime label</span>
+                  <input value={addNodeForm.runtime || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, runtime: event.target.value }))} placeholder="Optional runtime tag" />
+                </label>
+                <label>
+                  <span>Optional</span>
+                  <select value={addNodeForm.optional || "false"} onChange={(event) => setAddNodeForm((current) => ({ ...current, optional: event.target.value }))}>
+                    <option value="false">false</option>
+                    <option value="true">true</option>
+                  </select>
+                </label>
+              </div>
+              <button className="primary-button" onClick={() => void addNode()} disabled={Boolean(busy) || !addNodeForm.node_name || !addNodeForm.implementation}>Add node</button>
+            </DensityDisclosure>
+
+            <DensityDisclosure
+              className="surface-card section-stack studio-disclosure"
+              title="Edges and graph context"
+              detail="Keep edge wiring, parallel groups, and conditional routes behind one secondary disclosure."
+            >
+              <div className="two-field-grid">
+                <label>
+                  <span>From</span>
+                  <select value={addEdgeForm.from_node || ""} onChange={(event) => setAddEdgeForm((current) => ({ ...current, from_node: event.target.value }))}>
+                    <option value="">Select</option>
+                    {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>To</span>
+                  <select value={addEdgeForm.to_node || ""} onChange={(event) => setAddEdgeForm((current) => ({ ...current, to_node: event.target.value }))}>
+                    <option value="">Select</option>
+                    {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                  </select>
+                </label>
+              </div>
+              <button className="primary-button" onClick={() => void addEdge()} disabled={Boolean(busy) || !addEdgeForm.from_node || !addEdgeForm.to_node}>Add edge</button>
+              <div className="edge-list">
+                {graphEdges.map((edge: JsonObject, index: number) => (
+                  <div key={`${edge.from}-${edge.to}-${index}`} className={studioEdgeKey(edge) === selectedEdgeId ? "edge-row selected" : "edge-row"}>
+                    <button
+                      className="edge-row-button"
+                      type="button"
+                      aria-pressed={studioEdgeKey(edge) === selectedEdgeId}
+                      onClick={() => selectEdgeInspector(edge)}
+                    >
+                      <span className="table-primary">{edge.from}</span>
+                      <span className="table-secondary">{edge.to}</span>
+                    </button>
+                    <button className="secondary-button" onClick={() => void removeEdge(String(edge.from), String(edge.to))} disabled={Boolean(busy)}>Remove</button>
+                  </div>
+                ))}
+              </div>
+              {(Object.keys(activeGraph.parallel_groups || {}).length || Object.keys(activeGraph.conditional_routes || {}).length) ? (
+                <div className="guidance-section minor-divider">
+                  {Object.keys(activeGraph.parallel_groups || {}).length ? (
+                    <div>
+                      <strong>Parallel groups</strong>
+                      <ul className="guidance-list compact-list">
+                        {Object.entries(activeGraph.parallel_groups as JsonObject).map(([name, members]) => (
+                          <li key={name}><strong>{name}</strong><span>{Array.isArray(members) ? members.join(", ") : ""}</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {Object.keys(activeGraph.conditional_routes || {}).length ? (
+                    <div>
+                      <strong>Conditional routes</strong>
+                      <ul className="guidance-list compact-list">
+                        {Object.entries(activeGraph.conditional_routes as JsonObject).map(([name, route]) => (
+                          <li key={name}><strong>{name}</strong><span>{JSON.stringify(route)}</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </DensityDisclosure>
+          </section>
+        ) : null}
+      </div>
+    );
+  }
+
+  function StudioDraftWorkspaceAdapter(): React.ReactElement {
+    return (
+      <WorkspacePanelAdapter
+        frameClassName="playground-live-workspace studio-live-workspace studio-ide-panel"
+        leftPanel={<StudioDraftPalettePanel />}
+        centerPanel={<StudioDraftCanvasPanel />}
+        rightPanel={<StudioDraftSidePanel />}
+      />
+    );
+  }
+
+  function LegacyWorkbenchIdePanel(): React.ReactElement {
+    return (
+      <section className="panel section-stack studio-ide-panel">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">3. Studio graph IDE</span>
+            <h3>Drag nodes, drop safe palette items, select nodes/edges, then validate</h3>
+          </div>
+          <p className="section-copy">
+            Node positions persist with the draft layout while graph topology and configuration stay inside the shared authoring contract.
+          </p>
+        </div>
+        {!draftId ? (
+          isStudio && studioIntent && studioBootstrapState !== "failed"
+            ? <LoadingCard label="Opening Studio graph IDE" />
+            : <EmptyState title="Create a draft to unlock graph authoring" body="The canvas becomes editable as soon as you open a draft session." />
+        ) : (
+          <>
+            <section className="node-palette" aria-label="Studio node palette">
+              <div>
+                <span className="eyebrow">Quick add</span>
+                <p>Search or insert one safe node first. Open the grouped library only when the quick path is not enough.</p>
+              </div>
+              <div className="node-palette-toolbar">
+                <label className="node-palette-search">
+                  <span className="eyebrow">Quick insert</span>
+                  <input
+                    type="search"
+                    value={paletteQuery}
+                    onChange={(event) => setPaletteQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && paletteTopMatch && !busy) {
+                        event.preventDefault();
+                        void addPaletteTopMatch();
+                      }
+                    }}
+                    placeholder="Search nodes, then press Enter to insert the top match"
+                    aria-label="Search studio node palette"
+                  />
+                </label>
+                <div className="node-palette-actions">
+                  <button className="secondary-button" type="button" onClick={() => void addPaletteTopMatch()} disabled={Boolean(busy) || !paletteTopMatch}>
+                    {paletteTopMatch ? `Insert ${paletteTopMatch.label || paletteTopMatch.name}` : "No matching node"}
+                  </button>
+                </div>
+              </div>
+              <details
+                className="density-disclosure studio-library-disclosure"
+                open={normalizedPaletteQuery ? true : paletteLibraryOpen || undefined}
+                onToggle={(event) => {
+                  if (normalizedPaletteQuery) return;
+                  setPaletteLibraryOpen((event.currentTarget as HTMLDetailsElement).open);
+                }}
+              >
+                <summary>
+                  <div className="density-disclosure-copy">
+                    <strong>{normalizedPaletteQuery ? `${filteredPaletteItems.length} matching nodes` : `Browse all ${nodeCatalog.length} safe nodes`}</strong>
+                    <p>
+                      {normalizedPaletteQuery
+                        ? paletteTopMatch
+                          ? `Enter inserts ${paletteTopMatch.label || paletteTopMatch.name}.`
+                          : "Adjust the search to find another node."
+                        : "Keep the full library collapsed until you need the grouped catalog."}
+                    </p>
+                  </div>
+                </summary>
+                <div className="density-disclosure-body">
+                  <p className="helper-text node-palette-status">
+                    {normalizedPaletteQuery
+                      ? `${filteredPaletteItems.length} of ${nodeCatalog.length} nodes match the current search.`
+                      : `Grouped library · ${nodeCatalog.length} safe nodes available by category.`}
+                  </p>
+                  <div className="node-palette-scroll">
+                    {filteredPaletteGroups.length ? (
+                      filteredPaletteGroups.map((group, index) => (
+                        <details
+                          key={group.key}
+                          className="palette-group-card"
+                          open={Boolean(normalizedPaletteQuery) || index === 0 || undefined}
+                        >
+                          <summary>
+                            <span>{group.label}</span>
+                            <small>{group.items.length} nodes</small>
+                          </summary>
+                          <div className="node-palette-grid">
+                            {group.items.map((item: JsonObject) => (
+                              <button
+                                key={item.implementation}
+                                type="button"
+                                className="palette-node-card"
+                                draggable={item.draggable !== false}
+                                onDragStart={(event: React.DragEvent<HTMLButtonElement>) => {
+                                  event.dataTransfer.setData("application/xrtm-node-implementation", String(item.implementation || ""));
+                                  event.dataTransfer.effectAllowed = "copy";
+                                }}
+                                onClick={() => void addPaletteNode(item)}
+                                disabled={Boolean(busy)}
+                              >
+                                <strong>{item.label || item.name}</strong>
+                                <span>{item.kind}</span>
+                                <small>{item.summary || item.description}</small>
+                              </button>
+                            ))}
+                          </div>
+                        </details>
+                      ))
+                    ) : (
+                      <div className="palette-empty-state">
+                        <strong>No safe nodes match that search.</strong>
+                        <span>Try a kind, label, or implementation name such as router, scorer, or baseline.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </details>
+            </section>
+
+            <WorkflowCanvasSurface
+              canvas={activeCanvas}
+              entry={String(activeGraph.entry || "")}
+              selectedNodeName={inspectorMode === "node" ? selectedNodeName : ""}
+              selectedEdgeId={inspectorMode === "edge" ? selectedEdgeId : ""}
+              localPositions={localPositions}
+              edgeDraftFrom={edgeDraftFrom}
+              onMoveNode={(name, position) => setLocalPositions((current) => ({ ...current, [name]: position }))}
+              onMoveEnd={(name, position) => void persistNodePosition(name, position)}
+              onSelectNode={selectNodeInspector}
+              onSelectEdge={selectEdgeInspector}
+              onSelectWorkflow={selectWorkflowInspector}
+              onAddNodeFromPalette={(implementation, position) => void addPaletteNode(implementation, position)}
+              onCreateEdge={(from, to) => void createEdgeFromCanvas(from, to)}
+            />
+
+            <div className="three-column-grid authoring-grid">
+              <section id="studio-side-panel-inspect" className="surface-card section-stack">
+                <div className="surface-header">
+                  <div>
+                    <strong>Context inspector</strong>
+                    <p>
+                      {inspectorMode === "workflow"
+                        ? "Workflow config uses the same safe mutation action as the field form above."
+                        : inspectorMode === "edge"
+                          ? selectedEdge ? `Inspect ${selectedEdge.from} → ${selectedEdge.to}.` : "Select an edge from the canvas or list."
+                          : selectedNode ? `Edit ${selectedNode.name} inline.` : "Select a node from the canvas to edit it."}
+                    </p>
+                  </div>
+                  {inspectorMode === "workflow" ? <StatusPill value="workflow" /> : inspectorMode === "edge" ? <StatusPill value={selectedEdge?.read_only ? "read-only edge" : "edge"} /> : selectedNode ? <StatusPill value={selectedNode.kind || "node"} /> : null}
+                </div>
+                {inspectorMode === "workflow" ? (
+                  <>
+                    <dl className="context-list compact-context-list">
+                      <div><dt>Workflow</dt><dd>{activeDraft?.draft_workflow_name || activeWorkflow?.name || "—"}</dd></div>
+                      <div><dt>Entry</dt><dd>{activeGraph.entry || "—"}</dd></div>
+                      <div><dt>Revision</dt><dd>{activeDraft?.revision ?? "—"}</dd></div>
+                    </dl>
+                    <button className="secondary-button" onClick={() => document.getElementById("workflow-config-fields")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Jump to workflow config</button>
+                  </>
+                ) : inspectorMode === "edge" ? (
+                  selectedEdge ? (
+                    <>
+                      <dl className="context-list compact-context-list">
+                        <div><dt>From</dt><dd>{selectedEdge.from || selectedEdge.source || "—"}</dd></div>
+                        <div><dt>To</dt><dd>{selectedEdge.to || selectedEdge.target || "—"}</dd></div>
+                        <div><dt>Kind</dt><dd>{selectedEdge.kind || "edge"}</dd></div>
+                        <div><dt>Editable</dt><dd>{selectedEdge.read_only ? "No" : "Yes"}</dd></div>
+                      </dl>
+                      <button className="secondary-button" onClick={() => void removeEdge(String(selectedEdge.from), String(selectedEdge.to))} disabled={Boolean(busy) || Boolean(selectedEdge.read_only)}>Remove selected edge</button>
+                    </>
+                  ) : (
+                    <EmptyState title="No edge selected" body="Pick an edge from the canvas curve or edge list to inspect it." />
+                  )
+                ) : selectedNode ? (
+                  <>
+                    <dl className="context-list compact-context-list">
+                      <div><dt>Implementation</dt><dd>{selectedNode.implementation || "—"}</dd></div>
+                      <div><dt>Runtime</dt><dd>{selectedNode.runtime || "—"}</dd></div>
+                      <div><dt>Entry</dt><dd>{selectedNode.is_entry ? "Yes" : "No"}</dd></div>
+                    </dl>
+                    <label>
+                      <span>Description</span>
+                      <textarea className="text-area-input" value={nodeForm.description || ""} onChange={(event) => setNodeForm((current) => ({ ...current, description: event.target.value }))} />
+                    </label>
+                    <label>
+                      <span>Runtime label</span>
+                      <input value={nodeForm.runtime || ""} onChange={(event) => setNodeForm((current) => ({ ...current, runtime: event.target.value }))} placeholder="Optional runtime tag" />
+                    </label>
+                    <label>
+                      <span>Optional</span>
+                      <select value={nodeForm.optional || "false"} onChange={(event) => setNodeForm((current) => ({ ...current, optional: event.target.value }))}>
+                        <option value="false">false</option>
+                        <option value="true">true</option>
+                      </select>
+                    </label>
+                    {((selectedNode.aggregate_weights || []) as JsonObject[]).map((item) => {
+                      const key = `weight:${String(item.name)}`;
+                      return (
+                        <label key={key}>
+                          <span>{item.name} weight</span>
+                          <input type="number" min={0} max={100} value={nodeForm[key] || ""} onChange={(event) => setNodeForm((current) => ({ ...current, [key]: event.target.value }))} />
+                        </label>
+                      );
+                    })}
+                    <div className="button-row">
+                      <button className="primary-button" onClick={applyNodeUpdates} disabled={Boolean(busy)}>Apply node changes</button>
+                      <button className="secondary-button" onClick={() => void setEntry(String(selectedNode.name))} disabled={Boolean(busy) || selectedNode.is_entry}>Set as entry</button>
+                      <button className="secondary-button" onClick={() => setEdgeDraftFrom(String(selectedNode.name))} disabled={Boolean(busy)}>Start edge here</button>
+                      <button className="secondary-button" onClick={removeSelectedNode} disabled={Boolean(busy)}>Remove node</button>
+                    </div>
+                  </>
+                ) : (
+                  <EmptyState title="No node selected" body="Pick a node from the canvas to edit its supported fields." />
+                )}
+              </section>
+
+              <section id="studio-side-panel-tools" className="section-stack">
+                <DensityDisclosure
+                  className="surface-card section-stack studio-disclosure"
+                  title="Add safe node"
+                  detail="Open the explicit add-node form only when palette click or drag-drop is not enough."
+                >
+                  <label>
+                    <span>Node name</span>
+                    <input value={addNodeForm.node_name || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, node_name: event.target.value }))} placeholder="question_context_2" />
+                  </label>
+                  <label>
+                    <span>Implementation</span>
+                    <select value={addNodeForm.implementation || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, implementation: event.target.value }))}>
+                      {nodeCatalog.map((item: JsonObject) => (
+                        <option key={item.implementation} value={item.implementation}>{item.name} · {item.kind}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="two-field-grid">
+                    <label>
+                      <span>Incoming from</span>
+                      <select value={addNodeForm.incoming_from || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, incoming_from: event.target.value }))}>
+                        <option value="">None</option>
+                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Outgoing to</span>
+                      <select value={addNodeForm.outgoing_to || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, outgoing_to: event.target.value }))}>
+                        <option value="">None</option>
+                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    <span>Description</span>
+                    <textarea className="text-area-input" value={addNodeForm.description || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, description: event.target.value }))} />
+                  </label>
+                  <div className="two-field-grid">
+                    <label>
+                      <span>Runtime label</span>
+                      <input value={addNodeForm.runtime || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, runtime: event.target.value }))} placeholder="Optional runtime tag" />
+                    </label>
+                    <label>
+                      <span>Optional</span>
+                      <select value={addNodeForm.optional || "false"} onChange={(event) => setAddNodeForm((current) => ({ ...current, optional: event.target.value }))}>
+                        <option value="false">false</option>
+                        <option value="true">true</option>
+                      </select>
+                    </label>
+                  </div>
+                  <button className="primary-button" onClick={() => void addNode()} disabled={Boolean(busy) || !addNodeForm.node_name || !addNodeForm.implementation}>Add node</button>
+                </DensityDisclosure>
+
+                <DensityDisclosure
+                  className="surface-card section-stack studio-disclosure"
+                  title="Edges and graph context"
+                  detail="Keep edge wiring, parallel groups, and conditional routes behind one secondary disclosure."
+                >
+                  <div className="two-field-grid">
+                    <label>
+                      <span>From</span>
+                      <select value={addEdgeForm.from_node || ""} onChange={(event) => setAddEdgeForm((current) => ({ ...current, from_node: event.target.value }))}>
+                        <option value="">Select</option>
+                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span>To</span>
+                      <select value={addEdgeForm.to_node || ""} onChange={(event) => setAddEdgeForm((current) => ({ ...current, to_node: event.target.value }))}>
+                        <option value="">Select</option>
+                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <button className="primary-button" onClick={() => void addEdge()} disabled={Boolean(busy) || !addEdgeForm.from_node || !addEdgeForm.to_node}>Add edge</button>
+                  <div className="edge-list">
+                    {graphEdges.map((edge: JsonObject, index: number) => (
+                      <div key={`${edge.from}-${edge.to}-${index}`} className={studioEdgeKey(edge) === selectedEdgeId ? "edge-row selected" : "edge-row"}>
+                        <button
+                          className="edge-row-button"
+                          type="button"
+                          aria-pressed={studioEdgeKey(edge) === selectedEdgeId}
+                          onClick={() => selectEdgeInspector(edge)}
+                        >
+                          <span className="table-primary">{edge.from}</span>
+                          <span className="table-secondary">{edge.to}</span>
+                        </button>
+                        <button className="secondary-button" onClick={() => void removeEdge(String(edge.from), String(edge.to))} disabled={Boolean(busy)}>Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                  {(Object.keys(activeGraph.parallel_groups || {}).length || Object.keys(activeGraph.conditional_routes || {}).length) ? (
+                    <div className="guidance-section minor-divider">
+                      {Object.keys(activeGraph.parallel_groups || {}).length ? (
+                        <div>
+                          <strong>Parallel groups</strong>
+                          <ul className="guidance-list compact-list">
+                            {Object.entries(activeGraph.parallel_groups as JsonObject).map(([name, members]) => (
+                              <li key={name}><strong>{name}</strong><span>{Array.isArray(members) ? members.join(", ") : ""}</span></li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {Object.keys(activeGraph.conditional_routes || {}).length ? (
+                        <div>
+                          <strong>Conditional routes</strong>
+                          <ul className="guidance-list compact-list">
+                            {Object.entries(activeGraph.conditional_routes as JsonObject).map(([name, route]) => (
+                              <li key={name}><strong>{name}</strong><span>{JSON.stringify(route)}</span></li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </DensityDisclosure>
+              </section>
+            </div>
+          </>
+        )}
+      </section>
+    );
+  }
   return (
     <main
       className={isStudio ? `workbench-layout studio-workspace${showStudioDraftIde ? " studio-draft-mode" : ""}` : "workbench-layout"}
@@ -5483,527 +6454,18 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         ) : null}
 
         {showWorkbenchIdePanel ? (
-        <section className={showStudioDraftIde ? "playground-live-workspace studio-live-workspace studio-ide-panel" : "panel section-stack studio-ide-panel"}>
-          {!showStudioDraftIde ? (
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">3. Studio graph IDE</span>
-              <h3>Drag nodes, drop safe palette items, select nodes/edges, then validate</h3>
-            </div>
-            <p className="section-copy">
-              Node positions persist with the draft layout while graph topology and configuration stay inside the shared authoring contract.
-            </p>
-          </div>
-          ) : null}
-          {!draftId ? (
-            isStudio && studioIntent && studioBootstrapState !== "failed"
-              ? <LoadingCard label="Opening Studio graph IDE" />
-              : <EmptyState title="Create a draft to unlock graph authoring" body="The canvas becomes editable as soon as you open a draft session." />
+          showStudioDraftIde ? (
+            <WorkspaceModeShell
+              mode="studio"
+              navigate={navigate}
+              studioHref={studioModeHref}
+              playgroundHref={playgroundModeHref}
+            >
+              <StudioDraftWorkspaceAdapter />
+            </WorkspaceModeShell>
           ) : (
-            <>
-              <section className={showStudioDraftIde ? "playground-input-panel studio-palette-panel node-palette" : "node-palette"} aria-label="Studio node palette">
-                <div>
-                  <span className="eyebrow">Quick add</span>
-                  <p>Search or insert one safe node first. Open the grouped library only when the quick path is not enough.</p>
-                </div>
-                <div className="node-palette-toolbar">
-                  <label className="node-palette-search">
-                    <span className="eyebrow">Quick insert</span>
-                    <input
-                      type="search"
-                      value={paletteQuery}
-                      onChange={(event) => setPaletteQuery(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && paletteTopMatch && !busy) {
-                          event.preventDefault();
-                          void addPaletteTopMatch();
-                        }
-                      }}
-                      placeholder="Search nodes, then press Enter to insert the top match"
-                      aria-label="Search studio node palette"
-                    />
-                  </label>
-                  <div className="node-palette-actions">
-                    <button className="secondary-button" type="button" onClick={() => void addPaletteTopMatch()} disabled={Boolean(busy) || !paletteTopMatch}>
-                      {paletteTopMatch ? `Insert ${paletteTopMatch.label || paletteTopMatch.name}` : "No matching node"}
-                    </button>
-                  </div>
-                </div>
-                <details
-                  className="density-disclosure studio-library-disclosure"
-                  open={normalizedPaletteQuery ? true : paletteLibraryOpen || undefined}
-                  onToggle={(event) => {
-                    if (normalizedPaletteQuery) return;
-                    setPaletteLibraryOpen((event.currentTarget as HTMLDetailsElement).open);
-                  }}
-                >
-                  <summary>
-                    <div className="density-disclosure-copy">
-                      <strong>{normalizedPaletteQuery ? `${filteredPaletteItems.length} matching nodes` : `Browse all ${nodeCatalog.length} safe nodes`}</strong>
-                      <p>
-                        {normalizedPaletteQuery
-                          ? paletteTopMatch
-                            ? `Enter inserts ${paletteTopMatch.label || paletteTopMatch.name}.`
-                            : "Adjust the search to find another node."
-                          : "Keep the full library collapsed until you need the grouped catalog."}
-                      </p>
-                    </div>
-                  </summary>
-                  <div className="density-disclosure-body">
-                    <p className="helper-text node-palette-status">
-                      {normalizedPaletteQuery
-                        ? `${filteredPaletteItems.length} of ${nodeCatalog.length} nodes match the current search.`
-                        : `Grouped library · ${nodeCatalog.length} safe nodes available by category.`}
-                    </p>
-                    <div className="node-palette-scroll">
-                      {filteredPaletteGroups.length ? (
-                        filteredPaletteGroups.map((group, index) => (
-                          <details
-                            key={group.key}
-                            className="palette-group-card"
-                            open={Boolean(normalizedPaletteQuery) || index === 0 || undefined}
-                          >
-                            <summary>
-                              <span>{group.label}</span>
-                              <small>{group.items.length} nodes</small>
-                            </summary>
-                            <div className="node-palette-grid">
-                              {group.items.map((item: JsonObject) => (
-                                <button
-                                  key={item.implementation}
-                                  type="button"
-                                  className="palette-node-card"
-                                  draggable={item.draggable !== false}
-                                  onDragStart={(event: React.DragEvent<HTMLButtonElement>) => {
-                                    event.dataTransfer.setData("application/xrtm-node-implementation", String(item.implementation || ""));
-                                    event.dataTransfer.effectAllowed = "copy";
-                                  }}
-                                  onClick={() => void addPaletteNode(item)}
-                                  disabled={Boolean(busy)}
-                                >
-                                  <strong>{item.label || item.name}</strong>
-                                  <span>{item.kind}</span>
-                                  <small>{item.summary || item.description}</small>
-                                </button>
-                              ))}
-                            </div>
-                          </details>
-                        ))
-                      ) : (
-                        <div className="palette-empty-state">
-                          <strong>No safe nodes match that search.</strong>
-                          <span>Try a kind, label, or implementation name such as router, scorer, or baseline.</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </details>
-              </section>
-
-              {showStudioDraftIde ? (
-                <section className="playground-canvas-panel studio-canvas-panel">
-                  <WorkflowCanvasSurface
-                    canvas={activeCanvas}
-                    entry={String(activeGraph.entry || "")}
-                    selectedNodeName={inspectorMode === "node" ? selectedNodeName : ""}
-                    selectedEdgeId={inspectorMode === "edge" ? selectedEdgeId : ""}
-                    localPositions={localPositions}
-                    edgeDraftFrom={edgeDraftFrom}
-                    onMoveNode={(name, position) => setLocalPositions((current) => ({ ...current, [name]: position }))}
-                    onMoveEnd={(name, position) => void persistNodePosition(name, position)}
-                    onSelectNode={selectNodeInspector}
-                    onSelectEdge={selectEdgeInspector}
-                    onSelectWorkflow={selectWorkflowInspector}
-                    onAddNodeFromPalette={(implementation, position) => void addPaletteNode(implementation, position)}
-                    onCreateEdge={(from, to) => void createEdgeFromCanvas(from, to)}
-                  />
-                </section>
-              ) : (
-                <WorkflowCanvasSurface
-                  canvas={activeCanvas}
-                  entry={String(activeGraph.entry || "")}
-                  selectedNodeName={inspectorMode === "node" ? selectedNodeName : ""}
-                  selectedEdgeId={inspectorMode === "edge" ? selectedEdgeId : ""}
-                  localPositions={localPositions}
-                  edgeDraftFrom={edgeDraftFrom}
-                  onMoveNode={(name, position) => setLocalPositions((current) => ({ ...current, [name]: position }))}
-                  onMoveEnd={(name, position) => void persistNodePosition(name, position)}
-                  onSelectNode={selectNodeInspector}
-                  onSelectEdge={selectEdgeInspector}
-                  onSelectWorkflow={selectWorkflowInspector}
-                  onAddNodeFromPalette={(implementation, position) => void addPaletteNode(implementation, position)}
-                  onCreateEdge={(from, to) => void createEdgeFromCanvas(from, to)}
-                />
-              )}
-
-              <div className={showStudioDraftIde ? "live-trace-panel studio-side-panel authoring-grid" : "three-column-grid authoring-grid"}>
-                {showStudioDraftIde ? (
-                  <>
-                    <div className="studio-live-meta">
-                      <div>
-                        <span className="eyebrow">Studio</span>
-                        <strong>{studioDraftTitle}</strong>
-                      </div>
-                      <div className="meta-row">
-                        <SourceBadge source={activeWorkflow?.source || "builtin"} />
-                        <StatusPill value={validationPillValue} />
-                        {activeDraft?.revision != null ? <span>Revision {activeDraft.revision}</span> : null}
-                      </div>
-                    </div>
-                    <div className="studio-rail-tabs" role="tablist" aria-label="Studio side panel">
-                      <button
-                        id="studio-rail-tab-inspect"
-                        role="tab"
-                        aria-selected={studioRailMode === "inspect"}
-                        aria-controls="studio-side-panel-inspect"
-                        tabIndex={studioRailMode === "inspect" ? 0 : -1}
-                        className={studioRailMode === "inspect" ? "secondary-button active" : "secondary-button"}
-                        type="button"
-                        onClick={() => setStudioRailMode("inspect")}
-                      >
-                        Inspector
-                      </button>
-                      <button
-                        id="studio-rail-tab-run"
-                        role="tab"
-                        aria-selected={studioRailMode === "run"}
-                        aria-controls="studio-side-panel-run"
-                        tabIndex={studioRailMode === "run" ? 0 : -1}
-                        className={studioRailMode === "run" ? "secondary-button active" : "secondary-button"}
-                        type="button"
-                        onClick={() => setStudioRailMode("run")}
-                      >
-                        Run
-                      </button>
-                      <button
-                        id="studio-rail-tab-tools"
-                        role="tab"
-                        aria-selected={studioRailMode === "tools"}
-                        aria-controls="studio-side-panel-tools"
-                        tabIndex={studioRailMode === "tools" ? 0 : -1}
-                        className={studioRailMode === "tools" ? "secondary-button active" : "secondary-button"}
-                        type="button"
-                        onClick={() => setStudioRailMode("tools")}
-                      >
-                        Tools
-                      </button>
-                    </div>
-                  </>
-                ) : null}
-                {(!showStudioDraftIde || studioRailMode === "inspect") ? (
-                <section
-                  id="studio-side-panel-inspect"
-                  role={showStudioDraftIde ? "tabpanel" : undefined}
-                  aria-labelledby={showStudioDraftIde ? "studio-rail-tab-inspect" : undefined}
-                  className="surface-card section-stack"
-                >
-                  <div className="surface-header">
-                    <div>
-                      <strong>Context inspector</strong>
-                      <p>
-                        {inspectorMode === "workflow"
-                          ? showStudioDraftIde
-                            ? "Edit supported workflow settings without leaving the draft IDE."
-                            : "Workflow config uses the same safe mutation action as the field form above."
-                          : inspectorMode === "edge"
-                            ? selectedEdge ? `Inspect ${selectedEdge.from} → ${selectedEdge.to}.` : "Select an edge from the canvas or list."
-                            : selectedNode ? `Edit ${selectedNode.name} inline.` : "Select a node from the canvas to edit it."}
-                      </p>
-                    </div>
-                    {inspectorMode === "workflow" ? <StatusPill value="workflow" /> : inspectorMode === "edge" ? <StatusPill value={selectedEdge?.read_only ? "read-only edge" : "edge"} /> : selectedNode ? <StatusPill value={selectedNode.kind || "node"} /> : null}
-                  </div>
-                  {inspectorMode === "workflow" ? (
-                    <>
-                      <dl className="context-list compact-context-list">
-                        <div><dt>Workflow</dt><dd>{activeDraft?.draft_workflow_name || activeWorkflow?.name || "—"}</dd></div>
-                        <div><dt>Entry</dt><dd>{activeGraph.entry || "—"}</dd></div>
-                        <div><dt>Revision</dt><dd>{activeDraft?.revision ?? "—"}</dd></div>
-                      </dl>
-                      {showStudioDraftIde ? (
-                        <div className="inspector-form-grid">
-                          <div className="two-field-grid">
-                            <label>
-                              <span>Title</span>
-                              <input value={coreForm.title || ""} onChange={(event) => setCoreForm((current) => ({ ...current, title: event.target.value }))} />
-                            </label>
-                            <label>
-                              <span>Workflow kind</span>
-                              <input value={coreForm.workflow_kind || ""} onChange={(event) => setCoreForm((current) => ({ ...current, workflow_kind: event.target.value }))} list="studio-workflow-kind-options" />
-                            </label>
-                          </div>
-                          <datalist id="studio-workflow-kind-options">
-                            {((authoringCatalog.data?.workflow_kind_options || []) as string[]).map((item) => <option key={item} value={item} />)}
-                          </datalist>
-                          <label>
-                            <span>Description</span>
-                            <textarea className="text-area-input" value={coreForm.description || ""} onChange={(event) => setCoreForm((current) => ({ ...current, description: event.target.value }))} />
-                          </label>
-                          <DensityDisclosure
-                            className="studio-disclosure studio-inline-disclosure"
-                            title="Runtime and run bounds"
-                            detail="Keep provider, question limits, and model tuning nearby without crowding the default workflow overview."
-                          >
-                            <div className="two-field-grid">
-                              <label>
-                                <span>Runtime provider</span>
-                                <select value={coreForm.runtime_provider || "mock"} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_provider: event.target.value }))}>
-                                  {((authoringCatalog.data?.runtime_provider_options || []) as string[]).map((item) => <option key={item} value={item}>{item}</option>)}
-                                </select>
-                              </label>
-                              <label>
-                                <span>Question limit</span>
-                                <input type="number" min={1} max={25} value={coreForm.questions_limit || ""} onChange={(event) => setCoreForm((current) => ({ ...current, questions_limit: event.target.value }))} />
-                              </label>
-                            </div>
-                            <div className="two-field-grid">
-                              <label>
-                                <span>Runtime model</span>
-                                <input value={coreForm.runtime_model || ""} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_model: event.target.value }))} placeholder="phi-4-mini" />
-                              </label>
-                              <label>
-                                <span>Max tokens</span>
-                                <input type="number" min={1} value={coreForm.runtime_max_tokens || ""} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_max_tokens: event.target.value }))} />
-                              </label>
-                            </div>
-                          </DensityDisclosure>
-                          <div className="button-row">
-                            <button className="primary-button" onClick={applyCoreFields} disabled={Boolean(busy)}>Apply workflow fields</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button className="secondary-button" onClick={() => document.getElementById("workflow-config-fields")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Jump to workflow config</button>
-                      )}
-                    </>
-                  ) : inspectorMode === "edge" ? (
-                    selectedEdge ? (
-                      <>
-                        <dl className="context-list compact-context-list">
-                          <div><dt>From</dt><dd>{selectedEdge.from || selectedEdge.source || "—"}</dd></div>
-                          <div><dt>To</dt><dd>{selectedEdge.to || selectedEdge.target || "—"}</dd></div>
-                          <div><dt>Kind</dt><dd>{selectedEdge.kind || "edge"}</dd></div>
-                          <div><dt>Editable</dt><dd>{selectedEdge.read_only ? "No" : "Yes"}</dd></div>
-                        </dl>
-                        <button className="secondary-button" onClick={() => void removeEdge(String(selectedEdge.from), String(selectedEdge.to))} disabled={Boolean(busy) || Boolean(selectedEdge.read_only)}>Remove selected edge</button>
-                      </>
-                    ) : (
-                      <EmptyState title="No edge selected" body="Pick an edge from the canvas curve or edge list to inspect it." />
-                    )
-                  ) : selectedNode ? (
-                    <>
-                      <dl className="context-list compact-context-list">
-                        <div><dt>Implementation</dt><dd>{selectedNode.implementation || "—"}</dd></div>
-                        <div><dt>Runtime</dt><dd>{selectedNode.runtime || "—"}</dd></div>
-                        <div><dt>Entry</dt><dd>{selectedNode.is_entry ? "Yes" : "No"}</dd></div>
-                      </dl>
-                      <label>
-                        <span>Description</span>
-                        <textarea className="text-area-input" value={nodeForm.description || ""} onChange={(event) => setNodeForm((current) => ({ ...current, description: event.target.value }))} />
-                      </label>
-                      <label>
-                        <span>Runtime label</span>
-                        <input value={nodeForm.runtime || ""} onChange={(event) => setNodeForm((current) => ({ ...current, runtime: event.target.value }))} placeholder="Optional runtime tag" />
-                      </label>
-                      <label>
-                        <span>Optional</span>
-                        <select value={nodeForm.optional || "false"} onChange={(event) => setNodeForm((current) => ({ ...current, optional: event.target.value }))}>
-                          <option value="false">false</option>
-                          <option value="true">true</option>
-                        </select>
-                      </label>
-                      {((selectedNode.aggregate_weights || []) as JsonObject[]).map((item) => {
-                        const key = `weight:${String(item.name)}`;
-                        return (
-                          <label key={key}>
-                            <span>{item.name} weight</span>
-                            <input type="number" min={0} max={100} value={nodeForm[key] || ""} onChange={(event) => setNodeForm((current) => ({ ...current, [key]: event.target.value }))} />
-                          </label>
-                        );
-                      })}
-                      <div className="button-row">
-                        <button className="primary-button" onClick={applyNodeUpdates} disabled={Boolean(busy)}>Apply node changes</button>
-                        <button className="secondary-button" onClick={() => void setEntry(String(selectedNode.name))} disabled={Boolean(busy) || selectedNode.is_entry}>Set as entry</button>
-                        <button className="secondary-button" onClick={() => setEdgeDraftFrom(String(selectedNode.name))} disabled={Boolean(busy)}>Start edge here</button>
-                        <button className="secondary-button" onClick={removeSelectedNode} disabled={Boolean(busy)}>Remove node</button>
-                      </div>
-                    </>
-                  ) : (
-                      <EmptyState title="No node selected" body="Pick a node from the canvas to edit its supported fields." />
-                    )}
-                </section>
-                ) : null}
-
-                {showStudioDraftIde && studioRailMode === "run" ? (
-                  <section
-                    id="studio-side-panel-run"
-                    role="tabpanel"
-                    aria-labelledby="studio-rail-tab-run"
-                    className="surface-card section-stack studio-publish-card"
-                  >
-                    <div className="surface-header">
-                      <div>
-                        <strong>Validate + run</strong>
-                        <p>Use one control stack for validation, version snapshots, candidate runs, and compare handoff.</p>
-                      </div>
-                      <StatusPill value={validationPillValue} />
-                    </div>
-                    <Message tone={validationStatus.tone} title={validationStatus.title} body={validationStatus.body} />
-                    {validationFixes.length ? (
-                      <ul className="teaching-list">
-                        {validationFixes.map((note) => <li key={note}>{note}</li>)}
-                      </ul>
-                    ) : null}
-                    <section className="next-step-card">
-                      <strong>{nextStep.title}</strong>
-                      <p>{nextStep.detail}</p>
-                    </section>
-                    <div className="action-stack compact-action-stack">
-                      <button className="secondary-button" onClick={createVersionSnapshotFromDraft} disabled={Boolean(busy)}>Save version snapshot</button>
-                      <button className="secondary-button" onClick={validateDraft} disabled={Boolean(busy)}>Save + validate</button>
-                      <button className="primary-button" disabled={Boolean(busy) || runDisabled} onClick={runDraft}>Run candidate</button>
-                      {activeDraft?.last_run_id ? <button className="secondary-button" onClick={() => navigate(`/runs/${activeDraft.last_run_id}`)}>Inspect candidate</button> : null}
-                      <button className="secondary-button" onClick={() => navigate("/versions")}>Open Versions</button>
-                    </div>
-                    {compareActions.length ? (
-                      <div className="action-stack compact-action-stack">
-                        {compareActions.slice(0, 2).map((action: JsonObject, index: number) => (
-                          <button key={action.href || action.label || index} className={index === 0 ? "primary-button" : "secondary-button"} onClick={() => navigate(String(action.href || "/runs"))}>
-                            {action.label}
-                          </button>
-                        ))}
-                      </div>
-                      ) : null}
-                  </section>
-                ) : null}
-
-                {(!showStudioDraftIde || studioRailMode === "tools") ? (
-                <section
-                  id="studio-side-panel-tools"
-                  role={showStudioDraftIde ? "tabpanel" : undefined}
-                  aria-labelledby={showStudioDraftIde ? "studio-rail-tab-tools" : undefined}
-                  className="section-stack"
-                >
-                <DensityDisclosure
-                  className="surface-card section-stack studio-disclosure"
-                  title="Add safe node"
-                  detail="Open the explicit add-node form only when palette click or drag-drop is not enough."
-                >
-                  <label>
-                    <span>Node name</span>
-                    <input value={addNodeForm.node_name || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, node_name: event.target.value }))} placeholder="question_context_2" />
-                  </label>
-                  <label>
-                    <span>Implementation</span>
-                    <select value={addNodeForm.implementation || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, implementation: event.target.value }))}>
-                      {nodeCatalog.map((item: JsonObject) => (
-                        <option key={item.implementation} value={item.implementation}>{item.name} · {item.kind}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="two-field-grid">
-                    <label>
-                      <span>Incoming from</span>
-                      <select value={addNodeForm.incoming_from || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, incoming_from: event.target.value }))}>
-                        <option value="">None</option>
-                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
-                      </select>
-                    </label>
-                    <label>
-                      <span>Outgoing to</span>
-                      <select value={addNodeForm.outgoing_to || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, outgoing_to: event.target.value }))}>
-                        <option value="">None</option>
-                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                  <label>
-                    <span>Description</span>
-                    <textarea className="text-area-input" value={addNodeForm.description || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, description: event.target.value }))} />
-                  </label>
-                  <div className="two-field-grid">
-                    <label>
-                      <span>Runtime label</span>
-                      <input value={addNodeForm.runtime || ""} onChange={(event) => setAddNodeForm((current) => ({ ...current, runtime: event.target.value }))} placeholder="Optional runtime tag" />
-                    </label>
-                    <label>
-                      <span>Optional</span>
-                      <select value={addNodeForm.optional || "false"} onChange={(event) => setAddNodeForm((current) => ({ ...current, optional: event.target.value }))}>
-                        <option value="false">false</option>
-                        <option value="true">true</option>
-                      </select>
-                    </label>
-                  </div>
-                  <button className="primary-button" onClick={() => void addNode()} disabled={Boolean(busy) || !addNodeForm.node_name || !addNodeForm.implementation}>Add node</button>
-                </DensityDisclosure>
-
-                <DensityDisclosure
-                  className="surface-card section-stack studio-disclosure"
-                  title="Edges and graph context"
-                  detail="Keep edge wiring, parallel groups, and conditional routes behind one secondary disclosure."
-                >
-                  <div className="two-field-grid">
-                    <label>
-                      <span>From</span>
-                      <select value={addEdgeForm.from_node || ""} onChange={(event) => setAddEdgeForm((current) => ({ ...current, from_node: event.target.value }))}>
-                        <option value="">Select</option>
-                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
-                      </select>
-                    </label>
-                    <label>
-                      <span>To</span>
-                      <select value={addEdgeForm.to_node || ""} onChange={(event) => setAddEdgeForm((current) => ({ ...current, to_node: event.target.value }))}>
-                        <option value="">Select</option>
-                        {graphTargets.map((target: JsonObject) => <option key={target.name} value={target.name}>{target.name}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                  <button className="primary-button" onClick={() => void addEdge()} disabled={Boolean(busy) || !addEdgeForm.from_node || !addEdgeForm.to_node}>Add edge</button>
-                  <div className="edge-list">
-                    {graphEdges.map((edge: JsonObject, index: number) => (
-                      <div key={`${edge.from}-${edge.to}-${index}`} className={studioEdgeKey(edge) === selectedEdgeId ? "edge-row selected" : "edge-row"}>
-                        <button
-                          className="edge-row-button"
-                          type="button"
-                          aria-pressed={studioEdgeKey(edge) === selectedEdgeId}
-                          onClick={() => selectEdgeInspector(edge)}
-                        >
-                          <span className="table-primary">{edge.from}</span>
-                          <span className="table-secondary">{edge.to}</span>
-                        </button>
-                        <button className="secondary-button" onClick={() => void removeEdge(String(edge.from), String(edge.to))} disabled={Boolean(busy)}>Remove</button>
-                      </div>
-                    ))}
-                  </div>
-                  {(Object.keys(activeGraph.parallel_groups || {}).length || Object.keys(activeGraph.conditional_routes || {}).length) ? (
-                    <div className="guidance-section minor-divider">
-                      {Object.keys(activeGraph.parallel_groups || {}).length ? (
-                        <div>
-                          <strong>Parallel groups</strong>
-                          <ul className="guidance-list compact-list">
-                            {Object.entries(activeGraph.parallel_groups as JsonObject).map(([name, members]) => (
-                              <li key={name}><strong>{name}</strong><span>{Array.isArray(members) ? members.join(", ") : ""}</span></li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                      {Object.keys(activeGraph.conditional_routes || {}).length ? (
-                        <div>
-                          <strong>Conditional routes</strong>
-                          <ul className="guidance-list compact-list">
-                            {Object.entries(activeGraph.conditional_routes as JsonObject).map(([name, route]) => (
-                              <li key={name}><strong>{name}</strong><span>{JSON.stringify(route)}</span></li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </DensityDisclosure>
-                </section>
-                ) : null}
-              </div>
-            </>
-          )}
-        </section>
+            <LegacyWorkbenchIdePanel />
+          )
         ) : null}
 
         {showWorkbenchFieldSetup ? (
@@ -6120,6 +6582,8 @@ function GraphCanvasBase({
   onNodePointerUp,
   onNodeClick,
   renderNodeContents,
+  centerContent = true,
+  enableStagePan = false,
 }: {
   nodes: JsonObject[];
   edges: JsonObject[];
@@ -6156,9 +6620,14 @@ function GraphCanvasBase({
   ) => void;
   onNodeClick?: (event: React.MouseEvent<HTMLButtonElement>, node: JsonObject) => void;
   renderNodeContents: (node: JsonObject) => React.ReactNode;
+  centerContent?: boolean;
+  enableStagePan?: boolean;
 }): React.ReactElement {
   const shellRef = React.useRef<HTMLDivElement | null>(null);
   const stageRef = React.useRef<HTMLDivElement | null>(null);
+  const stagePanRef = React.useRef<{ pointerId: number; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const stagePanMovedRef = React.useRef(false);
+  const [stagePanning, setStagePanning] = useState(false);
   const [viewportSize, setViewportSize] = useState({ width: minWidth, height: minHeight });
   const measureViewport = () => {
     const shell = shellRef.current;
@@ -6202,8 +6671,8 @@ function GraphCanvasBase({
   }
   const contentWidth = Math.max(minWidth, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).x + widthPadding));
   const contentHeight = Math.max(minHeight, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).y + heightPadding));
-  const contentOffsetX = Math.max(0, Math.floor((viewportSize.width - contentWidth) / 2));
-  const contentOffsetY = Math.max(0, Math.floor((viewportSize.height - contentHeight) / 2));
+  const contentOffsetX = centerContent ? Math.max(0, Math.floor((viewportSize.width - contentWidth) / 2)) : 0;
+  const contentOffsetY = centerContent ? Math.max(0, Math.floor((viewportSize.height - contentHeight) / 2)) : 0;
   const relativePoint = (event: { clientX: number; clientY: number }) => {
     const stage = stageRef.current;
     const rect = stage?.getBoundingClientRect();
@@ -6224,6 +6693,19 @@ function GraphCanvasBase({
     x: Math.max(0, Math.min(contentWidth - 180, Math.round(x))),
     y: Math.max(0, Math.min(contentHeight - 90, Math.round(y))),
   });
+  const finishStagePan = (stage: HTMLDivElement, pointerId: number) => {
+    if (stagePanRef.current?.pointerId !== pointerId) return;
+    stagePanRef.current = null;
+    setStagePanning(false);
+    stage.releasePointerCapture(pointerId);
+  };
+  const handleCanvasBackgroundClick = () => {
+    if (stagePanMovedRef.current) {
+      stagePanMovedRef.current = false;
+      return;
+    }
+    onStageClick?.();
+  };
   return (
     <div
       ref={shellRef}
@@ -6245,9 +6727,39 @@ function GraphCanvasBase({
     >
       <div
         ref={stageRef}
-        className="workflow-canvas-stage"
+        className={`workflow-canvas-stage${enableStagePan ? " canvas-pannable" : ""}${stagePanning ? " panning" : ""}`}
+        onPointerDown={(event) => {
+          if (!enableStagePan) return;
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          const isCanvasBackground = target === event.currentTarget || target.tagName.toLowerCase() === "svg";
+          if (!isCanvasBackground) return;
+          stagePanRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            scrollLeft: event.currentTarget.scrollLeft,
+            scrollTop: event.currentTarget.scrollTop,
+          };
+          stagePanMovedRef.current = false;
+          setStagePanning(true);
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          const pan = stagePanRef.current;
+          if (!pan || pan.pointerId !== event.pointerId) return;
+          const deltaX = event.clientX - pan.startX;
+          const deltaY = event.clientY - pan.startY;
+          if (!stagePanMovedRef.current && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
+            stagePanMovedRef.current = true;
+          }
+          event.currentTarget.scrollLeft = pan.scrollLeft - deltaX;
+          event.currentTarget.scrollTop = pan.scrollTop - deltaY;
+        }}
+        onPointerUp={(event) => finishStagePan(event.currentTarget, event.pointerId)}
+        onPointerCancel={(event) => finishStagePan(event.currentTarget, event.pointerId)}
         onClick={(event) => {
-          if (event.currentTarget === event.target) onStageClick?.();
+          if (event.currentTarget === event.target) handleCanvasBackgroundClick();
         }}
       >
         <div
@@ -6259,7 +6771,7 @@ function GraphCanvasBase({
             top: `${contentOffsetY}px`,
           }}
         >
-          <svg className="workflow-canvas-svg" viewBox={`0 0 ${contentWidth} ${contentHeight}`} preserveAspectRatio="xMinYMin meet" onClick={onStageClick}>
+          <svg className="workflow-canvas-svg" viewBox={`0 0 ${contentWidth} ${contentHeight}`} preserveAspectRatio="xMinYMin meet" onClick={handleCanvasBackgroundClick}>
             <defs>
               <marker id={markerId} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
                 <path d="M0,0 L8,4 L0,8 z" fill="#91a5ca" />
@@ -6357,6 +6869,8 @@ function WorkflowCanvasSurface({
       minHeight={360}
       widthPadding={240}
       heightPadding={150}
+      centerContent={false}
+      enableStagePan={true}
       onStageClick={onSelectWorkflow}
       onShellDrop={onAddNodeFromPalette}
       edgeClassName={(edge) => `workflow-canvas-edge ${studioEdgeKey(edge) === selectedEdgeId ? "selected" : ""} ${edge.read_only ? "readonly" : ""}`}
@@ -6433,6 +6947,8 @@ function PlaygroundGraphTracePreview({
       minHeight={360}
       widthPadding={240}
       heightPadding={150}
+      centerContent={false}
+      enableStagePan={true}
       edgeClassName={(edge) => {
         const sourceTrace = traceByNode[String(edge.from || "")];
         const targetTrace = traceByNode[String(edge.to || "")];

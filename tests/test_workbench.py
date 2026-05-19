@@ -477,7 +477,10 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert ":root[data-theme=\"light\"] .studio-workspace .node-palette" in app_css
         assert ".studio-live-workspace.studio-ide-panel" in app_css
         assert ".studio-live-meta" in app_css
+        assert ".workspace-mode-bar" in app_css
+        assert ".workspace-live-shell" in app_css
         assert ".workflow-canvas-content" in app_css
+        assert ".workflow-canvas-stage.canvas-pannable" in app_css
         assert ".density-disclosure" in app_css
         assert re.search(r"\.product-main\s*\{[^}]*min-width:\s*0;", app_css, re.S)
         assert re.search(r"\.product-main\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\);", app_css, re.S)
@@ -526,8 +529,10 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
             {
                 "route": "/studio",
                 "api": "/api/studio",
-                "js_tokens": ("studio-workspace", "studio-live-workspace", "studio-ide-panel", "Browse all", "Quick insert", "Create or resume a local Studio draft"),
+                "js_tokens": ("studio-workspace", "studio-live-workspace", "studio-ide-panel", "workspace-mode-bar", "Studio authoring", "Playground execution", "Browse all", "Quick insert", "Create or resume a local Studio draft"),
                 "css_patterns": (
+                    r"\.workspace-live-shell\s*\{(?=[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
+                    r"\.workspace-mode-toggle\s*\{(?=[^}]*display:\s*grid)(?=[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\))[^}]*\}",
                     r"\.studio-live-workspace\.studio-ide-panel\s*\{(?=[^}]*min-height:\s*var\(--workspace-ide-height\))(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*grid-template-columns:\s*var\(--workspace-pane-left\)\s+var\(--workspace-pane-center\)\s+var\(--workspace-pane-right\);",
                     r"\.studio-workspace\s*\{(?=[^}]*align-items:\s*stretch)(?=[^}]*min-height:\s*0)[^}]*\}",
                     r"\.studio-draft-mode\s*\{(?=[^}]*display:\s*flex)(?=[^}]*flex-direction:\s*column)(?=[^}]*height:\s*100%)[^}]*\}",
@@ -537,6 +542,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
                     r"\.studio-live-workspace \.studio-side-panel\s*\{(?=[^}]*grid-template-rows:\s*auto\s+auto\s+minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-live-meta\s*\{(?=[^}]*display:\s*grid)(?=[^}]*border-bottom:\s*1px\s+solid)[^}]*\}",
                     r"\.workflow-canvas-shell\s*\{(?=[^}]*display:\s*flex)(?=[^}]*flex-direction:\s*column)(?=[^}]*overflow:\s*hidden)[^}]*\}",
+                    r"\.workflow-canvas-stage\.canvas-pannable\s*,\s*\.workflow-canvas-stage\.canvas-pannable \.workflow-canvas-svg\s*\{[^}]*cursor:\s*grab;",
                     r"\.studio-live-workspace \.studio-canvas-panel \.workflow-canvas-shell\s*\{(?=[^}]*grid-column:\s*1)(?=[^}]*grid-row:\s*1)(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.workflow-canvas-stage\s*\{(?=[^}]*flex:\s*1\s+1\s+auto)(?=[^}]*overflow:\s*auto)(?=[^}]*min-height:\s*0)[^}]*\}",
                     r"@media \(max-width:\s*1180px\)\s*\{.*?\.studio-live-workspace\.studio-ide-panel\s*\{.*?grid-template-columns:\s*minmax\(12rem,\s*13\.5rem\)\s*minmax\(0,\s*1fr\);",
@@ -546,8 +552,9 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
             {
                 "route": "/playground",
                 "api": "/api/playground",
-                "js_tokens": ("playground-shell", "playground-live-workspace", "Single question input"),
+                "js_tokens": ("playground-shell", "playground-live-workspace", "workspace-live-shell", "workspace-mode-toggle", "Single question input"),
                 "css_patterns": (
+                    r"\.workspace-live-shell\s*\{(?=[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.playground-shell\s*\{(?=[^}]*align-items:\s*stretch)(?=[^}]*height:\s*100%)(?=[^}]*min-height:\s*0)[^}]*\}",
                     r"\.playground-live-workspace\s*\{(?=[^}]*height:\s*100%)(?=[^}]*min-height:\s*0)[^}]*grid-template-columns:\s*var\(--workspace-pane-left\)\s+var\(--workspace-pane-center\)\s+var\(--workspace-pane-right\);",
                     r"\.playground-canvas-panel \.workflow-canvas-shell\s*\{(?=[^}]*height:\s*100%)(?=[^}]*overflow:\s*hidden)[^}]*\}",
@@ -631,6 +638,8 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert "shell-icon-button" in app_js
         assert "ResizeObserver" in app_js
         assert "workflow-canvas-content" in app_js
+        assert "canvas-pannable" in app_js
+        assert "workspace-mode-toggle" in app_js
         assert "scrollLeft" in app_js
         assert "scrollTop" in app_js
         assert "Workflow inspector" not in app_js
