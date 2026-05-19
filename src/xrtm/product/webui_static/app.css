@@ -2967,6 +2967,9 @@ a:focus-visible {
   .studio-draft-mode .studio-toolbar {
     right: 16.85rem;
   }
+  .studio-draft-mode .studio-ide-panel > .section-heading {
+    right: 16.85rem;
+  }
   .playground-live-workspace {
     min-height: var(--workspace-ide-height);
     grid-template-columns: var(--workspace-pane-left) var(--workspace-pane-center) var(--workspace-pane-right);
