@@ -2877,14 +2877,23 @@
     const contentHeight = Math.max(minHeight, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).y + heightPadding));
     const width = Math.max(viewportSize.width, contentWidth);
     const height = Math.max(viewportSize.height, contentHeight);
+    const contentOffsetX = Math.max(0, Math.floor((width - contentWidth) / 2));
+    const contentOffsetY = Math.max(0, Math.floor((height - contentHeight) / 2));
     const relativePoint = (event) => {
       const rect = stageRef.current?.getBoundingClientRect();
       if (!rect) return { x: 0, y: 0 };
       return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     };
+    const graphPoint = (event) => {
+      const point = relativePoint(event);
+      return {
+        x: point.x - contentOffsetX,
+        y: point.y - contentOffsetY
+      };
+    };
     const clampPosition = (x, y) => ({
-      x: Math.max(0, Math.min(width - 180, Math.round(x))),
-      y: Math.max(0, Math.min(height - 90, Math.round(y)))
+      x: Math.max(0, Math.min(contentWidth - 180, Math.round(x))),
+      y: Math.max(0, Math.min(contentHeight - 90, Math.round(y)))
     });
     return /* @__PURE__ */ React.createElement(
       "div",
@@ -2902,7 +2911,7 @@
           const implementation = event.dataTransfer.getData("application/xrtm-node-implementation");
           if (!implementation) return;
           event.preventDefault();
-          const point = relativePoint(event);
+          const point = graphPoint(event);
           onShellDrop(implementation, clampPosition(point.x - 82, point.y - 34));
         }
       },
@@ -2916,42 +2925,54 @@
             if (event.currentTarget === event.target) onStageClick?.();
           }
         },
-        /* @__PURE__ */ React.createElement("svg", { className: "workflow-canvas-svg", viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: "xMinYMin meet", onClick: onStageClick }, /* @__PURE__ */ React.createElement("defs", null, /* @__PURE__ */ React.createElement("marker", { id: markerId, markerWidth: "8", markerHeight: "8", refX: "7", refY: "4", orient: "auto" }, /* @__PURE__ */ React.createElement("path", { d: "M0,0 L8,4 L0,8 z", fill: "#91a5ca" }))), edges.map((edge, index) => {
-          const from = positions[String(edge.from || "")];
-          const to = positions[String(edge.to || "")];
-          if (!from || !to) return null;
-          const x1 = from.x + 164;
-          const y1 = from.y + 34;
-          const x2 = to.x;
-          const y2 = to.y + 34;
-          const midX = (x1 + x2) / 2;
-          const midY = (y1 + y2) / 2;
-          return /* @__PURE__ */ React.createElement("g", { key: `${edge.from}-${edge.to}-${index}`, className: "workflow-canvas-edge-hit", onClick: (event) => {
-            event.stopPropagation();
-            onEdgeClick?.(edge);
-          } }, /* @__PURE__ */ React.createElement("path", { className: edgeClassName(edge, index), d: `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`, markerEnd: `url(#${markerId})` }), edge.label ? /* @__PURE__ */ React.createElement("text", { className: "workflow-canvas-label", x: midX, y: midY - 6 }, String(edge.label)) : null);
-        })),
-        nodes.map((node) => {
-          const name = String(node.name);
-          const position = positions[name] || { x: Number(node.x || 0), y: Number(node.y || 0) };
-          return /* @__PURE__ */ React.createElement(
-            "button",
-            {
-              key: name,
-              type: "button",
-              className: nodeClassName(node),
-              style: { left: `${position.x}px`, top: `${position.y}px` },
-              onPointerDown: (event) => onNodePointerDown?.(event, node, position, relativePoint(event)),
-              onPointerMove: (event) => onNodePointerMove?.(event, node, position, relativePoint(event), clampPosition),
-              onPointerUp: (event) => onNodePointerUp?.(event, node, positions[name] || position),
-              onClick: (event) => {
-                event.stopPropagation();
-                onNodeClick?.(event, node);
-              }
-            },
-            renderNodeContents(node)
-          );
-        })
+        /* @__PURE__ */ React.createElement(
+          "div",
+          {
+            className: "workflow-canvas-content",
+            style: {
+              width: `${contentWidth}px`,
+              height: `${contentHeight}px`,
+              left: `${contentOffsetX}px`,
+              top: `${contentOffsetY}px`
+            }
+          },
+          /* @__PURE__ */ React.createElement("svg", { className: "workflow-canvas-svg", viewBox: `0 0 ${contentWidth} ${contentHeight}`, preserveAspectRatio: "xMinYMin meet", onClick: onStageClick }, /* @__PURE__ */ React.createElement("defs", null, /* @__PURE__ */ React.createElement("marker", { id: markerId, markerWidth: "8", markerHeight: "8", refX: "7", refY: "4", orient: "auto" }, /* @__PURE__ */ React.createElement("path", { d: "M0,0 L8,4 L0,8 z", fill: "#91a5ca" }))), edges.map((edge, index) => {
+            const from = positions[String(edge.from || "")];
+            const to = positions[String(edge.to || "")];
+            if (!from || !to) return null;
+            const x1 = from.x + 164;
+            const y1 = from.y + 34;
+            const x2 = to.x;
+            const y2 = to.y + 34;
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2;
+            return /* @__PURE__ */ React.createElement("g", { key: `${edge.from}-${edge.to}-${index}`, className: "workflow-canvas-edge-hit", onClick: (event) => {
+              event.stopPropagation();
+              onEdgeClick?.(edge);
+            } }, /* @__PURE__ */ React.createElement("path", { className: edgeClassName(edge, index), d: `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`, markerEnd: `url(#${markerId})` }), edge.label ? /* @__PURE__ */ React.createElement("text", { className: "workflow-canvas-label", x: midX, y: midY - 6 }, String(edge.label)) : null);
+          })),
+          nodes.map((node) => {
+            const name = String(node.name);
+            const position = positions[name] || { x: Number(node.x || 0), y: Number(node.y || 0) };
+            return /* @__PURE__ */ React.createElement(
+              "button",
+              {
+                key: name,
+                type: "button",
+                className: nodeClassName(node),
+                style: { left: `${position.x}px`, top: `${position.y}px` },
+                onPointerDown: (event) => onNodePointerDown?.(event, node, position, graphPoint(event)),
+                onPointerMove: (event) => onNodePointerMove?.(event, node, position, graphPoint(event), clampPosition),
+                onPointerUp: (event) => onNodePointerUp?.(event, node, positions[name] || position),
+                onClick: (event) => {
+                  event.stopPropagation();
+                  onNodeClick?.(event, node);
+                }
+              },
+              renderNodeContents(node)
+            );
+          })
+        )
       )
     );
   }

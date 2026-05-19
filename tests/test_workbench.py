@@ -465,6 +465,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert ":root[data-theme=\"dark\"] .operations-subpanel" in app_css
         assert ":root[data-theme=\"light\"] .studio-workspace .node-palette" in app_css
         assert ":root[data-theme=\"light\"] .studio-workspace .studio-toolbar" in app_css
+        assert ".workflow-canvas-content" in app_css
         assert ".density-disclosure" in app_css
         assert re.search(r"\.product-main\s*\{[^}]*min-width:\s*0;", app_css, re.S)
         assert re.search(r"\.product-main\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\);", app_css, re.S)
@@ -614,6 +615,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert "shell-status-button" in app_js
         assert "shell-icon-button" in app_js
         assert "ResizeObserver" in app_js
+        assert "workflow-canvas-content" in app_js
         assert "Opening Studio graph IDE" in app_js
         studio_bootstrap_effect = re.search(
             r"setBusy\(\"Opening Studio graph IDE\"\).*?\}, \[\s*(?P<deps>.*?)\s*\]\);",
