@@ -1806,12 +1806,15 @@ a:focus-visible {
 }
 
 .studio-draft-mode {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 
 .studio-draft-mode .workbench-main {
+  flex: 1 1 auto;
   height: 100%;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr);
@@ -1849,12 +1852,13 @@ a:focus-visible {
 
 .studio-workspace .studio-ide-panel > * {
   min-width: 0;
+  min-height: 0;
 }
 
 .studio-draft-mode .studio-ide-panel {
   position: relative;
   height: 100%;
-  min-height: 0;
+  min-height: var(--workspace-ide-height);
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
@@ -1987,6 +1991,7 @@ a:focus-visible {
 .studio-workspace .workflow-canvas-shell {
   grid-column: 2;
   grid-row: 3;
+  align-self: stretch;
   min-width: 0;
   min-height: 0;
   height: 100%;

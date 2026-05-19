@@ -529,10 +529,11 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
                 "css_patterns": (
                     r"\.studio-workspace \.studio-ide-panel\s*\{[^}]*grid-template-columns:\s*var\(--workspace-pane-left\)\s+var\(--workspace-pane-center\)\s+var\(--workspace-pane-right\);",
                     r"\.studio-workspace\s*\{(?=[^}]*align-items:\s*stretch)(?=[^}]*min-height:\s*0)[^}]*\}",
+                    r"\.studio-draft-mode\s*\{(?=[^}]*display:\s*flex)(?=[^}]*flex-direction:\s*column)(?=[^}]*height:\s*100%)[^}]*\}",
                     r"\.studio-workspace \.node-palette\s*\{(?=[^}]*min-height:\s*0)(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-workspace \.node-palette-scroll\s*\{(?=[^}]*overflow:\s*auto)(?=[^}]*overscroll-behavior:\s*contain)[^}]*\}",
-                    r"\.studio-draft-mode \.workbench-main\s*\{(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
-                    r"\.studio-draft-mode \.studio-ide-panel\s*\{(?=[^}]*position:\s*relative)(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*min-height:\s*0)(?=[^}]*overflow:\s*hidden)[^}]*\}",
+                    r"\.studio-draft-mode \.workbench-main\s*\{(?=[^}]*flex:\s*1\s+1\s+auto)(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
+                    r"\.studio-draft-mode \.studio-ide-panel\s*\{(?=[^}]*position:\s*relative)(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*min-height:\s*var\(--workspace-ide-height\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-draft-mode \.studio-ide-panel > \.section-heading\s*\{(?=[^}]*position:\s*absolute)(?=[^}]*pointer-events:\s*none)[^}]*\}",
                     r"\.studio-draft-mode \.workflow-canvas-shell\s*\{(?=[^}]*position:\s*relative)(?=[^}]*padding-top:\s*0)[^}]*\}",
                     r"\.studio-workspace \.workflow-canvas-shell\s*\{(?=[^}]*min-height:\s*0)(?=[^}]*height:\s*100%)[^}]*\}",
