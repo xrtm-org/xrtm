@@ -230,7 +230,7 @@ def workflow_canvas(blueprint: WorkflowBlueprint | None, run_detail: dict[str, A
     node_names = list(blueprint.graph.nodes) + list(blueprint.graph.parallel_groups)
     depths = _node_depths(blueprint)
     rows_by_depth: dict[int, int] = {}
-    nodes = []
+    node_slots = []
     for name in node_names:
         node = blueprint.graph.nodes.get(name)
         node_type = "parallel-group" if node is None else "node"
@@ -240,8 +240,12 @@ def workflow_canvas(blueprint: WorkflowBlueprint | None, run_detail: dict[str, A
         depth = depths.get(name, 0)
         row = rows_by_depth.get(depth, 0)
         rows_by_depth[depth] = row + 1
+        node_slots.append((name, node, node_type, kind, implementation, description, depth, row))
+    single_row_layout = max(rows_by_depth.values(), default=0) == 1
+    nodes = []
+    for name, node, node_type, kind, implementation, description, depth, row in node_slots:
         x = 30 + depth * 230
-        y = 30 + row * 115
+        y = 250 if single_row_layout else 30 + row * 115
         canvas_id = _canvas_target_id(name, node_type=node_type)
         nodes.append(
             {

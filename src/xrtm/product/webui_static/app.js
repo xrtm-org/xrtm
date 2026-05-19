@@ -2086,7 +2086,31 @@
     const showStudioDraftIde = isStudio && Boolean(draftId);
     const resumeTarget = shell?.overview?.resume_target || shell?.hub?.resume_target || {};
     const explicitStudioIntent = Boolean(requestedWorkflow || requestedTemplate || requestedMode);
-    const showStudioSetup = !showStudioDraftIde && (!isStudio || studioBootstrapState === "failed" || !explicitStudioIntent);
+    const studioResumeTarget = !isStudio || draftId || explicitStudioIntent || resumeTarget.kind !== "draft" || !resumeTarget.href ? null : {
+      href: String(resumeTarget.href),
+      label: String(resumeTarget.label || "Resume latest draft")
+    };
+    const studioIntent = useMemo(() => {
+      if (!isStudio || draftId) return null;
+      if (requestedMode === "scratch") return { creation_mode: "scratch" };
+      if (requestedTemplate || requestedMode === "template") {
+        return {
+          creation_mode: "template",
+          template_id: String(requestedTemplate || templates[0]?.template_id || "") || null
+        };
+      }
+      if (requestedWorkflow || requestedMode === "clone") {
+        return {
+          creation_mode: "clone",
+          source_workflow_name: requestedWorkflow || selectedWorkflow
+        };
+      }
+      return null;
+    }, [draftId, isStudio, requestedMode, requestedTemplate, requestedWorkflow, selectedWorkflow, templates]);
+    const showStudioSetup = !showStudioDraftIde && (!isStudio || studioBootstrapState === "failed" || !studioIntent);
+    const showWorkbenchSetupRail = showStudioSetup && !isStudio;
+    const showWorkbenchFieldSetup = showStudioSetup && !isStudio;
+    const showWorkbenchIdePanel = !isStudio || showStudioDraftIde || !showStudioSetup;
     const compareActions = activeDraft?.compare?.next_actions || [];
     const validationPillValue = activeDraft?.validation?.ok ? activeDraft?.validation?.stale ? "stale validation" : "validated" : "needs validation";
     const studioDraftTitle = activeDraft?.draft_workflow_name || activeWorkflow?.title || activeWorkflow?.name || "Studio draft";
@@ -2127,36 +2151,23 @@
       }
     }, [busy, draftId]);
     useEffect(() => {
-      if (isStudio && !draftId) {
+      if (!isStudio || draftId) {
         setStudioBootstrapState("idle");
       }
-    }, [draftId, isStudio, route.search]);
+    }, [draftId, isStudio]);
     useEffect(() => {
-      if (!isStudio) {
-        setStudioBootstrapState("idle");
-        return;
-      }
-      if (draftId) {
-        setStudioBootstrapState("idle");
-        return;
-      }
-      if (!explicitStudioIntent) {
-        setStudioBootstrapState("idle");
-        return;
-      }
+      if (!isStudio || draftId || !studioIntent) return;
       if (studioBootstrapState === "bootstrapping" || studioBootstrapState === "failed") return;
-      if (requestedMode === "template" && !requestedTemplate && authoringCatalog.loading) return;
+      if (studioIntent.creation_mode === "template" && !studioIntent.template_id && authoringCatalog.loading) return;
       if (authoringCatalog.error) {
         setStudioBootstrapState("failed");
         return;
       }
       let cancelled = false;
       async function openStudioGraphIde() {
-        let payload = null;
-        if (requestedMode === "scratch") {
-          payload = { creation_mode: "scratch" };
-        } else if (requestedTemplate || requestedMode === "template") {
-          const templateId = String(requestedTemplate || templates[0]?.template_id || "");
+        let payload = { creation_mode: studioIntent.creation_mode };
+        if (studioIntent.creation_mode === "template") {
+          const templateId = String(studioIntent.template_id || "");
           if (!templateId) {
             setStudioBootstrapState("failed");
             setActionNotice({
@@ -2166,9 +2177,9 @@
             });
             return;
           }
-          payload = { creation_mode: "template", template_id: templateId };
-        } else {
-          const sourceWorkflowName = requestedWorkflow || selectedWorkflow;
+          payload.template_id = templateId;
+        } else if (studioIntent.creation_mode === "clone") {
+          const sourceWorkflowName = studioIntent.source_workflow_name;
           if (!sourceWorkflowName) {
             setStudioBootstrapState("failed");
             setActionNotice({
@@ -2178,7 +2189,7 @@
             });
             return;
           }
-          payload = { creation_mode: "clone", source_workflow_name: sourceWorkflowName };
+          payload.source_workflow_name = sourceWorkflowName;
         }
         if (overviewLatestRun?.run_id) payload.baseline_run_id = overviewLatestRun.run_id;
         setStudioBootstrapState("bootstrapping");
@@ -2206,16 +2217,11 @@
       authoringCatalog.loading,
       draftApiBase,
       draftId,
-      explicitStudioIntent,
       isStudio,
       navigate,
       onMutate,
       overviewLatestRun?.run_id,
-      requestedMode,
-      requestedTemplate,
-      requestedWorkflow,
-      selectedWorkflow,
-      templates
+      studioIntent
     ]);
     useEffect(() => {
       setCreateForm((current) => ({
@@ -2592,8 +2598,8 @@
         className: isStudio ? `workbench-layout studio-workspace${showStudioDraftIde ? " studio-draft-mode" : ""}` : "workbench-layout",
         style: showStudioDraftIde ? { gridTemplateColumns: "minmax(0, 1fr)" } : void 0
       },
-      showStudioSetup ? /* @__PURE__ */ React.createElement("aside", { className: "panel step-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Journey"), /* @__PURE__ */ React.createElement("h2", null, "Inspect \u2192 create \u2192 author"), /* @__PURE__ */ React.createElement("ol", { className: "step-list step-rail" }, stepState.map((step) => /* @__PURE__ */ React.createElement("li", { key: step.key, className: `step-item step-${step.state || "upcoming"}${step.locked ? " locked" : ""}` }, /* @__PURE__ */ React.createElement("div", { className: "step-head" }, /* @__PURE__ */ React.createElement("strong", null, step.label), /* @__PURE__ */ React.createElement("span", { className: `step-status ${step.state || "upcoming"}` }, stepBadgeLabel(step))), /* @__PURE__ */ React.createElement("span", null, step.description))))) : null,
-      /* @__PURE__ */ React.createElement("section", { className: "workbench-main" }, workflow.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Workflow unavailable", body: workflow.error }) : null, draft.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Draft unavailable", body: draft.error }) : null, workflows.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Workflow catalog unavailable", body: workflows.error }) : null, authoringCatalog.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Authoring catalog unavailable", body: authoringCatalog.error }) : null, actionNotice ? /* @__PURE__ */ React.createElement(Message, { tone: actionNotice.tone, title: actionNotice.title, body: actionNotice.body }) : null, busy ? /* @__PURE__ */ React.createElement(LoadingCard, { label: busy }) : null, draftId && draft.loading && !draft.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading draft" }) : null, !draftId && (workflow.loading || authoringCatalog.loading) && !workflow.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading workflow authoring surface" }) : null, showStudioSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel workbench-hero" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, surfaceLabel), /* @__PURE__ */ React.createElement("h2", null, draftId ? "Drag-drop the bounded workflow graph IDE" : "Create a new authored workflow or clone one into a local draft"), /* @__PURE__ */ React.createElement("p", null, draftId ? isStudio ? "Move nodes locally, drag safe palette nodes onto the canvas, create/remove edges, edit supported config, validate, save, and run through the Studio API without arbitrary plugin or code editing." : "The legacy workbench route stays compatible with the same safe authoring backend while Studio is the primary graph IDE surface." : isStudio ? "Choose a workflow, starter template, or scratch path before Studio creates a local draft. Entry stays explicit instead of mutating state on arrival." : "Start from scratch, a template, or an existing workflow. Draft state stays local and resumable while the reusable workflow file remains coherent on disk."), /* @__PURE__ */ React.createElement("div", { className: "meta-row" }, /* @__PURE__ */ React.createElement(SourceBadge, { source: activeWorkflow?.source || "builtin" }), activeDraft?.creation_mode ? /* @__PURE__ */ React.createElement("span", null, "Mode: ", activeDraft.creation_mode) : null, activeDraft?.draft_workflow_name ? /* @__PURE__ */ React.createElement("span", null, "Draft: ", activeDraft.draft_workflow_name) : null, activeDraft?.baseline_run_id ? /* @__PURE__ */ React.createElement("span", null, "Baseline: ", activeDraft.baseline_run_id) : overviewLatestRun?.run_id ? /* @__PURE__ */ React.createElement("span", null, "Suggested baseline: ", overviewLatestRun.run_id) : null, activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement("span", null, "Candidate: ", activeDraft.last_run_id) : null), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, isStudio && !draftId && resumeTarget.kind === "draft" && resumeTarget.href ? /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => navigate(String(resumeTarget.href)) }, String(resumeTarget.label || "Resume latest draft")) : null, overviewLatestRun?.run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${overviewLatestRun.run_id}`) }, "Inspect latest run") : /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate("/runs") }, "Browse runs"), activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${activeDraft.last_run_id}`) }, "Inspect candidate run") : null)) : null, showStudioSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "1. Create draft"), /* @__PURE__ */ React.createElement("h3", null, "Start from scratch, template, or clone")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Creation routes all flow through the shared backend authoring service and still land in the local draft + workflow file model.")), /* @__PURE__ */ React.createElement("div", { className: "creation-mode-row" }, creationModes.map((mode) => /* @__PURE__ */ React.createElement(
+      showWorkbenchSetupRail ? /* @__PURE__ */ React.createElement("aside", { className: "panel step-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Journey"), /* @__PURE__ */ React.createElement("h2", null, "Inspect \u2192 create \u2192 author"), /* @__PURE__ */ React.createElement("ol", { className: "step-list step-rail" }, stepState.map((step) => /* @__PURE__ */ React.createElement("li", { key: step.key, className: `step-item step-${step.state || "upcoming"}${step.locked ? " locked" : ""}` }, /* @__PURE__ */ React.createElement("div", { className: "step-head" }, /* @__PURE__ */ React.createElement("strong", null, step.label), /* @__PURE__ */ React.createElement("span", { className: `step-status ${step.state || "upcoming"}` }, stepBadgeLabel(step))), /* @__PURE__ */ React.createElement("span", null, step.description))))) : null,
+      /* @__PURE__ */ React.createElement("section", { className: "workbench-main" }, workflow.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Workflow unavailable", body: workflow.error }) : null, draft.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Draft unavailable", body: draft.error }) : null, workflows.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Workflow catalog unavailable", body: workflows.error }) : null, authoringCatalog.error ? /* @__PURE__ */ React.createElement(Message, { tone: "error", title: "Authoring catalog unavailable", body: authoringCatalog.error }) : null, actionNotice ? /* @__PURE__ */ React.createElement(Message, { tone: actionNotice.tone, title: actionNotice.title, body: actionNotice.body }) : null, busy ? /* @__PURE__ */ React.createElement(LoadingCard, { label: busy }) : null, draftId && draft.loading && !draft.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading draft" }) : null, !draftId && (workflow.loading || authoringCatalog.loading) && !workflow.data ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Loading workflow authoring surface" }) : null, showStudioSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel hero-panel workbench-hero" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, surfaceLabel), /* @__PURE__ */ React.createElement("h2", null, draftId ? "Drag-drop the bounded workflow graph IDE" : "Create a new authored workflow or clone one into a local draft"), /* @__PURE__ */ React.createElement("p", null, draftId ? isStudio ? "Move nodes locally, drag safe palette nodes onto the canvas, create/remove edges, edit supported config, validate, save, and run through the Studio API without arbitrary plugin or code editing." : "The legacy workbench route stays compatible with the same safe authoring backend while Studio is the primary graph IDE surface." : isStudio ? "Choose a workflow, starter template, or scratch path to open a local draft in the graph IDE. Resume stays available without duplicating the editor inside setup." : "Start from scratch, a template, or an existing workflow. Draft state stays local and resumable while the reusable workflow file remains coherent on disk."), /* @__PURE__ */ React.createElement("div", { className: "meta-row" }, /* @__PURE__ */ React.createElement(SourceBadge, { source: activeWorkflow?.source || "builtin" }), activeDraft?.creation_mode ? /* @__PURE__ */ React.createElement("span", null, "Mode: ", activeDraft.creation_mode) : null, activeDraft?.draft_workflow_name ? /* @__PURE__ */ React.createElement("span", null, "Draft: ", activeDraft.draft_workflow_name) : null, activeDraft?.baseline_run_id ? /* @__PURE__ */ React.createElement("span", null, "Baseline: ", activeDraft.baseline_run_id) : overviewLatestRun?.run_id ? /* @__PURE__ */ React.createElement("span", null, "Suggested baseline: ", overviewLatestRun.run_id) : null, activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement("span", null, "Candidate: ", activeDraft.last_run_id) : null), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, studioResumeTarget ? /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: () => navigate(studioResumeTarget.href) }, studioResumeTarget.label) : null, overviewLatestRun?.run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${overviewLatestRun.run_id}`) }, "Inspect latest run") : /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate("/runs") }, "Browse runs"), activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/runs/${activeDraft.last_run_id}`) }, "Inspect candidate run") : null)) : null, showStudioSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, isStudio ? "Start here" : "1. Create draft"), /* @__PURE__ */ React.createElement("h3", null, isStudio ? "Create or resume a local Studio draft" : "Start from scratch, template, or clone")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, isStudio ? "Studio setup is only the entry surface. Once a draft opens, workflow fields, graph editing, validation, and run actions stay inside the full editor." : "Creation routes all flow through the shared backend authoring service and still land in the local draft + workflow file model.")), /* @__PURE__ */ React.createElement("div", { className: "creation-mode-row" }, creationModes.map((mode) => /* @__PURE__ */ React.createElement(
         "button",
         {
           key: mode.key,
@@ -2603,7 +2609,7 @@
         },
         /* @__PURE__ */ React.createElement("strong", null, mode.label),
         /* @__PURE__ */ React.createElement("span", { className: "workflow-note" }, mode.detail)
-      ))), /* @__PURE__ */ React.createElement("div", { className: "split-grid" }, /* @__PURE__ */ React.createElement("section", { className: "surface-card section-stack" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Draft workflow name"), /* @__PURE__ */ React.createElement("input", { value: createForm.draft_workflow_name || "", onChange: (event) => setCreateForm((current) => ({ ...current, draft_workflow_name: event.target.value })), placeholder: "my-authored-workflow" })), creationMode === "clone" ? /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Source workflow"), /* @__PURE__ */ React.createElement("select", { value: createForm.source_workflow_name || selectedWorkflow, onChange: (event) => setCreateForm((current) => ({ ...current, source_workflow_name: event.target.value })) }, (workflows.data?.items || []).map((item) => /* @__PURE__ */ React.createElement("option", { key: item.name, value: item.name }, item.title || item.name)))) : null, creationMode === "template" ? /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Starter template"), /* @__PURE__ */ React.createElement("select", { value: createForm.template_id || "", onChange: (event) => setCreateForm((current) => ({ ...current, template_id: event.target.value })) }, templates.map((item) => /* @__PURE__ */ React.createElement("option", { key: item.template_id, value: item.template_id }, item.title)))) : null, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Title"), /* @__PURE__ */ React.createElement("input", { value: createForm.title || "", onChange: (event) => setCreateForm((current) => ({ ...current, title: event.target.value })), placeholder: "Optional display title" })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Description"), /* @__PURE__ */ React.createElement("textarea", { className: "text-area-input", value: createForm.description || "", onChange: (event) => setCreateForm((current) => ({ ...current, description: event.target.value })), placeholder: "Optional authoring summary" })), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: createDraftFromMode, disabled: Boolean(busy) || creationDisabled }, "Create draft"), !draftId && activeWorkflow?.name ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/workflows/${encodeURIComponent(activeWorkflow.name)}`) }, "Open workflow detail") : null)), /* @__PURE__ */ React.createElement("section", { className: "surface-card section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, activeWorkflow?.title || activeWorkflow?.name || selectedWorkflow), /* @__PURE__ */ React.createElement("p", null, activeWorkflow?.description || "Select a workflow or choose a starter mode.")), /* @__PURE__ */ React.createElement(SourceBadge, { source: activeWorkflow?.source || "builtin" })), activeDraft ? /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Draft mode"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.creation_mode || "clone")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Source"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.source_workflow_name || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Local workflow"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.draft_workflow_name || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Status"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.status || "\u2014"))) : activeWorkflow ? /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Workflow kind"), /* @__PURE__ */ React.createElement("dd", null, activeWorkflow.workflow_kind || activeWorkflow.kind || "workflow")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Questions"), /* @__PURE__ */ React.createElement("dd", null, activeWorkflow.question_limit || workflow.data?.blueprint?.questions?.limit || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Runtime"), /* @__PURE__ */ React.createElement("dd", null, activeWorkflow.runtime_provider || workflow.data?.blueprint?.runtime?.provider || "mock")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Action"), /* @__PURE__ */ React.createElement("dd", null, creationMode === "clone" ? "Clone this workflow into a local authored draft." : creationMode === "template" ? "Create a new workflow from the selected starter template." : "Create a fresh safe starter workflow and begin authoring."))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "Select a workflow", body: isStudio ? "Studio will show the current workflow summary here before you create a draft." : "The workbench will show the current workflow summary here before you create a draft." }))), /* @__PURE__ */ React.createElement("div", { className: "workflow-list workflow-catalog" }, (workflows.data?.items || []).map((item) => /* @__PURE__ */ React.createElement(
+      ))), /* @__PURE__ */ React.createElement("div", { className: "split-grid" }, /* @__PURE__ */ React.createElement("section", { className: "surface-card section-stack" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Draft workflow name"), /* @__PURE__ */ React.createElement("input", { value: createForm.draft_workflow_name || "", onChange: (event) => setCreateForm((current) => ({ ...current, draft_workflow_name: event.target.value })), placeholder: "my-authored-workflow" })), creationMode === "clone" ? /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Source workflow"), /* @__PURE__ */ React.createElement("select", { value: createForm.source_workflow_name || selectedWorkflow, onChange: (event) => setCreateForm((current) => ({ ...current, source_workflow_name: event.target.value })) }, (workflows.data?.items || []).map((item) => /* @__PURE__ */ React.createElement("option", { key: item.name, value: item.name }, item.title || item.name)))) : null, creationMode === "template" ? /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Starter template"), /* @__PURE__ */ React.createElement("select", { value: createForm.template_id || "", onChange: (event) => setCreateForm((current) => ({ ...current, template_id: event.target.value })) }, templates.map((item) => /* @__PURE__ */ React.createElement("option", { key: item.template_id, value: item.template_id }, item.title)))) : null, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Title"), /* @__PURE__ */ React.createElement("input", { value: createForm.title || "", onChange: (event) => setCreateForm((current) => ({ ...current, title: event.target.value })), placeholder: "Optional display title" })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Description"), /* @__PURE__ */ React.createElement("textarea", { className: "text-area-input", value: createForm.description || "", onChange: (event) => setCreateForm((current) => ({ ...current, description: event.target.value })), placeholder: "Optional authoring summary" })), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: createDraftFromMode, disabled: Boolean(busy) || creationDisabled }, "Create draft"), studioResumeTarget ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(studioResumeTarget.href) }, studioResumeTarget.label) : null, !draftId && activeWorkflow?.name ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(`/workflows/${encodeURIComponent(activeWorkflow.name)}`) }, "Open workflow detail") : null)), /* @__PURE__ */ React.createElement("section", { className: "surface-card section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "surface-header" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, activeWorkflow?.title || activeWorkflow?.name || selectedWorkflow), /* @__PURE__ */ React.createElement("p", null, activeWorkflow?.description || "Select a workflow or choose a starter mode.")), /* @__PURE__ */ React.createElement(SourceBadge, { source: activeWorkflow?.source || "builtin" })), studioResumeTarget ? /* @__PURE__ */ React.createElement("div", { className: "compact-action-stack" }, /* @__PURE__ */ React.createElement("p", { className: "helper-text" }, "A local draft is already available. Resume it directly or create a new draft from the selected workflow or template."), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => navigate(studioResumeTarget.href) }, studioResumeTarget.label)) : activeDraft ? /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Draft mode"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.creation_mode || "clone")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Source"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.source_workflow_name || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Local workflow"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.draft_workflow_name || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Status"), /* @__PURE__ */ React.createElement("dd", null, activeDraft.status || "\u2014"))) : activeWorkflow ? /* @__PURE__ */ React.createElement("dl", { className: "context-list" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Workflow kind"), /* @__PURE__ */ React.createElement("dd", null, activeWorkflow.workflow_kind || activeWorkflow.kind || "workflow")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Questions"), /* @__PURE__ */ React.createElement("dd", null, activeWorkflow.question_limit || workflow.data?.blueprint?.questions?.limit || "\u2014")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Runtime"), /* @__PURE__ */ React.createElement("dd", null, activeWorkflow.runtime_provider || workflow.data?.blueprint?.runtime?.provider || "mock")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("dt", null, "Action"), /* @__PURE__ */ React.createElement("dd", null, creationMode === "clone" ? "Clone this workflow into a local authored draft." : creationMode === "template" ? "Create a new workflow from the selected starter template." : "Create a fresh safe starter workflow and begin authoring."))) : /* @__PURE__ */ React.createElement(EmptyState, { title: "Select a workflow", body: isStudio ? "Studio will show the current workflow summary here before you create a draft." : "The workbench will show the current workflow summary here before you create a draft." }))), /* @__PURE__ */ React.createElement("div", { className: "workflow-list workflow-catalog" }, (workflows.data?.items || []).map((item) => /* @__PURE__ */ React.createElement(
         "button",
         {
           key: item.name,
@@ -2614,7 +2620,7 @@
         /* @__PURE__ */ React.createElement("div", { className: "workflow-tile-head" }, /* @__PURE__ */ React.createElement("strong", null, item.title), /* @__PURE__ */ React.createElement(SourceBadge, { source: item.source })),
         /* @__PURE__ */ React.createElement("span", null, item.name),
         /* @__PURE__ */ React.createElement("span", { className: "workflow-note" }, item.source === "builtin" ? "Clone to author visually" : "Open a draft session for this local workflow")
-      )))) : null, showStudioSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "2. Workflow fields"), /* @__PURE__ */ React.createElement("h3", null, "Edit supported core fields through the shared authoring layer")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Title, description, workflow kind, bounded runtime settings, scoring, and artifact toggles stay inside the safe product contract.")), !draftId ? /* @__PURE__ */ React.createElement(EmptyState, { title: "Create a draft to unlock field editing", body: "Once a draft exists, this form edits the authored workflow fields that the shared backend service supports." }) : /* @__PURE__ */ React.createElement("div", { className: "form-grid guided-form" }, /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Title"), /* @__PURE__ */ React.createElement("input", { value: coreForm.title || "", onChange: (event) => setCoreForm((current) => ({ ...current, title: event.target.value })) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Workflow kind"), /* @__PURE__ */ React.createElement("input", { value: coreForm.workflow_kind || "", onChange: (event) => setCoreForm((current) => ({ ...current, workflow_kind: event.target.value })), list: "workflow-kind-options" }))), /* @__PURE__ */ React.createElement("datalist", { id: "workflow-kind-options" }, (authoringCatalog.data?.workflow_kind_options || []).map((item) => /* @__PURE__ */ React.createElement("option", { key: item, value: item }))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Description"), /* @__PURE__ */ React.createElement("textarea", { className: "text-area-input", value: coreForm.description || "", onChange: (event) => setCoreForm((current) => ({ ...current, description: event.target.value })) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Tags"), /* @__PURE__ */ React.createElement("input", { value: coreForm.tags || "", onChange: (event) => setCoreForm((current) => ({ ...current, tags: event.target.value })), placeholder: "starter, local, benchmark" })), /* @__PURE__ */ React.createElement("div", { className: "three-column-grid compact-form-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Questions limit"), /* @__PURE__ */ React.createElement("input", { type: "number", min: 1, max: 25, value: coreForm.questions_limit || "", onChange: (event) => setCoreForm((current) => ({ ...current, questions_limit: event.target.value })) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Runtime provider"), /* @__PURE__ */ React.createElement("select", { value: coreForm.runtime_provider || "mock", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_provider: event.target.value })) }, (authoringCatalog.data?.runtime_provider_options || []).map((item) => /* @__PURE__ */ React.createElement("option", { key: item, value: item }, item)))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Max tokens"), /* @__PURE__ */ React.createElement("input", { type: "number", min: 1, value: coreForm.runtime_max_tokens || "", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_max_tokens: event.target.value })) }))), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Runtime base URL"), /* @__PURE__ */ React.createElement("input", { value: coreForm.runtime_base_url || "", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_base_url: event.target.value })), placeholder: "http://127.0.0.1:11434/v1" })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Runtime model"), /* @__PURE__ */ React.createElement("input", { value: coreForm.runtime_model || "", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_model: event.target.value })), placeholder: "phi-4-mini" }))), /* @__PURE__ */ React.createElement("div", { className: "three-column-grid compact-form-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write HTML report"), /* @__PURE__ */ React.createElement("select", { value: coreForm.artifacts_write_report || "true", onChange: (event) => setCoreForm((current) => ({ ...current, artifacts_write_report: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write blueprint copy"), /* @__PURE__ */ React.createElement("select", { value: coreForm.artifacts_write_blueprint_copy || "true", onChange: (event) => setCoreForm((current) => ({ ...current, artifacts_write_blueprint_copy: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write graph trace"), /* @__PURE__ */ React.createElement("select", { value: coreForm.artifacts_write_graph_trace || "true", onChange: (event) => setCoreForm((current) => ({ ...current, artifacts_write_graph_trace: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false")))), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write eval"), /* @__PURE__ */ React.createElement("select", { value: coreForm.scoring_write_eval || "true", onChange: (event) => setCoreForm((current) => ({ ...current, scoring_write_eval: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write train backtest"), /* @__PURE__ */ React.createElement("select", { value: coreForm.scoring_write_train_backtest || "true", onChange: (event) => setCoreForm((current) => ({ ...current, scoring_write_train_backtest: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false")))), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: applyCoreFields, disabled: Boolean(busy) }, "Apply workflow fields")))) : null, /* @__PURE__ */ React.createElement("section", { className: "panel section-stack studio-ide-panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, showStudioDraftIde ? "Studio" : "3. Studio graph IDE"), /* @__PURE__ */ React.createElement("h3", null, showStudioDraftIde ? studioDraftTitle : "Drag nodes, drop safe palette items, select nodes/edges, then validate")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, showStudioDraftIde ? "Keep palette, canvas, inspector, validation, and versioning inside one draft IDE." : "Node positions persist with the draft layout while graph topology and configuration stay inside the shared authoring contract."), showStudioDraftIde ? /* @__PURE__ */ React.createElement("div", { className: "meta-row" }, /* @__PURE__ */ React.createElement(SourceBadge, { source: activeWorkflow?.source || "builtin" }), /* @__PURE__ */ React.createElement(StatusPill, { value: validationPillValue }), activeDraft?.revision != null ? /* @__PURE__ */ React.createElement("span", null, "Revision ", activeDraft.revision) : null, activeGraph.entry ? /* @__PURE__ */ React.createElement("span", null, "Entry: ", String(activeGraph.entry)) : null, activeDraft?.baseline_run_id ? /* @__PURE__ */ React.createElement("span", null, "Baseline: ", activeDraft.baseline_run_id) : null, activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement("span", null, "Candidate: ", activeDraft.last_run_id) : null) : null), !draftId ? /* @__PURE__ */ React.createElement(EmptyState, { title: "Create a draft to unlock graph authoring", body: "The canvas becomes editable as soon as you open a draft session." }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "studio-toolbar" }, /* @__PURE__ */ React.createElement("button", { className: inspectorMode === "workflow" ? "secondary-button active" : "secondary-button", onClick: selectWorkflowInspector }, "Workflow inspector"), /* @__PURE__ */ React.createElement("button", { className: inspectorMode === "node" ? "secondary-button active" : "secondary-button", onClick: () => selectedNodeName && selectNodeInspector(selectedNodeName), disabled: !selectedNodeName }, "Node inspector"), /* @__PURE__ */ React.createElement("button", { className: inspectorMode === "edge" ? "secondary-button active" : "secondary-button", onClick: () => selectedEdge && selectEdgeInspector(selectedEdge), disabled: !selectedEdge }, "Edge inspector"), edgeDraftFrom ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button active", onClick: () => setEdgeDraftFrom("") }, "Creating edge from ", edgeDraftFrom, " \xB7 cancel") : selectedNode ? /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => setEdgeDraftFrom(String(selectedNode.name)) }, "Start edge from selected node") : null), /* @__PURE__ */ React.createElement("section", { className: "node-palette", "aria-label": "Studio node palette" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Quick add"), /* @__PURE__ */ React.createElement("p", null, "Search or insert one safe node first. Open the grouped library only when the quick path is not enough.")), /* @__PURE__ */ React.createElement("div", { className: "node-palette-toolbar" }, /* @__PURE__ */ React.createElement("label", { className: "node-palette-search" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Quick insert"), /* @__PURE__ */ React.createElement(
+      )))) : null, showWorkbenchFieldSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel section-stack" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "2. Workflow fields"), /* @__PURE__ */ React.createElement("h3", null, "Edit supported core fields through the shared authoring layer")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Title, description, workflow kind, bounded runtime settings, scoring, and artifact toggles stay inside the safe product contract.")), !draftId ? /* @__PURE__ */ React.createElement(EmptyState, { title: "Create a draft to unlock field editing", body: "Once a draft exists, this form edits the authored workflow fields that the shared backend service supports." }) : /* @__PURE__ */ React.createElement("div", { className: "form-grid guided-form" }, /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Title"), /* @__PURE__ */ React.createElement("input", { value: coreForm.title || "", onChange: (event) => setCoreForm((current) => ({ ...current, title: event.target.value })) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Workflow kind"), /* @__PURE__ */ React.createElement("input", { value: coreForm.workflow_kind || "", onChange: (event) => setCoreForm((current) => ({ ...current, workflow_kind: event.target.value })), list: "workflow-kind-options" }))), /* @__PURE__ */ React.createElement("datalist", { id: "workflow-kind-options" }, (authoringCatalog.data?.workflow_kind_options || []).map((item) => /* @__PURE__ */ React.createElement("option", { key: item, value: item }))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Description"), /* @__PURE__ */ React.createElement("textarea", { className: "text-area-input", value: coreForm.description || "", onChange: (event) => setCoreForm((current) => ({ ...current, description: event.target.value })) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Tags"), /* @__PURE__ */ React.createElement("input", { value: coreForm.tags || "", onChange: (event) => setCoreForm((current) => ({ ...current, tags: event.target.value })), placeholder: "starter, local, benchmark" })), /* @__PURE__ */ React.createElement("div", { className: "three-column-grid compact-form-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Questions limit"), /* @__PURE__ */ React.createElement("input", { type: "number", min: 1, max: 25, value: coreForm.questions_limit || "", onChange: (event) => setCoreForm((current) => ({ ...current, questions_limit: event.target.value })) })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Runtime provider"), /* @__PURE__ */ React.createElement("select", { value: coreForm.runtime_provider || "mock", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_provider: event.target.value })) }, (authoringCatalog.data?.runtime_provider_options || []).map((item) => /* @__PURE__ */ React.createElement("option", { key: item, value: item }, item)))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Max tokens"), /* @__PURE__ */ React.createElement("input", { type: "number", min: 1, value: coreForm.runtime_max_tokens || "", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_max_tokens: event.target.value })) }))), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Runtime base URL"), /* @__PURE__ */ React.createElement("input", { value: coreForm.runtime_base_url || "", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_base_url: event.target.value })), placeholder: "http://127.0.0.1:11434/v1" })), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Runtime model"), /* @__PURE__ */ React.createElement("input", { value: coreForm.runtime_model || "", onChange: (event) => setCoreForm((current) => ({ ...current, runtime_model: event.target.value })), placeholder: "phi-4-mini" }))), /* @__PURE__ */ React.createElement("div", { className: "three-column-grid compact-form-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write HTML report"), /* @__PURE__ */ React.createElement("select", { value: coreForm.artifacts_write_report || "true", onChange: (event) => setCoreForm((current) => ({ ...current, artifacts_write_report: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write blueprint copy"), /* @__PURE__ */ React.createElement("select", { value: coreForm.artifacts_write_blueprint_copy || "true", onChange: (event) => setCoreForm((current) => ({ ...current, artifacts_write_blueprint_copy: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write graph trace"), /* @__PURE__ */ React.createElement("select", { value: coreForm.artifacts_write_graph_trace || "true", onChange: (event) => setCoreForm((current) => ({ ...current, artifacts_write_graph_trace: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false")))), /* @__PURE__ */ React.createElement("div", { className: "two-field-grid" }, /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write eval"), /* @__PURE__ */ React.createElement("select", { value: coreForm.scoring_write_eval || "true", onChange: (event) => setCoreForm((current) => ({ ...current, scoring_write_eval: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false"))), /* @__PURE__ */ React.createElement("label", null, /* @__PURE__ */ React.createElement("span", null, "Write train backtest"), /* @__PURE__ */ React.createElement("select", { value: coreForm.scoring_write_train_backtest || "true", onChange: (event) => setCoreForm((current) => ({ ...current, scoring_write_train_backtest: event.target.value })) }, /* @__PURE__ */ React.createElement("option", { value: "true" }, "true"), /* @__PURE__ */ React.createElement("option", { value: "false" }, "false")))), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: applyCoreFields, disabled: Boolean(busy) }, "Apply workflow fields")))) : null, showWorkbenchIdePanel ? /* @__PURE__ */ React.createElement("section", { className: showStudioDraftIde ? "playground-live-workspace studio-live-workspace studio-ide-panel" : "panel section-stack studio-ide-panel" }, !showStudioDraftIde ? /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "3. Studio graph IDE"), /* @__PURE__ */ React.createElement("h3", null, "Drag nodes, drop safe palette items, select nodes/edges, then validate")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Node positions persist with the draft layout while graph topology and configuration stay inside the shared authoring contract.")) : null, !draftId ? isStudio && studioIntent && studioBootstrapState !== "failed" ? /* @__PURE__ */ React.createElement(LoadingCard, { label: "Opening Studio graph IDE" }) : /* @__PURE__ */ React.createElement(EmptyState, { title: "Create a draft to unlock graph authoring", body: "The canvas becomes editable as soon as you open a draft session." }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("section", { className: showStudioDraftIde ? "playground-input-panel studio-palette-panel node-palette" : "node-palette", "aria-label": "Studio node palette" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Quick add"), /* @__PURE__ */ React.createElement("p", null, "Search or insert one safe node first. Open the grouped library only when the quick path is not enough.")), /* @__PURE__ */ React.createElement("div", { className: "node-palette-toolbar" }, /* @__PURE__ */ React.createElement("label", { className: "node-palette-search" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Quick insert"), /* @__PURE__ */ React.createElement(
         "input",
         {
           type: "search",
@@ -2667,7 +2673,7 @@
             /* @__PURE__ */ React.createElement("small", null, item.summary || item.description)
           )))
         )) : /* @__PURE__ */ React.createElement("div", { className: "palette-empty-state" }, /* @__PURE__ */ React.createElement("strong", null, "No safe nodes match that search."), /* @__PURE__ */ React.createElement("span", null, "Try a kind, label, or implementation name such as router, scorer, or baseline."))))
-      )), /* @__PURE__ */ React.createElement(
+      )), showStudioDraftIde ? /* @__PURE__ */ React.createElement("section", { className: "playground-canvas-panel studio-canvas-panel" }, /* @__PURE__ */ React.createElement(
         WorkflowCanvasSurface,
         {
           canvas: activeCanvas,
@@ -2684,7 +2690,24 @@
           onAddNodeFromPalette: (implementation, position) => void addPaletteNode(implementation, position),
           onCreateEdge: (from, to) => void createEdgeFromCanvas(from, to)
         }
-      ), /* @__PURE__ */ React.createElement("div", { className: showStudioDraftIde ? "split-grid authoring-grid" : "three-column-grid authoring-grid" }, showStudioDraftIde ? /* @__PURE__ */ React.createElement("div", { className: "studio-rail-tabs", role: "tablist", "aria-label": "Studio side panel" }, /* @__PURE__ */ React.createElement(
+      )) : /* @__PURE__ */ React.createElement(
+        WorkflowCanvasSurface,
+        {
+          canvas: activeCanvas,
+          entry: String(activeGraph.entry || ""),
+          selectedNodeName: inspectorMode === "node" ? selectedNodeName : "",
+          selectedEdgeId: inspectorMode === "edge" ? selectedEdgeId : "",
+          localPositions,
+          edgeDraftFrom,
+          onMoveNode: (name, position) => setLocalPositions((current) => ({ ...current, [name]: position })),
+          onMoveEnd: (name, position) => void persistNodePosition(name, position),
+          onSelectNode: selectNodeInspector,
+          onSelectEdge: selectEdgeInspector,
+          onSelectWorkflow: selectWorkflowInspector,
+          onAddNodeFromPalette: (implementation, position) => void addPaletteNode(implementation, position),
+          onCreateEdge: (from, to) => void createEdgeFromCanvas(from, to)
+        }
+      ), /* @__PURE__ */ React.createElement("div", { className: showStudioDraftIde ? "live-trace-panel studio-side-panel authoring-grid" : "three-column-grid authoring-grid" }, showStudioDraftIde ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "studio-live-meta" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Studio"), /* @__PURE__ */ React.createElement("strong", null, studioDraftTitle)), /* @__PURE__ */ React.createElement("div", { className: "meta-row" }, /* @__PURE__ */ React.createElement(SourceBadge, { source: activeWorkflow?.source || "builtin" }), /* @__PURE__ */ React.createElement(StatusPill, { value: validationPillValue }), activeDraft?.revision != null ? /* @__PURE__ */ React.createElement("span", null, "Revision ", activeDraft.revision) : null)), /* @__PURE__ */ React.createElement("div", { className: "studio-rail-tabs", role: "tablist", "aria-label": "Studio side panel" }, /* @__PURE__ */ React.createElement(
         "button",
         {
           id: "studio-rail-tab-inspect",
@@ -2723,7 +2746,7 @@
           onClick: () => setStudioRailMode("tools")
         },
         "Tools"
-      )) : null, !showStudioDraftIde || studioRailMode === "inspect" ? /* @__PURE__ */ React.createElement(
+      ))) : null, !showStudioDraftIde || studioRailMode === "inspect" ? /* @__PURE__ */ React.createElement(
         "section",
         {
           id: "studio-side-panel-inspect",
@@ -2803,8 +2826,8 @@
           ), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: () => void removeEdge(String(edge.from), String(edge.to)), disabled: Boolean(busy) }, "Remove")))),
           Object.keys(activeGraph.parallel_groups || {}).length || Object.keys(activeGraph.conditional_routes || {}).length ? /* @__PURE__ */ React.createElement("div", { className: "guidance-section minor-divider" }, Object.keys(activeGraph.parallel_groups || {}).length ? /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Parallel groups"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list compact-list" }, Object.entries(activeGraph.parallel_groups).map(([name, members]) => /* @__PURE__ */ React.createElement("li", { key: name }, /* @__PURE__ */ React.createElement("strong", null, name), /* @__PURE__ */ React.createElement("span", null, Array.isArray(members) ? members.join(", ") : ""))))) : null, Object.keys(activeGraph.conditional_routes || {}).length ? /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", null, "Conditional routes"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list compact-list" }, Object.entries(activeGraph.conditional_routes).map(([name, route2]) => /* @__PURE__ */ React.createElement("li", { key: name }, /* @__PURE__ */ React.createElement("strong", null, name), /* @__PURE__ */ React.createElement("span", null, JSON.stringify(route2)))))) : null) : null
         )
-      ) : null))), showStudioSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "4. Save, validate + run"), /* @__PURE__ */ React.createElement("h3", null, "Save/validate inline, then run only when the authored draft is safe")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Studio mutations preview validation immediately; this save/validate action persists the reusable workflow before run readiness is unlocked.")), !draftId ? /* @__PURE__ */ React.createElement(EmptyState, { title: "No draft to validate yet", body: "Create or open a draft session first. Then this panel will keep validation, fixes, and run readiness together." }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Message, { tone: validationStatus.tone, title: validationStatus.title, body: validationStatus.body }), validationFixes.length ? /* @__PURE__ */ React.createElement("ul", { className: "teaching-list" }, validationFixes.map((note) => /* @__PURE__ */ React.createElement("li", { key: note }, note))) : null, /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: validateDraft, disabled: Boolean(busy) }, "Save + validate draft"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: createVersionSnapshotFromDraft, disabled: Boolean(busy) }, "Save version snapshot"), /* @__PURE__ */ React.createElement("button", { className: "primary-button", disabled: Boolean(busy) || runDisabled, onClick: runDraft }, "Run candidate")))) : null, showStudioSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "5. Compare + next step"), /* @__PURE__ */ React.createElement("h3", null, "Keep validate, run, and compare inside the same authoring loop")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Once the candidate finishes, compare it immediately or jump into the run detail from the same authoring surface.")), activeDraft?.compare ? /* @__PURE__ */ React.createElement("div", { className: "compare-outcome" }, /* @__PURE__ */ React.createElement(Message, { tone: "success", title: `Compare verdict: ${activeDraft.compare.verdict?.label || "ready"}`, body: activeDraft.compare.verdict?.summary || "Open the comparison to inspect detailed metric deltas." }), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, (activeDraft.compare.next_actions || []).map((action, index) => /* @__PURE__ */ React.createElement("button", { key: action.href || action.label || index, className: index === 0 ? "primary-button" : "secondary-button", onClick: () => navigate(action.href) }, action.label)))) : activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement(Message, { tone: "success", title: "Candidate run completed", body: "Inspect the candidate run now. Add a baseline if you want to compare it before deciding on the next edit." }) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No candidate run yet", body: "Once validation passes and you run a candidate, this panel will explain whether to compare, iterate, or stop." })) : null),
-      showStudioSetup ? /* @__PURE__ */ React.createElement("aside", { className: "panel guidance-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Next step"), /* @__PURE__ */ React.createElement("section", { className: "next-step-card" }, /* @__PURE__ */ React.createElement("strong", null, nextStep.title), /* @__PURE__ */ React.createElement("p", null, nextStep.detail)), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "Authoring contract"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, safeEditLimitations.map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item)))), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "Supported safe edits"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list compact-list" }, safeEditSupport.map((item) => /* @__PURE__ */ React.createElement("li", { key: item.key }, /* @__PURE__ */ React.createElement("strong", null, item.label), /* @__PURE__ */ React.createElement("span", null, item.detail))))), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "What stays authoritative"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, sourceOfTruth.map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item))))) : null
+      ) : null))) : null, showWorkbenchFieldSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "4. Save, validate + run"), /* @__PURE__ */ React.createElement("h3", null, "Save/validate inline, then run only when the authored draft is safe")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Studio mutations preview validation immediately; this save/validate action persists the reusable workflow before run readiness is unlocked.")), !draftId ? /* @__PURE__ */ React.createElement(EmptyState, { title: "No draft to validate yet", body: "Create or open a draft session first. Then this panel will keep validation, fixes, and run readiness together." }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Message, { tone: validationStatus.tone, title: validationStatus.title, body: validationStatus.body }), validationFixes.length ? /* @__PURE__ */ React.createElement("ul", { className: "teaching-list" }, validationFixes.map((note) => /* @__PURE__ */ React.createElement("li", { key: note }, note))) : null, /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: validateDraft, disabled: Boolean(busy) }, "Save + validate draft"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: createVersionSnapshotFromDraft, disabled: Boolean(busy) }, "Save version snapshot"), /* @__PURE__ */ React.createElement("button", { className: "primary-button", disabled: Boolean(busy) || runDisabled, onClick: runDraft }, "Run candidate")))) : null, showWorkbenchFieldSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "5. Compare + next step"), /* @__PURE__ */ React.createElement("h3", null, "Keep validate, run, and compare inside the same authoring loop")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Once the candidate finishes, compare it immediately or jump into the run detail from the same authoring surface.")), activeDraft?.compare ? /* @__PURE__ */ React.createElement("div", { className: "compare-outcome" }, /* @__PURE__ */ React.createElement(Message, { tone: "success", title: `Compare verdict: ${activeDraft.compare.verdict?.label || "ready"}`, body: activeDraft.compare.verdict?.summary || "Open the comparison to inspect detailed metric deltas." }), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, (activeDraft.compare.next_actions || []).map((action, index) => /* @__PURE__ */ React.createElement("button", { key: action.href || action.label || index, className: index === 0 ? "primary-button" : "secondary-button", onClick: () => navigate(action.href) }, action.label)))) : activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement(Message, { tone: "success", title: "Candidate run completed", body: "Inspect the candidate run now. Add a baseline if you want to compare it before deciding on the next edit." }) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No candidate run yet", body: "Once validation passes and you run a candidate, this panel will explain whether to compare, iterate, or stop." })) : null),
+      showWorkbenchSetupRail ? /* @__PURE__ */ React.createElement("aside", { className: "panel guidance-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Next step"), /* @__PURE__ */ React.createElement("section", { className: "next-step-card" }, /* @__PURE__ */ React.createElement("strong", null, nextStep.title), /* @__PURE__ */ React.createElement("p", null, nextStep.detail)), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "Authoring contract"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, safeEditLimitations.map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item)))), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "Supported safe edits"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list compact-list" }, safeEditSupport.map((item) => /* @__PURE__ */ React.createElement("li", { key: item.key }, /* @__PURE__ */ React.createElement("strong", null, item.label), /* @__PURE__ */ React.createElement("span", null, item.detail))))), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "What stays authoritative"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, sourceOfTruth.map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item))))) : null
     );
   }
   function GraphCanvasBase({
@@ -2829,24 +2852,77 @@
     onNodeClick,
     renderNodeContents
   }) {
+    const shellRef = React.useRef(null);
     const stageRef = React.useRef(null);
+    const [viewportSize, setViewportSize] = useState({ width: minWidth, height: minHeight });
+    const measureViewport = () => {
+      const shell = shellRef.current;
+      if (!shell) return;
+      const style = window.getComputedStyle(shell);
+      const horizontalPadding = Number.parseFloat(style.paddingLeft || "0") + Number.parseFloat(style.paddingRight || "0");
+      const verticalPadding = Number.parseFloat(style.paddingTop || "0") + Number.parseFloat(style.paddingBottom || "0");
+      const parentHeight = shell.parentElement ? shell.parentElement.clientHeight : 0;
+      const next = {
+        width: Math.max(1, Math.floor(shell.clientWidth - horizontalPadding)),
+        height: Math.max(
+          1,
+          Math.floor(shell.clientHeight - verticalPadding),
+          Math.floor(parentHeight - verticalPadding)
+        )
+      };
+      setViewportSize((current) => current.width === next.width && current.height === next.height ? current : next);
+    };
+    useEffect(() => {
+      measureViewport();
+    });
+    useEffect(() => {
+      const shell = shellRef.current;
+      if (!shell) return;
+      measureViewport();
+      if (typeof ResizeObserver === "function") {
+        const observer = new ResizeObserver(() => {
+          measureViewport();
+        });
+        observer.observe(shell);
+        return () => observer.disconnect();
+      }
+      const onResize = () => {
+        measureViewport();
+      };
+      window.addEventListener("resize", onResize);
+      return () => window.removeEventListener("resize", onResize);
+    }, [minHeight, minWidth]);
     if (!nodes.length) {
       return /* @__PURE__ */ React.createElement(EmptyState, { title: emptyState.title, body: emptyState.body });
     }
-    const width = Math.max(minWidth, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).x + widthPadding));
-    const height = Math.max(minHeight, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).y + heightPadding));
+    const contentWidth = Math.max(minWidth, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).x + widthPadding));
+    const contentHeight = Math.max(minHeight, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).y + heightPadding));
+    const contentOffsetX = Math.max(0, Math.floor((viewportSize.width - contentWidth) / 2));
+    const contentOffsetY = Math.max(0, Math.floor((viewportSize.height - contentHeight) / 2));
     const relativePoint = (event) => {
-      const rect = stageRef.current?.getBoundingClientRect();
+      const stage = stageRef.current;
+      const rect = stage?.getBoundingClientRect();
       if (!rect) return { x: 0, y: 0 };
-      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      return {
+        x: event.clientX - rect.left + (stage?.scrollLeft || 0),
+        y: event.clientY - rect.top + (stage?.scrollTop || 0)
+      };
+    };
+    const graphPoint = (event) => {
+      const point = relativePoint(event);
+      return {
+        x: point.x - contentOffsetX,
+        y: point.y - contentOffsetY
+      };
     };
     const clampPosition = (x, y) => ({
-      x: Math.max(0, Math.min(width - 180, Math.round(x))),
-      y: Math.max(0, Math.min(height - 90, Math.round(y)))
+      x: Math.max(0, Math.min(contentWidth - 180, Math.round(x))),
+      y: Math.max(0, Math.min(contentHeight - 90, Math.round(y)))
     });
     return /* @__PURE__ */ React.createElement(
       "div",
       {
+        ref: shellRef,
         className: shellClassName,
         onDragOver: (event) => {
           if (onShellDrop && Array.from(event.dataTransfer.types).includes("application/xrtm-node-implementation")) {
@@ -2859,7 +2935,7 @@
           const implementation = event.dataTransfer.getData("application/xrtm-node-implementation");
           if (!implementation) return;
           event.preventDefault();
-          const point = relativePoint(event);
+          const point = graphPoint(event);
           onShellDrop(implementation, clampPosition(point.x - 82, point.y - 34));
         }
       },
@@ -2868,47 +2944,58 @@
         {
           ref: stageRef,
           className: "workflow-canvas-stage",
-          style: { height: `${height}px`, width: `${width}px` },
           onClick: (event) => {
             if (event.currentTarget === event.target) onStageClick?.();
           }
         },
-        /* @__PURE__ */ React.createElement("svg", { className: "workflow-canvas-svg", viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: "xMinYMin meet", onClick: onStageClick }, /* @__PURE__ */ React.createElement("defs", null, /* @__PURE__ */ React.createElement("marker", { id: markerId, markerWidth: "8", markerHeight: "8", refX: "7", refY: "4", orient: "auto" }, /* @__PURE__ */ React.createElement("path", { d: "M0,0 L8,4 L0,8 z", fill: "#91a5ca" }))), edges.map((edge, index) => {
-          const from = positions[String(edge.from || "")];
-          const to = positions[String(edge.to || "")];
-          if (!from || !to) return null;
-          const x1 = from.x + 164;
-          const y1 = from.y + 34;
-          const x2 = to.x;
-          const y2 = to.y + 34;
-          const midX = (x1 + x2) / 2;
-          const midY = (y1 + y2) / 2;
-          return /* @__PURE__ */ React.createElement("g", { key: `${edge.from}-${edge.to}-${index}`, className: "workflow-canvas-edge-hit", onClick: (event) => {
-            event.stopPropagation();
-            onEdgeClick?.(edge);
-          } }, /* @__PURE__ */ React.createElement("path", { className: edgeClassName(edge, index), d: `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`, markerEnd: `url(#${markerId})` }), edge.label ? /* @__PURE__ */ React.createElement("text", { className: "workflow-canvas-label", x: midX, y: midY - 6 }, String(edge.label)) : null);
-        })),
-        nodes.map((node) => {
-          const name = String(node.name);
-          const position = positions[name] || { x: Number(node.x || 0), y: Number(node.y || 0) };
-          return /* @__PURE__ */ React.createElement(
-            "button",
-            {
-              key: name,
-              type: "button",
-              className: nodeClassName(node),
-              style: { left: `${position.x}px`, top: `${position.y}px` },
-              onPointerDown: (event) => onNodePointerDown?.(event, node, position, relativePoint(event)),
-              onPointerMove: (event) => onNodePointerMove?.(event, node, position, relativePoint(event), clampPosition),
-              onPointerUp: (event) => onNodePointerUp?.(event, node, positions[name] || position),
-              onClick: (event) => {
-                event.stopPropagation();
-                onNodeClick?.(event, node);
-              }
-            },
-            renderNodeContents(node)
-          );
-        })
+        /* @__PURE__ */ React.createElement(
+          "div",
+          {
+            className: "workflow-canvas-content",
+            style: {
+              width: `${contentWidth}px`,
+              height: `${contentHeight}px`,
+              left: `${contentOffsetX}px`,
+              top: `${contentOffsetY}px`
+            }
+          },
+          /* @__PURE__ */ React.createElement("svg", { className: "workflow-canvas-svg", viewBox: `0 0 ${contentWidth} ${contentHeight}`, preserveAspectRatio: "xMinYMin meet", onClick: onStageClick }, /* @__PURE__ */ React.createElement("defs", null, /* @__PURE__ */ React.createElement("marker", { id: markerId, markerWidth: "8", markerHeight: "8", refX: "7", refY: "4", orient: "auto" }, /* @__PURE__ */ React.createElement("path", { d: "M0,0 L8,4 L0,8 z", fill: "#91a5ca" }))), edges.map((edge, index) => {
+            const from = positions[String(edge.from || "")];
+            const to = positions[String(edge.to || "")];
+            if (!from || !to) return null;
+            const x1 = from.x + 164;
+            const y1 = from.y + 34;
+            const x2 = to.x;
+            const y2 = to.y + 34;
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2;
+            return /* @__PURE__ */ React.createElement("g", { key: `${edge.from}-${edge.to}-${index}`, className: "workflow-canvas-edge-hit", onClick: (event) => {
+              event.stopPropagation();
+              onEdgeClick?.(edge);
+            } }, /* @__PURE__ */ React.createElement("path", { className: edgeClassName(edge, index), d: `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`, markerEnd: `url(#${markerId})` }), edge.label ? /* @__PURE__ */ React.createElement("text", { className: "workflow-canvas-label", x: midX, y: midY - 6 }, String(edge.label)) : null);
+          })),
+          nodes.map((node) => {
+            const name = String(node.name);
+            const position = positions[name] || { x: Number(node.x || 0), y: Number(node.y || 0) };
+            return /* @__PURE__ */ React.createElement(
+              "button",
+              {
+                key: name,
+                type: "button",
+                className: nodeClassName(node),
+                style: { left: `${position.x}px`, top: `${position.y}px` },
+                onPointerDown: (event) => onNodePointerDown?.(event, node, position, graphPoint(event)),
+                onPointerMove: (event) => onNodePointerMove?.(event, node, position, graphPoint(event), clampPosition),
+                onPointerUp: (event) => onNodePointerUp?.(event, node, positions[name] || position),
+                onClick: (event) => {
+                  event.stopPropagation();
+                  onNodeClick?.(event, node);
+                }
+              },
+              renderNodeContents(node)
+            );
+          })
+        )
       )
     );
   }

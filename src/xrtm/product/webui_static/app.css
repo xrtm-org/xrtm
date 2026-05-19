@@ -84,9 +84,15 @@ body {
 .page-stack {
   display: grid;
   gap: 1.15rem;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
   min-height: 0;
   overflow: auto;
-  align-content: start;
+  align-content: stretch;
+}
+
+.page-stack > * {
+  min-height: 0;
 }
 
 .panel,
@@ -337,6 +343,10 @@ body {
 .page-grid {
   grid-template-columns: 1fr;
   align-items: start;
+}
+
+.workbench-layout {
+  min-height: 0;
 }
 
 .split-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
@@ -900,6 +910,9 @@ body {
 }
 .palette-node-card small { color: var(--muted); line-height: 1.35; }
 .workflow-canvas-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--line);
   border-radius: 1.2rem;
   background:
@@ -908,9 +921,17 @@ body {
     linear-gradient(180deg, #f8f4ec 0%, #eee7db 100%);
   background-size: 32px 32px, 32px 32px, auto;
   padding: 1rem;
-  overflow: auto;
+  overflow: hidden;
 }
-.workflow-canvas-stage { position: relative; min-width: 640px; touch-action: none; }
+.workflow-canvas-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  touch-action: none;
+}
+.workflow-canvas-content { position: absolute; }
 .workflow-canvas-svg { width: 100%; height: 100%; min-height: 220px; }
 .workflow-canvas-edge { fill: none; stroke: #9c9485; stroke-width: 2.5px; }
 .workflow-canvas-edge.executed { stroke: #2f6d46; stroke-width: 3px; }
@@ -1059,6 +1080,10 @@ body {
   color-scheme: dark;
   background: #12171c;
   color: #e6ddd1;
+  --workspace-ide-height: clamp(32rem, calc(100vh - 9.75rem), 52rem);
+  --workspace-pane-left: minmax(13.5rem, 15rem);
+  --workspace-pane-center: minmax(0, 1.16fr);
+  --workspace-pane-right: minmax(16rem, 18rem);
   --bg-top: #12171c;
   --bg-bottom: #171d24;
   --plate: #1d252d;
@@ -1773,6 +1798,8 @@ a:focus-visible {
 
 .studio-workspace {
   grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  height: 100%;
   min-height: 0;
 }
 
@@ -1784,16 +1811,23 @@ a:focus-visible {
 .studio-workspace .workbench-main {
   display: grid;
   gap: 0.75rem;
+  height: 100%;
   min-height: 0;
 }
 
 .studio-draft-mode {
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
 .studio-draft-mode .workbench-main {
-  grid-template-rows: auto minmax(0, 1fr);
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -1815,23 +1849,27 @@ a:focus-visible {
 
 .studio-workspace .studio-ide-panel {
   display: grid;
-  grid-template-columns: minmax(12rem, 14rem) minmax(0, 1fr) minmax(18rem, 20rem);
+  grid-template-columns: var(--workspace-pane-left) var(--workspace-pane-center) var(--workspace-pane-right);
   grid-template-rows: auto auto minmax(540px, auto);
   gap: 1px;
   padding: 0;
   overflow: hidden;
   min-height: 0;
+  width: 100%;
   border-radius: 1rem;
   background: rgba(179, 167, 151, 0.1);
 }
 
 .studio-workspace .studio-ide-panel > * {
   min-width: 0;
+  min-height: 0;
 }
 
 .studio-draft-mode .studio-ide-panel {
+  position: relative;
   height: 100%;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: var(--workspace-ide-height);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -1842,12 +1880,63 @@ a:focus-visible {
   background: rgba(26, 34, 41, 0.94);
 }
 
+.studio-draft-mode .studio-ide-panel > .section-heading {
+  position: absolute;
+  top: 0.85rem;
+  left: 15.75rem;
+  right: 18.85rem;
+  z-index: 3;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid rgba(179, 167, 151, 0.14);
+  border-radius: 0.85rem;
+  background: linear-gradient(180deg, rgba(26, 34, 41, 0.8), rgba(20, 27, 33, 0.72));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.studio-draft-mode .studio-ide-panel > .section-heading h3 {
+  font-size: 1rem;
+}
+
+.studio-draft-mode .studio-ide-panel > .section-heading .section-copy {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(236, 228, 216, 0.76);
+  max-width: 52rem;
+}
+
+.studio-draft-mode .studio-ide-panel > .section-heading .meta-row {
+  gap: 0.45rem 0.75rem;
+  font-size: 0.78rem;
+  color: rgba(221, 212, 199, 0.88);
+}
+
 .studio-workspace .studio-toolbar {
   grid-column: 1 / -1;
   border: 0;
   border-bottom: 1px solid rgba(179, 167, 151, 0.12);
   border-radius: 0;
   background: rgba(26, 34, 41, 0.94);
+}
+
+.studio-draft-mode .studio-toolbar {
+  position: absolute;
+  top: 0.85rem;
+  left: 0.85rem;
+  right: 18.85rem;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  padding: 0.55rem;
+  border: 1px solid rgba(179, 167, 151, 0.14);
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, rgba(26, 34, 41, 0.82), rgba(20, 27, 33, 0.74));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(12px);
 }
 
 .studio-workspace .node-palette {
@@ -1912,16 +2001,34 @@ a:focus-visible {
 .studio-workspace .workflow-canvas-shell {
   grid-column: 2;
   grid-row: 3;
+  align-self: stretch;
   min-width: 0;
-  min-height: 560px;
+  min-height: 0;
+  height: 100%;
   border: 0;
   border-radius: 0;
   overflow: auto;
   overscroll-behavior: contain;
 }
 
+.studio-draft-mode .node-palette,
+.studio-draft-mode .workflow-canvas-shell,
+.studio-draft-mode .authoring-grid {
+  grid-row: 1;
+}
+
+.studio-draft-mode .node-palette {
+  padding-top: 0;
+}
+
+.studio-draft-mode .workflow-canvas-shell {
+  position: relative;
+  z-index: 1;
+  padding-top: 0;
+}
+
 .studio-workspace .workflow-canvas-stage {
-  min-height: 560px;
+  min-height: 100%;
 }
 
 .studio-workspace .authoring-grid {
@@ -2019,15 +2126,18 @@ a:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  min-height: 100%;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
 .playground-live-workspace {
   flex: 1 1 auto;
-  min-height: clamp(32rem, calc(100vh - 9.75rem), 52rem);
+  height: 100%;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(13.5rem, 15rem) minmax(0, 1.16fr) minmax(16rem, 18rem);
+  grid-template-columns: var(--workspace-pane-left) var(--workspace-pane-center) var(--workspace-pane-right);
   grid-template-rows: minmax(0, 1fr);
   gap: 1px;
   overflow: hidden;
@@ -2140,17 +2250,90 @@ a:focus-visible {
 .playground-canvas-panel .workflow-canvas-shell {
   min-width: 0;
   min-height: 0;
+  height: 100%;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
   padding: 1rem;
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 
 .playground-canvas-panel .workflow-canvas-stage {
-  min-height: clamp(22rem, 44vh, 34rem);
+  min-height: 100%;
+}
+
+.studio-live-workspace.studio-ide-panel {
+  min-height: var(--workspace-ide-height);
+  grid-template-columns: var(--workspace-pane-left) var(--workspace-pane-center) var(--workspace-pane-right);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  padding: 0;
+}
+
+.studio-live-workspace .studio-palette-panel {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  align-content: start;
+}
+
+.studio-live-workspace .studio-canvas-panel {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.studio-live-workspace .studio-canvas-panel .workflow-canvas-shell {
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
+}
+
+.studio-live-workspace .studio-side-panel {
+  grid-column: 3;
+  grid-row: 1;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.studio-live-meta {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem 1rem 0.85rem;
+  border-bottom: 1px solid rgba(179, 167, 151, 0.12);
+}
+
+.studio-live-meta strong {
+  display: block;
+  margin-top: 0.2rem;
+}
+
+.studio-live-workspace .studio-live-meta .meta-row {
+  flex-wrap: wrap;
+}
+
+.studio-live-workspace .authoring-grid {
+  background: linear-gradient(180deg, rgba(32, 40, 47, 0.97), rgba(24, 31, 37, 0.99));
+  overflow: hidden;
+}
+
+.studio-live-workspace .authoring-grid > .surface-card,
+.studio-live-workspace .authoring-grid > .section-stack {
+  min-height: 0;
+  overflow: auto;
+  border-width: 0;
+  border-top: 1px solid rgba(179, 167, 151, 0.12);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .forecast-result-card {
@@ -2862,12 +3045,24 @@ a:focus-visible {
 }
 
 @media (max-width: 1360px) {
+  :root {
+    --workspace-ide-height: clamp(30rem, calc(100vh - 9.25rem), 46rem);
+    --workspace-pane-left: 12.5rem;
+    --workspace-pane-center: minmax(0, 1.12fr);
+    --workspace-pane-right: 16rem;
+  }
   .studio-workspace .studio-ide-panel {
-    grid-template-columns: 11.5rem minmax(0, 1fr) 17rem;
+    grid-template-columns: var(--workspace-pane-left) var(--workspace-pane-center) var(--workspace-pane-right);
+  }
+  .studio-draft-mode .studio-toolbar {
+    right: 16.85rem;
+  }
+  .studio-draft-mode .studio-ide-panel > .section-heading {
+    right: 16.85rem;
   }
   .playground-live-workspace {
-    min-height: clamp(30rem, calc(100vh - 9.25rem), 46rem);
-    grid-template-columns: 12.5rem minmax(0, 1.12fr) 16rem;
+    min-height: var(--workspace-ide-height);
+    grid-template-columns: var(--workspace-pane-left) var(--workspace-pane-center) var(--workspace-pane-right);
   }
   .observatory-lead-grid,
   .observatory-primary-shell,
@@ -2906,8 +3101,41 @@ a:focus-visible {
 
 @media (max-width: 1180px) {
   .studio-workspace .studio-ide-panel {
-    grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr);
+    grid-template-columns: minmax(12rem, 13.5rem) minmax(0, 1fr);
     grid-template-rows: auto auto minmax(460px, auto) auto;
+  }
+  .studio-draft-mode .studio-ide-panel {
+    height: auto;
+    min-height: auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .studio-draft-mode .studio-toolbar {
+    position: static;
+    right: auto;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid rgba(179, 167, 151, 0.12);
+    border-radius: 0;
+    background: rgba(26, 34, 41, 0.94);
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+  .studio-draft-mode .studio-ide-panel > .section-heading {
+    top: 0.95rem;
+    left: 0.95rem;
+    right: 0.95rem;
+  }
+  .studio-draft-mode .node-palette,
+  .studio-draft-mode .workflow-canvas-shell,
+  .studio-draft-mode .authoring-grid {
+    grid-row: 2;
+  }
+  .studio-draft-mode .node-palette {
+    padding-top: 0;
+  }
+  .studio-draft-mode .workflow-canvas-shell {
+    position: relative;
+    padding-top: 0;
   }
   .studio-workspace .authoring-grid {
     grid-column: 1 / -1;
@@ -2925,12 +3153,38 @@ a:focus-visible {
     border-left: 0;
     border-top: 1px solid rgba(179, 167, 151, 0.12);
   }
+  .studio-live-workspace.studio-ide-panel {
+    min-height: auto;
+    grid-template-columns: minmax(12rem, 13.5rem) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .studio-live-workspace .studio-side-panel {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    border-left: 0;
+    border-top: 1px solid rgba(179, 167, 151, 0.12);
+  }
 }
 
 @media (max-width: 1024px) {
   .studio-workspace .studio-ide-panel {
     grid-template-columns: 1fr;
     grid-template-rows: auto;
+  }
+  .studio-draft-mode .studio-ide-panel > .section-heading {
+    position: static;
+    inset: auto;
+    padding: 1rem 1rem 0.9rem;
+    border: 0;
+    border-bottom: 1px solid rgba(179, 167, 151, 0.12);
+    border-radius: 0;
+    background: rgba(26, 34, 41, 0.94);
+    box-shadow: none;
+    backdrop-filter: none;
+    pointer-events: auto;
+  }
+  .studio-draft-mode .studio-toolbar {
+    position: static;
   }
   .studio-workspace .studio-ide-panel > *,
   .studio-workspace .node-palette,
@@ -2943,6 +3197,9 @@ a:focus-visible {
   }
   .studio-workspace .authoring-grid {
     max-height: none;
+  }
+  .studio-draft-mode .workflow-canvas-shell {
+    padding-top: 0;
   }
   .studio-workspace .node-palette {
     height: auto;
@@ -2959,6 +3216,30 @@ a:focus-visible {
   }
   .playground-canvas-panel {
     order: 3;
+  }
+  .studio-live-workspace.studio-ide-panel {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+  .studio-live-workspace .studio-palette-panel,
+  .studio-live-workspace .studio-canvas-panel,
+  .studio-live-workspace .studio-side-panel {
+    grid-column: 1;
+    grid-row: auto;
+    border-left: 0;
+    border-right: 0;
+  }
+  .studio-live-workspace .studio-palette-panel {
+    height: auto;
+  }
+  .studio-live-workspace .studio-side-panel {
+    order: 2;
+  }
+  .studio-live-workspace .studio-canvas-panel {
+    order: 3;
+  }
+  .studio-live-workspace .node-palette-scroll {
+    max-height: 24rem;
   }
   .observatory-filter-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4834,6 +5115,10 @@ a:focus-visible {
 :root[data-theme="light"] .studio-workspace .authoring-grid {
   border-left-color: rgba(151, 139, 123, 0.14);
   background: rgba(226, 218, 206, 0.44);
+}
+
+:root[data-theme="light"] .studio-live-workspace .authoring-grid {
+  background: linear-gradient(180deg, rgba(252, 249, 243, 0.98), rgba(244, 239, 231, 0.99));
 }
 
 :root[data-theme="light"] .studio-workspace .palette-node-card {

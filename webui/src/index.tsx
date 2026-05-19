@@ -12,6 +12,10 @@ type JsonObject = Record<string, any>;
 type Route = { path: string; search: string };
 type ThemeMode = "system" | "light" | "dark";
 type ResolvedTheme = "light" | "dark";
+type StudioRouteIntent =
+  | { creation_mode: "scratch" }
+  | { creation_mode: "template"; template_id: string | null }
+  | { creation_mode: "clone"; source_workflow_name: string };
 
 const ReactDOMClient = ReactDOM as typeof import("react-dom/client") & typeof import("react-dom");
 const { useEffect, useMemo, useState } = React;
@@ -4623,7 +4627,33 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   const showStudioDraftIde = isStudio && Boolean(draftId);
   const resumeTarget = (shell?.overview?.resume_target || shell?.hub?.resume_target || {}) as JsonObject;
   const explicitStudioIntent = Boolean(requestedWorkflow || requestedTemplate || requestedMode);
-  const showStudioSetup = !showStudioDraftIde && (!isStudio || studioBootstrapState === "failed" || !explicitStudioIntent);
+  const studioResumeTarget = !isStudio || draftId || explicitStudioIntent || resumeTarget.kind !== "draft" || !resumeTarget.href
+    ? null
+    : {
+      href: String(resumeTarget.href),
+      label: String(resumeTarget.label || "Resume latest draft"),
+    };
+  const studioIntent = useMemo<StudioRouteIntent | null>(() => {
+    if (!isStudio || draftId) return null;
+    if (requestedMode === "scratch") return { creation_mode: "scratch" };
+    if (requestedTemplate || requestedMode === "template") {
+      return {
+        creation_mode: "template",
+        template_id: String(requestedTemplate || templates[0]?.template_id || "") || null,
+      };
+    }
+    if (requestedWorkflow || requestedMode === "clone") {
+      return {
+        creation_mode: "clone",
+        source_workflow_name: requestedWorkflow || selectedWorkflow,
+      };
+    }
+    return null;
+  }, [draftId, isStudio, requestedMode, requestedTemplate, requestedWorkflow, selectedWorkflow, templates]);
+  const showStudioSetup = !showStudioDraftIde && (!isStudio || studioBootstrapState === "failed" || !studioIntent);
+  const showWorkbenchSetupRail = showStudioSetup && !isStudio;
+  const showWorkbenchFieldSetup = showStudioSetup && !isStudio;
+  const showWorkbenchIdePanel = !isStudio || showStudioDraftIde || !showStudioSetup;
   const compareActions = ((activeDraft?.compare?.next_actions || []) as JsonObject[]);
   const validationPillValue = activeDraft?.validation?.ok ? (activeDraft?.validation?.stale ? "stale validation" : "validated") : "needs validation";
   const studioDraftTitle = activeDraft?.draft_workflow_name || activeWorkflow?.title || activeWorkflow?.name || "Studio draft";
@@ -4671,26 +4701,15 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   }, [busy, draftId]);
 
   useEffect(() => {
-    if (isStudio && !draftId) {
+    if (!isStudio || draftId) {
       setStudioBootstrapState("idle");
     }
-  }, [draftId, isStudio, route.search]);
+  }, [draftId, isStudio]);
 
   useEffect(() => {
-    if (!isStudio) {
-      setStudioBootstrapState("idle");
-      return;
-    }
-    if (draftId) {
-      setStudioBootstrapState("idle");
-      return;
-    }
-    if (!explicitStudioIntent) {
-      setStudioBootstrapState("idle");
-      return;
-    }
+    if (!isStudio || draftId || !studioIntent) return;
     if (studioBootstrapState === "bootstrapping" || studioBootstrapState === "failed") return;
-    if (requestedMode === "template" && !requestedTemplate && authoringCatalog.loading) return;
+    if (studioIntent.creation_mode === "template" && !studioIntent.template_id && authoringCatalog.loading) return;
     if (authoringCatalog.error) {
       setStudioBootstrapState("failed");
       return;
@@ -4699,11 +4718,9 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     let cancelled = false;
 
     async function openStudioGraphIde() {
-      let payload: JsonObject | null = null;
-      if (requestedMode === "scratch") {
-        payload = { creation_mode: "scratch" };
-      } else if (requestedTemplate || requestedMode === "template") {
-        const templateId = String(requestedTemplate || templates[0]?.template_id || "");
+      let payload: JsonObject = { creation_mode: studioIntent.creation_mode };
+      if (studioIntent.creation_mode === "template") {
+        const templateId = String(studioIntent.template_id || "");
         if (!templateId) {
           setStudioBootstrapState("failed");
           setActionNotice({
@@ -4713,9 +4730,9 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
           });
           return;
         }
-        payload = { creation_mode: "template", template_id: templateId };
-      } else {
-        const sourceWorkflowName = requestedWorkflow || selectedWorkflow;
+        payload.template_id = templateId;
+      } else if (studioIntent.creation_mode === "clone") {
+        const sourceWorkflowName = studioIntent.source_workflow_name;
         if (!sourceWorkflowName) {
           setStudioBootstrapState("failed");
           setActionNotice({
@@ -4725,7 +4742,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
           });
           return;
         }
-        payload = { creation_mode: "clone", source_workflow_name: sourceWorkflowName };
+        payload.source_workflow_name = sourceWorkflowName;
       }
 
       if (overviewLatestRun?.run_id) payload.baseline_run_id = overviewLatestRun.run_id;
@@ -4756,16 +4773,11 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     authoringCatalog.loading,
     draftApiBase,
     draftId,
-    explicitStudioIntent,
     isStudio,
     navigate,
     onMutate,
     overviewLatestRun?.run_id,
-    requestedMode,
-    requestedTemplate,
-    requestedWorkflow,
-    selectedWorkflow,
-    templates,
+    studioIntent,
   ]);
 
   useEffect(() => {
@@ -5174,7 +5186,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
       className={isStudio ? `workbench-layout studio-workspace${showStudioDraftIde ? " studio-draft-mode" : ""}` : "workbench-layout"}
       style={showStudioDraftIde ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}
     >
-      {showStudioSetup ? (
+      {showWorkbenchSetupRail ? (
         <aside className="panel step-panel">
           <span className="eyebrow">Journey</span>
           <h2>Inspect → create → author</h2>
@@ -5201,7 +5213,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         {draftId && draft.loading && !draft.data ? <LoadingCard label="Loading draft" /> : null}
         {!draftId && (workflow.loading || authoringCatalog.loading) && !workflow.data ? <LoadingCard label="Loading workflow authoring surface" /> : null}
 
-        {showStudioSetup ? (
+      {showStudioSetup ? (
         <section className="panel hero-panel workbench-hero">
           <span className="eyebrow">{surfaceLabel}</span>
           <h2>{draftId ? "Drag-drop the bounded workflow graph IDE" : "Create a new authored workflow or clone one into a local draft"}</h2>
@@ -5211,7 +5223,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 ? "Move nodes locally, drag safe palette nodes onto the canvas, create/remove edges, edit supported config, validate, save, and run through the Studio API without arbitrary plugin or code editing."
                 : "The legacy workbench route stays compatible with the same safe authoring backend while Studio is the primary graph IDE surface."
               : isStudio
-                ? "Choose a workflow, starter template, or scratch path before Studio creates a local draft. Entry stays explicit instead of mutating state on arrival."
+                ? "Choose a workflow, starter template, or scratch path to open a local draft in the graph IDE. Resume stays available without duplicating the editor inside setup."
                 : "Start from scratch, a template, or an existing workflow. Draft state stays local and resumable while the reusable workflow file remains coherent on disk."}
           </p>
           <div className="meta-row">
@@ -5222,9 +5234,9 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
             {activeDraft?.last_run_id ? <span>Candidate: {activeDraft.last_run_id}</span> : null}
           </div>
           <div className="button-row">
-            {isStudio && !draftId && resumeTarget.kind === "draft" && resumeTarget.href ? (
-              <button className="primary-button" onClick={() => navigate(String(resumeTarget.href))}>
-                {String(resumeTarget.label || "Resume latest draft")}
+            {studioResumeTarget ? (
+              <button className="primary-button" onClick={() => navigate(studioResumeTarget.href)}>
+                {studioResumeTarget.label}
               </button>
             ) : null}
             {overviewLatestRun?.run_id ? (
@@ -5241,10 +5253,14 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         <section className="panel section-stack">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">1. Create draft</span>
-              <h3>Start from scratch, template, or clone</h3>
+              <span className="eyebrow">{isStudio ? "Start here" : "1. Create draft"}</span>
+              <h3>{isStudio ? "Create or resume a local Studio draft" : "Start from scratch, template, or clone"}</h3>
             </div>
-            <p className="section-copy">Creation routes all flow through the shared backend authoring service and still land in the local draft + workflow file model.</p>
+            <p className="section-copy">
+              {isStudio
+                ? "Studio setup is only the entry surface. Once a draft opens, workflow fields, graph editing, validation, and run actions stay inside the full editor."
+                : "Creation routes all flow through the shared backend authoring service and still land in the local draft + workflow file model."}
+            </p>
           </div>
           <div className="creation-mode-row">
             {creationModes.map((mode: JsonObject) => (
@@ -5295,6 +5311,11 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
               </label>
               <div className="button-row">
                 <button className="primary-button" onClick={createDraftFromMode} disabled={Boolean(busy) || creationDisabled}>Create draft</button>
+                {studioResumeTarget ? (
+                  <button className="secondary-button" onClick={() => navigate(studioResumeTarget.href)}>
+                    {studioResumeTarget.label}
+                  </button>
+                ) : null}
                 {!draftId && activeWorkflow?.name ? (
                   <button className="secondary-button" onClick={() => navigate(`/workflows/${encodeURIComponent(activeWorkflow.name)}`)}>Open workflow detail</button>
                 ) : null}
@@ -5308,7 +5329,14 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 </div>
                 <SourceBadge source={activeWorkflow?.source || "builtin"} />
               </div>
-              {activeDraft ? (
+              {studioResumeTarget ? (
+                <div className="compact-action-stack">
+                  <p className="helper-text">A local draft is already available. Resume it directly or create a new draft from the selected workflow or template.</p>
+                  <button className="secondary-button" onClick={() => navigate(studioResumeTarget.href)}>
+                    {studioResumeTarget.label}
+                  </button>
+                </div>
+              ) : activeDraft ? (
                 <dl className="context-list">
                   <div><dt>Draft mode</dt><dd>{activeDraft.creation_mode || "clone"}</dd></div>
                   <div><dt>Source</dt><dd>{activeDraft.source_workflow_name || "—"}</dd></div>
@@ -5347,7 +5375,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         </section>
         ) : null}
 
-        {showStudioSetup ? (
+        {showWorkbenchFieldSetup ? (
         <section className="panel section-stack">
           <div className="section-heading">
             <div>
@@ -5454,44 +5482,26 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         </section>
         ) : null}
 
-        <section className="panel section-stack studio-ide-panel">
+        {showWorkbenchIdePanel ? (
+        <section className={showStudioDraftIde ? "playground-live-workspace studio-live-workspace studio-ide-panel" : "panel section-stack studio-ide-panel"}>
+          {!showStudioDraftIde ? (
           <div className="section-heading">
             <div>
-              <span className="eyebrow">{showStudioDraftIde ? "Studio" : "3. Studio graph IDE"}</span>
-              <h3>{showStudioDraftIde ? studioDraftTitle : "Drag nodes, drop safe palette items, select nodes/edges, then validate"}</h3>
+              <span className="eyebrow">3. Studio graph IDE</span>
+              <h3>Drag nodes, drop safe palette items, select nodes/edges, then validate</h3>
             </div>
             <p className="section-copy">
-              {showStudioDraftIde
-                ? "Keep palette, canvas, inspector, validation, and versioning inside one draft IDE."
-                : "Node positions persist with the draft layout while graph topology and configuration stay inside the shared authoring contract."}
+              Node positions persist with the draft layout while graph topology and configuration stay inside the shared authoring contract.
             </p>
-            {showStudioDraftIde ? (
-              <div className="meta-row">
-                <SourceBadge source={activeWorkflow?.source || "builtin"} />
-                <StatusPill value={validationPillValue} />
-                {activeDraft?.revision != null ? <span>Revision {activeDraft.revision}</span> : null}
-                {activeGraph.entry ? <span>Entry: {String(activeGraph.entry)}</span> : null}
-                {activeDraft?.baseline_run_id ? <span>Baseline: {activeDraft.baseline_run_id}</span> : null}
-                {activeDraft?.last_run_id ? <span>Candidate: {activeDraft.last_run_id}</span> : null}
-              </div>
-            ) : null}
           </div>
+          ) : null}
           {!draftId ? (
-            <EmptyState title="Create a draft to unlock graph authoring" body="The canvas becomes editable as soon as you open a draft session." />
+            isStudio && studioIntent && studioBootstrapState !== "failed"
+              ? <LoadingCard label="Opening Studio graph IDE" />
+              : <EmptyState title="Create a draft to unlock graph authoring" body="The canvas becomes editable as soon as you open a draft session." />
           ) : (
             <>
-              <div className="studio-toolbar">
-                <button className={inspectorMode === "workflow" ? "secondary-button active" : "secondary-button"} onClick={selectWorkflowInspector}>Workflow inspector</button>
-                <button className={inspectorMode === "node" ? "secondary-button active" : "secondary-button"} onClick={() => selectedNodeName && selectNodeInspector(selectedNodeName)} disabled={!selectedNodeName}>Node inspector</button>
-                <button className={inspectorMode === "edge" ? "secondary-button active" : "secondary-button"} onClick={() => selectedEdge && selectEdgeInspector(selectedEdge)} disabled={!selectedEdge}>Edge inspector</button>
-                {edgeDraftFrom ? (
-                  <button className="secondary-button active" onClick={() => setEdgeDraftFrom("")}>Creating edge from {edgeDraftFrom} · cancel</button>
-                ) : selectedNode ? (
-                  <button className="secondary-button" onClick={() => setEdgeDraftFrom(String(selectedNode.name))}>Start edge from selected node</button>
-                ) : null}
-              </div>
-
-              <section className="node-palette" aria-label="Studio node palette">
+              <section className={showStudioDraftIde ? "playground-input-panel studio-palette-panel node-palette" : "node-palette"} aria-label="Studio node palette">
                 <div>
                   <span className="eyebrow">Quick add</span>
                   <p>Search or insert one safe node first. Open the grouped library only when the quick path is not enough.</p>
@@ -5590,62 +5600,95 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 </details>
               </section>
 
-              <WorkflowCanvasSurface
-                canvas={activeCanvas}
-                entry={String(activeGraph.entry || "")}
-                selectedNodeName={inspectorMode === "node" ? selectedNodeName : ""}
-                selectedEdgeId={inspectorMode === "edge" ? selectedEdgeId : ""}
-                localPositions={localPositions}
-                edgeDraftFrom={edgeDraftFrom}
-                onMoveNode={(name, position) => setLocalPositions((current) => ({ ...current, [name]: position }))}
-                onMoveEnd={(name, position) => void persistNodePosition(name, position)}
-                onSelectNode={selectNodeInspector}
-                onSelectEdge={selectEdgeInspector}
-                onSelectWorkflow={selectWorkflowInspector}
-                onAddNodeFromPalette={(implementation, position) => void addPaletteNode(implementation, position)}
-                onCreateEdge={(from, to) => void createEdgeFromCanvas(from, to)}
-              />
+              {showStudioDraftIde ? (
+                <section className="playground-canvas-panel studio-canvas-panel">
+                  <WorkflowCanvasSurface
+                    canvas={activeCanvas}
+                    entry={String(activeGraph.entry || "")}
+                    selectedNodeName={inspectorMode === "node" ? selectedNodeName : ""}
+                    selectedEdgeId={inspectorMode === "edge" ? selectedEdgeId : ""}
+                    localPositions={localPositions}
+                    edgeDraftFrom={edgeDraftFrom}
+                    onMoveNode={(name, position) => setLocalPositions((current) => ({ ...current, [name]: position }))}
+                    onMoveEnd={(name, position) => void persistNodePosition(name, position)}
+                    onSelectNode={selectNodeInspector}
+                    onSelectEdge={selectEdgeInspector}
+                    onSelectWorkflow={selectWorkflowInspector}
+                    onAddNodeFromPalette={(implementation, position) => void addPaletteNode(implementation, position)}
+                    onCreateEdge={(from, to) => void createEdgeFromCanvas(from, to)}
+                  />
+                </section>
+              ) : (
+                <WorkflowCanvasSurface
+                  canvas={activeCanvas}
+                  entry={String(activeGraph.entry || "")}
+                  selectedNodeName={inspectorMode === "node" ? selectedNodeName : ""}
+                  selectedEdgeId={inspectorMode === "edge" ? selectedEdgeId : ""}
+                  localPositions={localPositions}
+                  edgeDraftFrom={edgeDraftFrom}
+                  onMoveNode={(name, position) => setLocalPositions((current) => ({ ...current, [name]: position }))}
+                  onMoveEnd={(name, position) => void persistNodePosition(name, position)}
+                  onSelectNode={selectNodeInspector}
+                  onSelectEdge={selectEdgeInspector}
+                  onSelectWorkflow={selectWorkflowInspector}
+                  onAddNodeFromPalette={(implementation, position) => void addPaletteNode(implementation, position)}
+                  onCreateEdge={(from, to) => void createEdgeFromCanvas(from, to)}
+                />
+              )}
 
-              <div className={showStudioDraftIde ? "split-grid authoring-grid" : "three-column-grid authoring-grid"}>
+              <div className={showStudioDraftIde ? "live-trace-panel studio-side-panel authoring-grid" : "three-column-grid authoring-grid"}>
                 {showStudioDraftIde ? (
-                  <div className="studio-rail-tabs" role="tablist" aria-label="Studio side panel">
-                    <button
-                      id="studio-rail-tab-inspect"
-                      role="tab"
-                      aria-selected={studioRailMode === "inspect"}
-                      aria-controls="studio-side-panel-inspect"
-                      tabIndex={studioRailMode === "inspect" ? 0 : -1}
-                      className={studioRailMode === "inspect" ? "secondary-button active" : "secondary-button"}
-                      type="button"
-                      onClick={() => setStudioRailMode("inspect")}
-                    >
-                      Inspector
-                    </button>
-                    <button
-                      id="studio-rail-tab-run"
-                      role="tab"
-                      aria-selected={studioRailMode === "run"}
-                      aria-controls="studio-side-panel-run"
-                      tabIndex={studioRailMode === "run" ? 0 : -1}
-                      className={studioRailMode === "run" ? "secondary-button active" : "secondary-button"}
-                      type="button"
-                      onClick={() => setStudioRailMode("run")}
-                    >
-                      Run
-                    </button>
-                    <button
-                      id="studio-rail-tab-tools"
-                      role="tab"
-                      aria-selected={studioRailMode === "tools"}
-                      aria-controls="studio-side-panel-tools"
-                      tabIndex={studioRailMode === "tools" ? 0 : -1}
-                      className={studioRailMode === "tools" ? "secondary-button active" : "secondary-button"}
-                      type="button"
-                      onClick={() => setStudioRailMode("tools")}
-                    >
-                      Tools
-                    </button>
-                  </div>
+                  <>
+                    <div className="studio-live-meta">
+                      <div>
+                        <span className="eyebrow">Studio</span>
+                        <strong>{studioDraftTitle}</strong>
+                      </div>
+                      <div className="meta-row">
+                        <SourceBadge source={activeWorkflow?.source || "builtin"} />
+                        <StatusPill value={validationPillValue} />
+                        {activeDraft?.revision != null ? <span>Revision {activeDraft.revision}</span> : null}
+                      </div>
+                    </div>
+                    <div className="studio-rail-tabs" role="tablist" aria-label="Studio side panel">
+                      <button
+                        id="studio-rail-tab-inspect"
+                        role="tab"
+                        aria-selected={studioRailMode === "inspect"}
+                        aria-controls="studio-side-panel-inspect"
+                        tabIndex={studioRailMode === "inspect" ? 0 : -1}
+                        className={studioRailMode === "inspect" ? "secondary-button active" : "secondary-button"}
+                        type="button"
+                        onClick={() => setStudioRailMode("inspect")}
+                      >
+                        Inspector
+                      </button>
+                      <button
+                        id="studio-rail-tab-run"
+                        role="tab"
+                        aria-selected={studioRailMode === "run"}
+                        aria-controls="studio-side-panel-run"
+                        tabIndex={studioRailMode === "run" ? 0 : -1}
+                        className={studioRailMode === "run" ? "secondary-button active" : "secondary-button"}
+                        type="button"
+                        onClick={() => setStudioRailMode("run")}
+                      >
+                        Run
+                      </button>
+                      <button
+                        id="studio-rail-tab-tools"
+                        role="tab"
+                        aria-selected={studioRailMode === "tools"}
+                        aria-controls="studio-side-panel-tools"
+                        tabIndex={studioRailMode === "tools" ? 0 : -1}
+                        className={studioRailMode === "tools" ? "secondary-button active" : "secondary-button"}
+                        type="button"
+                        onClick={() => setStudioRailMode("tools")}
+                      >
+                        Tools
+                      </button>
+                    </div>
+                  </>
                 ) : null}
                 {(!showStudioDraftIde || studioRailMode === "inspect") ? (
                 <section
@@ -5961,8 +6004,9 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
             </>
           )}
         </section>
+        ) : null}
 
-        {showStudioSetup ? (
+        {showWorkbenchFieldSetup ? (
         <section className="panel">
           <div className="section-heading">
             <div>
@@ -5991,7 +6035,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         </section>
         ) : null}
 
-        {showStudioSetup ? (
+        {showWorkbenchFieldSetup ? (
         <section className="panel">
           <div className="section-heading">
             <div>
@@ -6019,8 +6063,8 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         </section>
         ) : null}
       </section>
-      {showStudioSetup ? (
-      <aside className="panel guidance-panel">
+        {showWorkbenchSetupRail ? (
+       <aside className="panel guidance-panel">
         <span className="eyebrow">Next step</span>
         <section className="next-step-card">
           <strong>{nextStep.title}</strong>
@@ -6113,23 +6157,76 @@ function GraphCanvasBase({
   onNodeClick?: (event: React.MouseEvent<HTMLButtonElement>, node: JsonObject) => void;
   renderNodeContents: (node: JsonObject) => React.ReactNode;
 }): React.ReactElement {
+  const shellRef = React.useRef<HTMLDivElement | null>(null);
   const stageRef = React.useRef<HTMLDivElement | null>(null);
+  const [viewportSize, setViewportSize] = useState({ width: minWidth, height: minHeight });
+  const measureViewport = () => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const style = window.getComputedStyle(shell);
+    const horizontalPadding = Number.parseFloat(style.paddingLeft || "0") + Number.parseFloat(style.paddingRight || "0");
+    const verticalPadding = Number.parseFloat(style.paddingTop || "0") + Number.parseFloat(style.paddingBottom || "0");
+    const parentHeight = shell.parentElement ? shell.parentElement.clientHeight : 0;
+    const next = {
+      width: Math.max(1, Math.floor(shell.clientWidth - horizontalPadding)),
+      height: Math.max(
+        1,
+        Math.floor(shell.clientHeight - verticalPadding),
+        Math.floor(parentHeight - verticalPadding)
+      ),
+    };
+    setViewportSize((current) => (current.width === next.width && current.height === next.height ? current : next));
+  };
+  useEffect(() => {
+    measureViewport();
+  });
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    measureViewport();
+    if (typeof ResizeObserver === "function") {
+      const observer = new ResizeObserver(() => {
+        measureViewport();
+      });
+      observer.observe(shell);
+      return () => observer.disconnect();
+    }
+    const onResize = () => {
+      measureViewport();
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [minHeight, minWidth]);
   if (!nodes.length) {
     return <EmptyState title={emptyState.title} body={emptyState.body} />;
   }
-  const width = Math.max(minWidth, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).x + widthPadding));
-  const height = Math.max(minHeight, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).y + heightPadding));
+  const contentWidth = Math.max(minWidth, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).x + widthPadding));
+  const contentHeight = Math.max(minHeight, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).y + heightPadding));
+  const contentOffsetX = Math.max(0, Math.floor((viewportSize.width - contentWidth) / 2));
+  const contentOffsetY = Math.max(0, Math.floor((viewportSize.height - contentHeight) / 2));
   const relativePoint = (event: { clientX: number; clientY: number }) => {
-    const rect = stageRef.current?.getBoundingClientRect();
+    const stage = stageRef.current;
+    const rect = stage?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    return {
+      x: event.clientX - rect.left + (stage?.scrollLeft || 0),
+      y: event.clientY - rect.top + (stage?.scrollTop || 0),
+    };
+  };
+  const graphPoint = (event: { clientX: number; clientY: number }) => {
+    const point = relativePoint(event);
+    return {
+      x: point.x - contentOffsetX,
+      y: point.y - contentOffsetY,
+    };
   };
   const clampPosition = (x: number, y: number) => ({
-    x: Math.max(0, Math.min(width - 180, Math.round(x))),
-    y: Math.max(0, Math.min(height - 90, Math.round(y))),
+    x: Math.max(0, Math.min(contentWidth - 180, Math.round(x))),
+    y: Math.max(0, Math.min(contentHeight - 90, Math.round(y))),
   });
   return (
     <div
+      ref={shellRef}
       className={shellClassName}
       onDragOver={(event) => {
         if (onShellDrop && Array.from(event.dataTransfer.types).includes("application/xrtm-node-implementation")) {
@@ -6142,63 +6239,72 @@ function GraphCanvasBase({
         const implementation = event.dataTransfer.getData("application/xrtm-node-implementation");
         if (!implementation) return;
         event.preventDefault();
-        const point = relativePoint(event);
+        const point = graphPoint(event);
         onShellDrop(implementation, clampPosition(point.x - 82, point.y - 34));
       }}
     >
       <div
         ref={stageRef}
         className="workflow-canvas-stage"
-        style={{ height: `${height}px`, width: `${width}px` }}
         onClick={(event) => {
           if (event.currentTarget === event.target) onStageClick?.();
         }}
       >
-        <svg className="workflow-canvas-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMinYMin meet" onClick={onStageClick}>
-          <defs>
-            <marker id={markerId} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 z" fill="#91a5ca" />
-            </marker>
-          </defs>
-          {edges.map((edge, index) => {
-            const from = positions[String(edge.from || "")];
-            const to = positions[String(edge.to || "")];
-            if (!from || !to) return null;
-            const x1 = from.x + 164;
-            const y1 = from.y + 34;
-            const x2 = to.x;
-            const y2 = to.y + 34;
-            const midX = (x1 + x2) / 2;
-            const midY = (y1 + y2) / 2;
+        <div
+          className="workflow-canvas-content"
+          style={{
+            width: `${contentWidth}px`,
+            height: `${contentHeight}px`,
+            left: `${contentOffsetX}px`,
+            top: `${contentOffsetY}px`,
+          }}
+        >
+          <svg className="workflow-canvas-svg" viewBox={`0 0 ${contentWidth} ${contentHeight}`} preserveAspectRatio="xMinYMin meet" onClick={onStageClick}>
+            <defs>
+              <marker id={markerId} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 z" fill="#91a5ca" />
+              </marker>
+            </defs>
+            {edges.map((edge, index) => {
+              const from = positions[String(edge.from || "")];
+              const to = positions[String(edge.to || "")];
+              if (!from || !to) return null;
+              const x1 = from.x + 164;
+              const y1 = from.y + 34;
+              const x2 = to.x;
+              const y2 = to.y + 34;
+              const midX = (x1 + x2) / 2;
+              const midY = (y1 + y2) / 2;
+              return (
+                <g key={`${edge.from}-${edge.to}-${index}`} className="workflow-canvas-edge-hit" onClick={(event) => { event.stopPropagation(); onEdgeClick?.(edge); }}>
+                  <path className={edgeClassName(edge, index)} d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`} markerEnd={`url(#${markerId})`} />
+                  {edge.label ? <text className="workflow-canvas-label" x={midX} y={midY - 6}>{String(edge.label)}</text> : null}
+                </g>
+              );
+            })}
+          </svg>
+          {nodes.map((node) => {
+            const name = String(node.name);
+            const position = positions[name] || { x: Number(node.x || 0), y: Number(node.y || 0) };
             return (
-              <g key={`${edge.from}-${edge.to}-${index}`} className="workflow-canvas-edge-hit" onClick={(event) => { event.stopPropagation(); onEdgeClick?.(edge); }}>
-                <path className={edgeClassName(edge, index)} d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`} markerEnd={`url(#${markerId})`} />
-                {edge.label ? <text className="workflow-canvas-label" x={midX} y={midY - 6}>{String(edge.label)}</text> : null}
-              </g>
+              <button
+                key={name}
+                type="button"
+                className={nodeClassName(node)}
+                style={{ left: `${position.x}px`, top: `${position.y}px` }}
+                onPointerDown={(event) => onNodePointerDown?.(event, node, position, graphPoint(event))}
+                onPointerMove={(event) => onNodePointerMove?.(event, node, position, graphPoint(event), clampPosition)}
+                onPointerUp={(event) => onNodePointerUp?.(event, node, positions[name] || position)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onNodeClick?.(event, node);
+                }}
+              >
+                {renderNodeContents(node)}
+              </button>
             );
           })}
-        </svg>
-        {nodes.map((node) => {
-          const name = String(node.name);
-          const position = positions[name] || { x: Number(node.x || 0), y: Number(node.y || 0) };
-          return (
-            <button
-              key={name}
-              type="button"
-              className={nodeClassName(node)}
-              style={{ left: `${position.x}px`, top: `${position.y}px` }}
-              onPointerDown={(event) => onNodePointerDown?.(event, node, position, relativePoint(event))}
-              onPointerMove={(event) => onNodePointerMove?.(event, node, position, relativePoint(event), clampPosition)}
-              onPointerUp={(event) => onNodePointerUp?.(event, node, positions[name] || position)}
-              onClick={(event) => {
-                event.stopPropagation();
-                onNodeClick?.(event, node);
-              }}
-            >
-              {renderNodeContents(node)}
-            </button>
-          );
-        })}
+        </div>
       </div>
     </div>
   );
