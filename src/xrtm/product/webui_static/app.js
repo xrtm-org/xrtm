@@ -2070,9 +2070,9 @@
         WorkspacePanelAdapter,
         {
           frameClassName: "playground-live-workspace",
-          leftPanel: /* @__PURE__ */ React.createElement(PlaygroundInputPanel, null),
-          centerPanel: /* @__PURE__ */ React.createElement(PlaygroundCanvasPanel, null),
-          rightPanel: /* @__PURE__ */ React.createElement(PlaygroundTracePanel, null)
+          leftPanel: PlaygroundInputPanel(),
+          centerPanel: PlaygroundCanvasPanel(),
+          rightPanel: PlaygroundTracePanel()
         }
       );
     }
@@ -2084,7 +2084,7 @@
         studioHref: studioModeHref,
         playgroundHref: playgroundModeHref
       },
-      /* @__PURE__ */ React.createElement(PlaygroundWorkspaceAdapter, null)
+      PlaygroundWorkspaceAdapter()
     ));
   }
   function WorkbenchPage({ route, shell, navigate, onMutate }) {
@@ -2880,9 +2880,9 @@
         WorkspacePanelAdapter,
         {
           frameClassName: "playground-live-workspace studio-live-workspace studio-ide-panel",
-          leftPanel: /* @__PURE__ */ React.createElement(StudioDraftPalettePanel, null),
-          centerPanel: /* @__PURE__ */ React.createElement(StudioDraftCanvasPanel, null),
-          rightPanel: /* @__PURE__ */ React.createElement(StudioDraftSidePanel, null)
+          leftPanel: StudioDraftPalettePanel(),
+          centerPanel: StudioDraftCanvasPanel(),
+          rightPanel: StudioDraftSidePanel()
         }
       );
     }
@@ -3032,8 +3032,8 @@
           studioHref: studioModeHref,
           playgroundHref: playgroundModeHref
         },
-        /* @__PURE__ */ React.createElement(StudioDraftWorkspaceAdapter, null)
-      ) : /* @__PURE__ */ React.createElement(LegacyWorkbenchIdePanel, null) : null, showWorkbenchFieldSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "4. Save, validate + run"), /* @__PURE__ */ React.createElement("h3", null, "Save/validate inline, then run only when the authored draft is safe")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Studio mutations preview validation immediately; this save/validate action persists the reusable workflow before run readiness is unlocked.")), !draftId ? /* @__PURE__ */ React.createElement(EmptyState, { title: "No draft to validate yet", body: "Create or open a draft session first. Then this panel will keep validation, fixes, and run readiness together." }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Message, { tone: validationStatus.tone, title: validationStatus.title, body: validationStatus.body }), validationFixes.length ? /* @__PURE__ */ React.createElement("ul", { className: "teaching-list" }, validationFixes.map((note) => /* @__PURE__ */ React.createElement("li", { key: note }, note))) : null, /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: validateDraft, disabled: Boolean(busy) }, "Save + validate draft"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: createVersionSnapshotFromDraft, disabled: Boolean(busy) }, "Save version snapshot"), /* @__PURE__ */ React.createElement("button", { className: "primary-button", disabled: Boolean(busy) || runDisabled, onClick: runDraft }, "Run candidate")))) : null, showWorkbenchFieldSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "5. Compare + next step"), /* @__PURE__ */ React.createElement("h3", null, "Keep validate, run, and compare inside the same authoring loop")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Once the candidate finishes, compare it immediately or jump into the run detail from the same authoring surface.")), activeDraft?.compare ? /* @__PURE__ */ React.createElement("div", { className: "compare-outcome" }, /* @__PURE__ */ React.createElement(Message, { tone: "success", title: `Compare verdict: ${activeDraft.compare.verdict?.label || "ready"}`, body: activeDraft.compare.verdict?.summary || "Open the comparison to inspect detailed metric deltas." }), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, (activeDraft.compare.next_actions || []).map((action, index) => /* @__PURE__ */ React.createElement("button", { key: action.href || action.label || index, className: index === 0 ? "primary-button" : "secondary-button", onClick: () => navigate(action.href) }, action.label)))) : activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement(Message, { tone: "success", title: "Candidate run completed", body: "Inspect the candidate run now. Add a baseline if you want to compare it before deciding on the next edit." }) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No candidate run yet", body: "Once validation passes and you run a candidate, this panel will explain whether to compare, iterate, or stop." })) : null),
+        StudioDraftWorkspaceAdapter()
+      ) : LegacyWorkbenchIdePanel() : null, showWorkbenchFieldSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "4. Save, validate + run"), /* @__PURE__ */ React.createElement("h3", null, "Save/validate inline, then run only when the authored draft is safe")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Studio mutations preview validation immediately; this save/validate action persists the reusable workflow before run readiness is unlocked.")), !draftId ? /* @__PURE__ */ React.createElement(EmptyState, { title: "No draft to validate yet", body: "Create or open a draft session first. Then this panel will keep validation, fixes, and run readiness together." }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Message, { tone: validationStatus.tone, title: validationStatus.title, body: validationStatus.body }), validationFixes.length ? /* @__PURE__ */ React.createElement("ul", { className: "teaching-list" }, validationFixes.map((note) => /* @__PURE__ */ React.createElement("li", { key: note }, note))) : null, /* @__PURE__ */ React.createElement("div", { className: "button-row" }, /* @__PURE__ */ React.createElement("button", { className: "primary-button", onClick: validateDraft, disabled: Boolean(busy) }, "Save + validate draft"), /* @__PURE__ */ React.createElement("button", { className: "secondary-button", onClick: createVersionSnapshotFromDraft, disabled: Boolean(busy) }, "Save version snapshot"), /* @__PURE__ */ React.createElement("button", { className: "primary-button", disabled: Boolean(busy) || runDisabled, onClick: runDraft }, "Run candidate")))) : null, showWorkbenchFieldSetup ? /* @__PURE__ */ React.createElement("section", { className: "panel" }, /* @__PURE__ */ React.createElement("div", { className: "section-heading" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "5. Compare + next step"), /* @__PURE__ */ React.createElement("h3", null, "Keep validate, run, and compare inside the same authoring loop")), /* @__PURE__ */ React.createElement("p", { className: "section-copy" }, "Once the candidate finishes, compare it immediately or jump into the run detail from the same authoring surface.")), activeDraft?.compare ? /* @__PURE__ */ React.createElement("div", { className: "compare-outcome" }, /* @__PURE__ */ React.createElement(Message, { tone: "success", title: `Compare verdict: ${activeDraft.compare.verdict?.label || "ready"}`, body: activeDraft.compare.verdict?.summary || "Open the comparison to inspect detailed metric deltas." }), /* @__PURE__ */ React.createElement("div", { className: "button-row" }, (activeDraft.compare.next_actions || []).map((action, index) => /* @__PURE__ */ React.createElement("button", { key: action.href || action.label || index, className: index === 0 ? "primary-button" : "secondary-button", onClick: () => navigate(action.href) }, action.label)))) : activeDraft?.last_run_id ? /* @__PURE__ */ React.createElement(Message, { tone: "success", title: "Candidate run completed", body: "Inspect the candidate run now. Add a baseline if you want to compare it before deciding on the next edit." }) : /* @__PURE__ */ React.createElement(EmptyState, { title: "No candidate run yet", body: "Once validation passes and you run a candidate, this panel will explain whether to compare, iterate, or stop." })) : null),
       showWorkbenchSetupRail ? /* @__PURE__ */ React.createElement("aside", { className: "panel guidance-panel" }, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Next step"), /* @__PURE__ */ React.createElement("section", { className: "next-step-card" }, /* @__PURE__ */ React.createElement("strong", null, nextStep.title), /* @__PURE__ */ React.createElement("p", null, nextStep.detail)), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "Authoring contract"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, safeEditLimitations.map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item)))), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "Supported safe edits"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list compact-list" }, safeEditSupport.map((item) => /* @__PURE__ */ React.createElement("li", { key: item.key }, /* @__PURE__ */ React.createElement("strong", null, item.label), /* @__PURE__ */ React.createElement("span", null, item.detail))))), /* @__PURE__ */ React.createElement("section", { className: "guidance-section" }, /* @__PURE__ */ React.createElement("h3", null, "What stays authoritative"), /* @__PURE__ */ React.createElement("ul", { className: "guidance-list" }, sourceOfTruth.map((item) => /* @__PURE__ */ React.createElement("li", { key: item }, item))))) : null
     );
   }
@@ -3063,9 +3063,11 @@
   }) {
     const shellRef = React.useRef(null);
     const stageRef = React.useRef(null);
+    const activeNodePointerRef = React.useRef(null);
     const stagePanRef = React.useRef(null);
     const stagePanMovedRef = React.useRef(false);
     const [stagePanning, setStagePanning] = useState(false);
+    const [stageOffset, setStageOffset] = useState({ x: 0, y: 0 });
     const [viewportSize, setViewportSize] = useState({ width: minWidth, height: minHeight });
     const measureViewport = () => {
       const shell = shellRef.current;
@@ -3104,13 +3106,26 @@
       window.addEventListener("resize", onResize);
       return () => window.removeEventListener("resize", onResize);
     }, [minHeight, minWidth]);
-    if (!nodes.length) {
-      return /* @__PURE__ */ React.createElement(EmptyState, { title: emptyState.title, body: emptyState.body });
-    }
     const contentWidth = Math.max(minWidth, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).x + widthPadding));
     const contentHeight = Math.max(minHeight, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).y + heightPadding));
     const contentOffsetX = centerContent ? Math.max(0, Math.floor((viewportSize.width - contentWidth) / 2)) : 0;
     const contentOffsetY = centerContent ? Math.max(0, Math.floor((viewportSize.height - contentHeight) / 2)) : 0;
+    const maxStageOffsetX = enableStagePan && !centerContent ? Math.max(0, viewportSize.width - contentWidth) : 0;
+    const maxStageOffsetY = enableStagePan && !centerContent ? Math.max(0, viewportSize.height - contentHeight) : 0;
+    const clampStageOffset = (x, y) => ({
+      x: Math.max(0, Math.min(maxStageOffsetX, Math.round(x))),
+      y: Math.max(0, Math.min(maxStageOffsetY, Math.round(y)))
+    });
+    useEffect(() => {
+      const next = clampStageOffset(stageOffset.x, stageOffset.y);
+      if (next.x === stageOffset.x && next.y === stageOffset.y) return;
+      setStageOffset(next);
+    }, [maxStageOffsetX, maxStageOffsetY, stageOffset.x, stageOffset.y]);
+    if (!nodes.length) {
+      return /* @__PURE__ */ React.createElement(EmptyState, { title: emptyState.title, body: emptyState.body });
+    }
+    const totalOffsetX = contentOffsetX + stageOffset.x;
+    const totalOffsetY = contentOffsetY + stageOffset.y;
     const relativePoint = (event) => {
       const stage = stageRef.current;
       const rect = stage?.getBoundingClientRect();
@@ -3123,19 +3138,53 @@
     const graphPoint = (event) => {
       const point = relativePoint(event);
       return {
-        x: point.x - contentOffsetX,
-        y: point.y - contentOffsetY
+        x: point.x - totalOffsetX,
+        y: point.y - totalOffsetY
       };
     };
+    const findNode = (nodeName) => nodes.find((node) => String(node.name) === nodeName) || null;
+    const positionForNode = (node) => positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) };
     const clampPosition = (x, y) => ({
       x: Math.max(0, Math.min(contentWidth - 180, Math.round(x))),
       y: Math.max(0, Math.min(contentHeight - 90, Math.round(y)))
     });
+    const handleActiveNodePointerMove = (event) => {
+      const activeNodePointer = activeNodePointerRef.current;
+      if (!activeNodePointer || activeNodePointer.pointerId !== event.pointerId) return false;
+      const node = findNode(activeNodePointer.nodeName);
+      if (!node) {
+        finishNodePointer(event.pointerId);
+        return true;
+      }
+      onNodePointerMove?.({ pointerId: event.pointerId }, node, positionForNode(node), graphPoint(event), clampPosition);
+      return true;
+    };
+    const handleActiveNodePointerEnd = (pointerId) => {
+      const activeNodePointer = activeNodePointerRef.current;
+      if (!activeNodePointer || activeNodePointer.pointerId !== pointerId) return false;
+      const node = findNode(activeNodePointer.nodeName);
+      finishNodePointer(pointerId);
+      if (node) {
+        onNodePointerUp?.({ pointerId }, node, positionForNode(node));
+      }
+      return true;
+    };
+    const finishNodePointer = (pointerId) => {
+      const active = activeNodePointerRef.current;
+      if (!active || active.pointerId !== pointerId) return null;
+      activeNodePointerRef.current = null;
+      if (active.captureTarget.hasPointerCapture(pointerId)) {
+        active.captureTarget.releasePointerCapture(pointerId);
+      }
+      return active;
+    };
     const finishStagePan = (stage, pointerId) => {
       if (stagePanRef.current?.pointerId !== pointerId) return;
       stagePanRef.current = null;
       setStagePanning(false);
-      stage.releasePointerCapture(pointerId);
+      if (stage.hasPointerCapture(pointerId)) {
+        stage.releasePointerCapture(pointerId);
+      }
     };
     const handleCanvasBackgroundClick = () => {
       if (stagePanMovedRef.current) {
@@ -3180,13 +3229,16 @@
               startX: event.clientX,
               startY: event.clientY,
               scrollLeft: event.currentTarget.scrollLeft,
-              scrollTop: event.currentTarget.scrollTop
+              scrollTop: event.currentTarget.scrollTop,
+              offsetX: stageOffset.x,
+              offsetY: stageOffset.y
             };
             stagePanMovedRef.current = false;
             setStagePanning(true);
             event.currentTarget.setPointerCapture(event.pointerId);
           },
           onPointerMove: (event) => {
+            if (handleActiveNodePointerMove(event)) return;
             const pan = stagePanRef.current;
             if (!pan || pan.pointerId !== event.pointerId) return;
             const deltaX = event.clientX - pan.startX;
@@ -3194,11 +3246,26 @@
             if (!stagePanMovedRef.current && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
               stagePanMovedRef.current = true;
             }
-            event.currentTarget.scrollLeft = pan.scrollLeft - deltaX;
-            event.currentTarget.scrollTop = pan.scrollTop - deltaY;
+            const maxScrollLeft = Math.max(0, event.currentTarget.scrollWidth - event.currentTarget.clientWidth);
+            const maxScrollTop = Math.max(0, event.currentTarget.scrollHeight - event.currentTarget.clientHeight);
+            const nextScrollLeft = Math.max(0, Math.min(maxScrollLeft, pan.scrollLeft - deltaX));
+            const nextScrollTop = Math.max(0, Math.min(maxScrollTop, pan.scrollTop - deltaY));
+            const nextStageOffset = clampStageOffset(
+              pan.offsetX + (deltaX - (pan.scrollLeft - nextScrollLeft)),
+              pan.offsetY + (deltaY - (pan.scrollTop - nextScrollTop))
+            );
+            event.currentTarget.scrollLeft = nextScrollLeft;
+            event.currentTarget.scrollTop = nextScrollTop;
+            setStageOffset((current) => current.x === nextStageOffset.x && current.y === nextStageOffset.y ? current : nextStageOffset);
           },
-          onPointerUp: (event) => finishStagePan(event.currentTarget, event.pointerId),
-          onPointerCancel: (event) => finishStagePan(event.currentTarget, event.pointerId),
+          onPointerUp: (event) => {
+            if (handleActiveNodePointerEnd(event.pointerId)) return;
+            finishStagePan(event.currentTarget, event.pointerId);
+          },
+          onPointerCancel: (event) => {
+            if (handleActiveNodePointerEnd(event.pointerId)) return;
+            finishStagePan(event.currentTarget, event.pointerId);
+          },
           onClick: (event) => {
             if (event.currentTarget === event.target) handleCanvasBackgroundClick();
           }
@@ -3210,8 +3277,8 @@
             style: {
               width: `${contentWidth}px`,
               height: `${contentHeight}px`,
-              left: `${contentOffsetX}px`,
-              top: `${contentOffsetY}px`
+              left: `${totalOffsetX}px`,
+              top: `${totalOffsetY}px`
             }
           },
           /* @__PURE__ */ React.createElement("svg", { className: "workflow-canvas-svg", viewBox: `0 0 ${contentWidth} ${contentHeight}`, preserveAspectRatio: "xMinYMin meet", onClick: handleCanvasBackgroundClick }, /* @__PURE__ */ React.createElement("defs", null, /* @__PURE__ */ React.createElement("marker", { id: markerId, markerWidth: "8", markerHeight: "8", refX: "7", refY: "4", orient: "auto" }, /* @__PURE__ */ React.createElement("path", { d: "M0,0 L8,4 L0,8 z", fill: "#91a5ca" }))), edges.map((edge, index) => {
@@ -3239,9 +3306,25 @@
                 type: "button",
                 className: nodeClassName(node),
                 style: { left: `${position.x}px`, top: `${position.y}px` },
-                onPointerDown: (event) => onNodePointerDown?.(event, node, position, graphPoint(event)),
-                onPointerMove: (event) => onNodePointerMove?.(event, node, position, graphPoint(event), clampPosition),
-                onPointerUp: (event) => onNodePointerUp?.(event, node, positions[name] || position),
+                onPointerDown: (event) => {
+                  if (!onNodePointerDown && !onNodePointerMove && !onNodePointerUp) return;
+                  const captureTarget = event.currentTarget;
+                  activeNodePointerRef.current = { pointerId: event.pointerId, nodeName: name, captureTarget };
+                  captureTarget.setPointerCapture(event.pointerId);
+                  onNodePointerDown?.({ pointerId: event.pointerId }, node, position, graphPoint(event));
+                },
+                onPointerMove: (event) => {
+                  event.stopPropagation();
+                  handleActiveNodePointerMove(event);
+                },
+                onPointerUp: (event) => {
+                  event.stopPropagation();
+                  handleActiveNodePointerEnd(event.pointerId);
+                },
+                onPointerCancel: (event) => {
+                  event.stopPropagation();
+                  handleActiveNodePointerEnd(event.pointerId);
+                },
                 onClick: (event) => {
                   event.stopPropagation();
                   onNodeClick?.(event, node);
@@ -3301,11 +3384,10 @@
         onNodePointerDown: (event, node, position, point) => {
           dragRef.current = { nodeName: String(node.name), offsetX: point.x - position.x, offsetY: point.y - position.y, pointerId: event.pointerId };
           suppressClickRef.current = false;
-          event.currentTarget.setPointerCapture(event.pointerId);
         },
         onNodePointerMove: (event, node, _position, point, clampPosition) => {
           const drag = dragRef.current;
-          if (!drag || drag.nodeName !== String(node.name)) return;
+          if (!drag || drag.pointerId !== event.pointerId || drag.nodeName !== String(node.name)) return;
           suppressClickRef.current = true;
           onMoveNode(String(node.name), clampPosition(point.x - drag.offsetX, point.y - drag.offsetY));
         },
@@ -3313,7 +3395,6 @@
           if (dragRef.current?.pointerId === event.pointerId) {
             onMoveEnd(String(node.name), position);
             dragRef.current = null;
-            event.currentTarget.releasePointerCapture(event.pointerId);
           }
         },
         onNodeClick: (_event, node) => {

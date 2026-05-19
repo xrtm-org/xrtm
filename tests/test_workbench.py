@@ -541,6 +541,8 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
                     r"\.studio-draft-mode \.workbench-main\s*\{(?=[^}]*flex:\s*1\s+1\s+auto)(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-live-workspace \.studio-side-panel\s*\{(?=[^}]*grid-template-rows:\s*auto\s+auto\s+minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-live-meta\s*\{(?=[^}]*display:\s*grid)(?=[^}]*border-bottom:\s*1px\s+solid)[^}]*\}",
+                    r"\.studio-draft-mode \.studio-toolbar\s*\{(?=[^}]*pointer-events:\s*none)[^}]*\}",
+                    r"\.studio-draft-mode \.studio-toolbar > \*\s*\{(?=[^}]*pointer-events:\s*auto)[^}]*\}",
                     r"\.workflow-canvas-shell\s*\{(?=[^}]*display:\s*flex)(?=[^}]*flex-direction:\s*column)(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.workflow-canvas-stage\.canvas-pannable\s*,\s*\.workflow-canvas-stage\.canvas-pannable \.workflow-canvas-svg\s*\{[^}]*cursor:\s*grab;",
                     r"\.studio-live-workspace \.studio-canvas-panel \.workflow-canvas-shell\s*\{(?=[^}]*grid-column:\s*1)(?=[^}]*grid-row:\s*1)(?=[^}]*overflow:\s*hidden)[^}]*\}",
@@ -639,6 +641,12 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert "ResizeObserver" in app_js
         assert "workflow-canvas-content" in app_js
         assert "canvas-pannable" in app_js
+        assert "stageOffset" in app_js
+        assert "maxStageOffsetX" in app_js
+        assert "activeNodePointerRef" in app_js
+        assert "captureTarget" in app_js
+        assert "handleActiveNodePointerMove" in app_js
+        assert "finishNodePointer" in app_js
         assert "workspace-mode-toggle" in app_js
         assert "scrollLeft" in app_js
         assert "scrollTop" in app_js

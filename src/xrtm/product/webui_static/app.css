@@ -1936,6 +1936,7 @@ a:focus-visible {
   left: 0.85rem;
   right: 18.85rem;
   z-index: 4;
+  pointer-events: none;
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
@@ -1945,6 +1946,10 @@ a:focus-visible {
   background: linear-gradient(180deg, rgba(26, 34, 41, 0.82), rgba(20, 27, 33, 0.74));
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
   backdrop-filter: blur(12px);
+}
+
+.studio-draft-mode .studio-toolbar > * {
+  pointer-events: auto;
 }
 
 .studio-workspace .node-palette {

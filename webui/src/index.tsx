@@ -4647,9 +4647,9 @@ function PlaygroundPage({
     return (
       <WorkspacePanelAdapter
         frameClassName="playground-live-workspace"
-        leftPanel={<PlaygroundInputPanel />}
-        centerPanel={<PlaygroundCanvasPanel />}
-        rightPanel={<PlaygroundTracePanel />}
+        leftPanel={PlaygroundInputPanel()}
+        centerPanel={PlaygroundCanvasPanel()}
+        rightPanel={PlaygroundTracePanel()}
       />
     );
   }
@@ -4666,7 +4666,7 @@ function PlaygroundPage({
         studioHref={studioModeHref}
         playgroundHref={playgroundModeHref}
       >
-        <PlaygroundWorkspaceAdapter />
+        {PlaygroundWorkspaceAdapter()}
       </WorkspaceModeShell>
     </main>
   );
@@ -5807,9 +5807,9 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
     return (
       <WorkspacePanelAdapter
         frameClassName="playground-live-workspace studio-live-workspace studio-ide-panel"
-        leftPanel={<StudioDraftPalettePanel />}
-        centerPanel={<StudioDraftCanvasPanel />}
-        rightPanel={<StudioDraftSidePanel />}
+        leftPanel={StudioDraftPalettePanel()}
+        centerPanel={StudioDraftCanvasPanel()}
+        rightPanel={StudioDraftSidePanel()}
       />
     );
   }
@@ -6461,10 +6461,10 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
               studioHref={studioModeHref}
               playgroundHref={playgroundModeHref}
             >
-              <StudioDraftWorkspaceAdapter />
+              {StudioDraftWorkspaceAdapter()}
             </WorkspaceModeShell>
           ) : (
-            <LegacyWorkbenchIdePanel />
+            LegacyWorkbenchIdePanel()
           )
         ) : null}
 
@@ -6601,20 +6601,20 @@ function GraphCanvasBase({
   onEdgeClick?: (edge: JsonObject) => void;
   nodeClassName: (node: JsonObject) => string;
   onNodePointerDown?: (
-    event: React.PointerEvent<HTMLButtonElement>,
+    event: { pointerId: number },
     node: JsonObject,
     position: { x: number; y: number },
     point: { x: number; y: number }
   ) => void;
   onNodePointerMove?: (
-    event: React.PointerEvent<HTMLButtonElement>,
+    event: { pointerId: number },
     node: JsonObject,
     position: { x: number; y: number },
     point: { x: number; y: number },
     clampPosition: (x: number, y: number) => { x: number; y: number }
   ) => void;
   onNodePointerUp?: (
-    event: React.PointerEvent<HTMLButtonElement>,
+    event: { pointerId: number },
     node: JsonObject,
     position: { x: number; y: number }
   ) => void;
@@ -6625,9 +6625,19 @@ function GraphCanvasBase({
 }): React.ReactElement {
   const shellRef = React.useRef<HTMLDivElement | null>(null);
   const stageRef = React.useRef<HTMLDivElement | null>(null);
-  const stagePanRef = React.useRef<{ pointerId: number; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const activeNodePointerRef = React.useRef<{ pointerId: number; nodeName: string; captureTarget: HTMLElement } | null>(null);
+  const stagePanRef = React.useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
   const stagePanMovedRef = React.useRef(false);
   const [stagePanning, setStagePanning] = useState(false);
+  const [stageOffset, setStageOffset] = useState({ x: 0, y: 0 });
   const [viewportSize, setViewportSize] = useState({ width: minWidth, height: minHeight });
   const measureViewport = () => {
     const shell = shellRef.current;
@@ -6666,13 +6676,26 @@ function GraphCanvasBase({
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [minHeight, minWidth]);
-  if (!nodes.length) {
-    return <EmptyState title={emptyState.title} body={emptyState.body} />;
-  }
   const contentWidth = Math.max(minWidth, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).x + widthPadding));
   const contentHeight = Math.max(minHeight, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).y + heightPadding));
   const contentOffsetX = centerContent ? Math.max(0, Math.floor((viewportSize.width - contentWidth) / 2)) : 0;
   const contentOffsetY = centerContent ? Math.max(0, Math.floor((viewportSize.height - contentHeight) / 2)) : 0;
+  const maxStageOffsetX = enableStagePan && !centerContent ? Math.max(0, viewportSize.width - contentWidth) : 0;
+  const maxStageOffsetY = enableStagePan && !centerContent ? Math.max(0, viewportSize.height - contentHeight) : 0;
+  const clampStageOffset = (x: number, y: number) => ({
+    x: Math.max(0, Math.min(maxStageOffsetX, Math.round(x))),
+    y: Math.max(0, Math.min(maxStageOffsetY, Math.round(y))),
+  });
+  useEffect(() => {
+    const next = clampStageOffset(stageOffset.x, stageOffset.y);
+    if (next.x === stageOffset.x && next.y === stageOffset.y) return;
+    setStageOffset(next);
+  }, [maxStageOffsetX, maxStageOffsetY, stageOffset.x, stageOffset.y]);
+  if (!nodes.length) {
+    return <EmptyState title={emptyState.title} body={emptyState.body} />;
+  }
+  const totalOffsetX = contentOffsetX + stageOffset.x;
+  const totalOffsetY = contentOffsetY + stageOffset.y;
   const relativePoint = (event: { clientX: number; clientY: number }) => {
     const stage = stageRef.current;
     const rect = stage?.getBoundingClientRect();
@@ -6685,19 +6708,53 @@ function GraphCanvasBase({
   const graphPoint = (event: { clientX: number; clientY: number }) => {
     const point = relativePoint(event);
     return {
-      x: point.x - contentOffsetX,
-      y: point.y - contentOffsetY,
+      x: point.x - totalOffsetX,
+      y: point.y - totalOffsetY,
     };
   };
+  const findNode = (nodeName: string) => nodes.find((node) => String(node.name) === nodeName) || null;
+  const positionForNode = (node: JsonObject) => positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) };
   const clampPosition = (x: number, y: number) => ({
     x: Math.max(0, Math.min(contentWidth - 180, Math.round(x))),
     y: Math.max(0, Math.min(contentHeight - 90, Math.round(y))),
   });
+  const handleActiveNodePointerMove = (event: { pointerId: number; clientX: number; clientY: number }) => {
+    const activeNodePointer = activeNodePointerRef.current;
+    if (!activeNodePointer || activeNodePointer.pointerId !== event.pointerId) return false;
+    const node = findNode(activeNodePointer.nodeName);
+    if (!node) {
+      finishNodePointer(event.pointerId);
+      return true;
+    }
+    onNodePointerMove?.({ pointerId: event.pointerId }, node, positionForNode(node), graphPoint(event), clampPosition);
+    return true;
+  };
+  const handleActiveNodePointerEnd = (pointerId: number) => {
+    const activeNodePointer = activeNodePointerRef.current;
+    if (!activeNodePointer || activeNodePointer.pointerId !== pointerId) return false;
+    const node = findNode(activeNodePointer.nodeName);
+    finishNodePointer(pointerId);
+    if (node) {
+      onNodePointerUp?.({ pointerId }, node, positionForNode(node));
+    }
+    return true;
+  };
+  const finishNodePointer = (pointerId: number) => {
+    const active = activeNodePointerRef.current;
+    if (!active || active.pointerId !== pointerId) return null;
+    activeNodePointerRef.current = null;
+    if (active.captureTarget.hasPointerCapture(pointerId)) {
+      active.captureTarget.releasePointerCapture(pointerId);
+    }
+    return active;
+  };
   const finishStagePan = (stage: HTMLDivElement, pointerId: number) => {
     if (stagePanRef.current?.pointerId !== pointerId) return;
     stagePanRef.current = null;
     setStagePanning(false);
-    stage.releasePointerCapture(pointerId);
+    if (stage.hasPointerCapture(pointerId)) {
+      stage.releasePointerCapture(pointerId);
+    }
   };
   const handleCanvasBackgroundClick = () => {
     if (stagePanMovedRef.current) {
@@ -6740,12 +6797,15 @@ function GraphCanvasBase({
             startY: event.clientY,
             scrollLeft: event.currentTarget.scrollLeft,
             scrollTop: event.currentTarget.scrollTop,
+            offsetX: stageOffset.x,
+            offsetY: stageOffset.y,
           };
           stagePanMovedRef.current = false;
           setStagePanning(true);
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
+          if (handleActiveNodePointerMove(event)) return;
           const pan = stagePanRef.current;
           if (!pan || pan.pointerId !== event.pointerId) return;
           const deltaX = event.clientX - pan.startX;
@@ -6753,11 +6813,28 @@ function GraphCanvasBase({
           if (!stagePanMovedRef.current && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
             stagePanMovedRef.current = true;
           }
-          event.currentTarget.scrollLeft = pan.scrollLeft - deltaX;
-          event.currentTarget.scrollTop = pan.scrollTop - deltaY;
+          const maxScrollLeft = Math.max(0, event.currentTarget.scrollWidth - event.currentTarget.clientWidth);
+          const maxScrollTop = Math.max(0, event.currentTarget.scrollHeight - event.currentTarget.clientHeight);
+          const nextScrollLeft = Math.max(0, Math.min(maxScrollLeft, pan.scrollLeft - deltaX));
+          const nextScrollTop = Math.max(0, Math.min(maxScrollTop, pan.scrollTop - deltaY));
+          const nextStageOffset = clampStageOffset(
+            pan.offsetX + (deltaX - (pan.scrollLeft - nextScrollLeft)),
+            pan.offsetY + (deltaY - (pan.scrollTop - nextScrollTop))
+          );
+          event.currentTarget.scrollLeft = nextScrollLeft;
+          event.currentTarget.scrollTop = nextScrollTop;
+          setStageOffset((current) => (
+            current.x === nextStageOffset.x && current.y === nextStageOffset.y ? current : nextStageOffset
+          ));
         }}
-        onPointerUp={(event) => finishStagePan(event.currentTarget, event.pointerId)}
-        onPointerCancel={(event) => finishStagePan(event.currentTarget, event.pointerId)}
+        onPointerUp={(event) => {
+          if (handleActiveNodePointerEnd(event.pointerId)) return;
+          finishStagePan(event.currentTarget, event.pointerId);
+        }}
+        onPointerCancel={(event) => {
+          if (handleActiveNodePointerEnd(event.pointerId)) return;
+          finishStagePan(event.currentTarget, event.pointerId);
+        }}
         onClick={(event) => {
           if (event.currentTarget === event.target) handleCanvasBackgroundClick();
         }}
@@ -6767,8 +6844,8 @@ function GraphCanvasBase({
           style={{
             width: `${contentWidth}px`,
             height: `${contentHeight}px`,
-            left: `${contentOffsetX}px`,
-            top: `${contentOffsetY}px`,
+            left: `${totalOffsetX}px`,
+            top: `${totalOffsetY}px`,
           }}
         >
           <svg className="workflow-canvas-svg" viewBox={`0 0 ${contentWidth} ${contentHeight}`} preserveAspectRatio="xMinYMin meet" onClick={handleCanvasBackgroundClick}>
@@ -6804,9 +6881,25 @@ function GraphCanvasBase({
                 type="button"
                 className={nodeClassName(node)}
                 style={{ left: `${position.x}px`, top: `${position.y}px` }}
-                onPointerDown={(event) => onNodePointerDown?.(event, node, position, graphPoint(event))}
-                onPointerMove={(event) => onNodePointerMove?.(event, node, position, graphPoint(event), clampPosition)}
-                onPointerUp={(event) => onNodePointerUp?.(event, node, positions[name] || position)}
+                onPointerDown={(event) => {
+                  if (!onNodePointerDown && !onNodePointerMove && !onNodePointerUp) return;
+                  const captureTarget = event.currentTarget;
+                  activeNodePointerRef.current = { pointerId: event.pointerId, nodeName: name, captureTarget };
+                  captureTarget.setPointerCapture(event.pointerId);
+                  onNodePointerDown?.({ pointerId: event.pointerId }, node, position, graphPoint(event));
+                }}
+                onPointerMove={(event) => {
+                  event.stopPropagation();
+                  handleActiveNodePointerMove(event);
+                }}
+                onPointerUp={(event) => {
+                  event.stopPropagation();
+                  handleActiveNodePointerEnd(event.pointerId);
+                }}
+                onPointerCancel={(event) => {
+                  event.stopPropagation();
+                  handleActiveNodePointerEnd(event.pointerId);
+                }}
                 onClick={(event) => {
                   event.stopPropagation();
                   onNodeClick?.(event, node);
@@ -6882,11 +6975,10 @@ function WorkflowCanvasSurface({
       onNodePointerDown={(event, node, position, point) => {
         dragRef.current = { nodeName: String(node.name), offsetX: point.x - position.x, offsetY: point.y - position.y, pointerId: event.pointerId };
         suppressClickRef.current = false;
-        event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onNodePointerMove={(event, node, _position, point, clampPosition) => {
         const drag = dragRef.current;
-        if (!drag || drag.nodeName !== String(node.name)) return;
+        if (!drag || drag.pointerId !== event.pointerId || drag.nodeName !== String(node.name)) return;
         suppressClickRef.current = true;
         onMoveNode(String(node.name), clampPosition(point.x - drag.offsetX, point.y - drag.offsetY));
       }}
@@ -6894,7 +6986,6 @@ function WorkflowCanvasSurface({
         if (dragRef.current?.pointerId === event.pointerId) {
           onMoveEnd(String(node.name), position);
           dragRef.current = null;
-          event.currentTarget.releasePointerCapture(event.pointerId);
         }
       }}
       onNodeClick={(_event, node) => {
