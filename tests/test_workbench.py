@@ -535,8 +535,10 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
                     r"\.studio-draft-mode \.workbench-main\s*\{(?=[^}]*flex:\s*1\s+1\s+auto)(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-draft-mode \.studio-ide-panel\s*\{(?=[^}]*position:\s*relative)(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*min-height:\s*var\(--workspace-ide-height\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-draft-mode \.studio-ide-panel > \.section-heading\s*\{(?=[^}]*position:\s*absolute)(?=[^}]*pointer-events:\s*none)[^}]*\}",
+                    r"\.workflow-canvas-shell\s*\{(?=[^}]*display:\s*flex)(?=[^}]*flex-direction:\s*column)(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-draft-mode \.workflow-canvas-shell\s*\{(?=[^}]*position:\s*relative)(?=[^}]*padding-top:\s*0)[^}]*\}",
                     r"\.studio-workspace \.workflow-canvas-shell\s*\{(?=[^}]*min-height:\s*0)(?=[^}]*height:\s*100%)[^}]*\}",
+                    r"\.workflow-canvas-stage\s*\{(?=[^}]*flex:\s*1\s+1\s+auto)(?=[^}]*overflow:\s*auto)(?=[^}]*min-height:\s*0)[^}]*\}",
                     r"@media \(max-width:\s*1180px\)\s*\{.*?\.studio-workspace \.studio-ide-panel\s*\{.*?grid-template-columns:\s*minmax\(12rem,\s*13\.5rem\)\s*minmax\(0,\s*1fr\);",
                     r"@media \(max-width:\s*1024px\)\s*\{.*?\.studio-workspace \.studio-ide-panel\s*\{.*?grid-template-columns:\s*1fr;",
                 ),
@@ -627,8 +629,9 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert "shell-status-button" in app_js
         assert "shell-icon-button" in app_js
         assert "ResizeObserver" in app_js
-        assert "window.innerHeight" in app_js
         assert "workflow-canvas-content" in app_js
+        assert "scrollLeft" in app_js
+        assert "scrollTop" in app_js
         assert "Workflow inspector" not in app_js
         assert "Node inspector" not in app_js
         assert "Edge inspector" not in app_js

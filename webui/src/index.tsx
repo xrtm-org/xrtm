@@ -6143,16 +6143,13 @@ function GraphCanvasBase({
     const style = window.getComputedStyle(shell);
     const horizontalPadding = Number.parseFloat(style.paddingLeft || "0") + Number.parseFloat(style.paddingRight || "0");
     const verticalPadding = Number.parseFloat(style.paddingTop || "0") + Number.parseFloat(style.paddingBottom || "0");
-    const rect = shell.getBoundingClientRect();
     const parentHeight = shell.parentElement ? shell.parentElement.clientHeight : 0;
-    const remainingViewportHeight = Math.floor(window.innerHeight - rect.top - verticalPadding - 16);
     const next = {
-      width: Math.max(minWidth, Math.floor(shell.clientWidth - horizontalPadding)),
+      width: Math.max(1, Math.floor(shell.clientWidth - horizontalPadding)),
       height: Math.max(
-        minHeight,
+        1,
         Math.floor(shell.clientHeight - verticalPadding),
-        Math.floor(parentHeight - verticalPadding),
-        remainingViewportHeight
+        Math.floor(parentHeight - verticalPadding)
       ),
     };
     setViewportSize((current) => (current.width === next.width && current.height === next.height ? current : next));
@@ -6182,14 +6179,16 @@ function GraphCanvasBase({
   }
   const contentWidth = Math.max(minWidth, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).x + widthPadding));
   const contentHeight = Math.max(minHeight, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).y + heightPadding));
-  const width = Math.max(viewportSize.width, contentWidth);
-  const height = Math.max(viewportSize.height, contentHeight);
-  const contentOffsetX = Math.max(0, Math.floor((width - contentWidth) / 2));
-  const contentOffsetY = Math.max(0, Math.floor((height - contentHeight) / 2));
+  const contentOffsetX = Math.max(0, Math.floor((viewportSize.width - contentWidth) / 2));
+  const contentOffsetY = Math.max(0, Math.floor((viewportSize.height - contentHeight) / 2));
   const relativePoint = (event: { clientX: number; clientY: number }) => {
-    const rect = stageRef.current?.getBoundingClientRect();
+    const stage = stageRef.current;
+    const rect = stage?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    return {
+      x: event.clientX - rect.left + (stage?.scrollLeft || 0),
+      y: event.clientY - rect.top + (stage?.scrollTop || 0),
+    };
   };
   const graphPoint = (event: { clientX: number; clientY: number }) => {
     const point = relativePoint(event);
@@ -6224,7 +6223,6 @@ function GraphCanvasBase({
       <div
         ref={stageRef}
         className="workflow-canvas-stage"
-        style={{ height: `${height}px`, width: `${width}px` }}
         onClick={(event) => {
           if (event.currentTarget === event.target) onStageClick?.();
         }}
