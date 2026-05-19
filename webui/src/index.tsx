@@ -6143,9 +6143,17 @@ function GraphCanvasBase({
     const style = window.getComputedStyle(shell);
     const horizontalPadding = Number.parseFloat(style.paddingLeft || "0") + Number.parseFloat(style.paddingRight || "0");
     const verticalPadding = Number.parseFloat(style.paddingTop || "0") + Number.parseFloat(style.paddingBottom || "0");
+    const rect = shell.getBoundingClientRect();
+    const parentHeight = shell.parentElement ? shell.parentElement.clientHeight : 0;
+    const remainingViewportHeight = Math.floor(window.innerHeight - rect.top - verticalPadding - 16);
     const next = {
       width: Math.max(minWidth, Math.floor(shell.clientWidth - horizontalPadding)),
-      height: Math.max(minHeight, Math.floor(shell.clientHeight - verticalPadding)),
+      height: Math.max(
+        minHeight,
+        Math.floor(shell.clientHeight - verticalPadding),
+        Math.floor(parentHeight - verticalPadding),
+        remainingViewportHeight
+      ),
     };
     setViewportSize((current) => (current.width === next.width && current.height === next.height ? current : next));
   };

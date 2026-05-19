@@ -627,6 +627,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert "shell-status-button" in app_js
         assert "shell-icon-button" in app_js
         assert "ResizeObserver" in app_js
+        assert "window.innerHeight" in app_js
         assert "workflow-canvas-content" in app_js
         assert "Workflow inspector" not in app_js
         assert "Node inspector" not in app_js
