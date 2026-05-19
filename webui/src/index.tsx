@@ -5483,35 +5483,25 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
         ) : null}
 
         {showWorkbenchIdePanel ? (
-        <section className="panel section-stack studio-ide-panel">
+        <section className={showStudioDraftIde ? "playground-live-workspace studio-live-workspace studio-ide-panel" : "panel section-stack studio-ide-panel"}>
+          {!showStudioDraftIde ? (
           <div className="section-heading">
             <div>
-              <span className="eyebrow">{showStudioDraftIde ? "Studio" : "3. Studio graph IDE"}</span>
-              <h3>{showStudioDraftIde ? studioDraftTitle : "Drag nodes, drop safe palette items, select nodes/edges, then validate"}</h3>
+              <span className="eyebrow">3. Studio graph IDE</span>
+              <h3>Drag nodes, drop safe palette items, select nodes/edges, then validate</h3>
             </div>
             <p className="section-copy">
-              {showStudioDraftIde
-                ? "Keep palette, canvas, inspector, validation, and versioning inside one draft IDE."
-                : "Node positions persist with the draft layout while graph topology and configuration stay inside the shared authoring contract."}
+              Node positions persist with the draft layout while graph topology and configuration stay inside the shared authoring contract.
             </p>
-            {showStudioDraftIde ? (
-              <div className="meta-row">
-                <SourceBadge source={activeWorkflow?.source || "builtin"} />
-                <StatusPill value={validationPillValue} />
-                {activeDraft?.revision != null ? <span>Revision {activeDraft.revision}</span> : null}
-                {activeGraph.entry ? <span>Entry: {String(activeGraph.entry)}</span> : null}
-                {activeDraft?.baseline_run_id ? <span>Baseline: {activeDraft.baseline_run_id}</span> : null}
-                {activeDraft?.last_run_id ? <span>Candidate: {activeDraft.last_run_id}</span> : null}
-              </div>
-            ) : null}
           </div>
+          ) : null}
           {!draftId ? (
             isStudio && studioIntent && studioBootstrapState !== "failed"
               ? <LoadingCard label="Opening Studio graph IDE" />
               : <EmptyState title="Create a draft to unlock graph authoring" body="The canvas becomes editable as soon as you open a draft session." />
           ) : (
             <>
-              <section className="node-palette" aria-label="Studio node palette">
+              <section className={showStudioDraftIde ? "playground-input-panel studio-palette-panel node-palette" : "node-palette"} aria-label="Studio node palette">
                 <div>
                   <span className="eyebrow">Quick add</span>
                   <p>Search or insert one safe node first. Open the grouped library only when the quick path is not enough.</p>
@@ -5610,62 +5600,95 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 </details>
               </section>
 
-              <WorkflowCanvasSurface
-                canvas={activeCanvas}
-                entry={String(activeGraph.entry || "")}
-                selectedNodeName={inspectorMode === "node" ? selectedNodeName : ""}
-                selectedEdgeId={inspectorMode === "edge" ? selectedEdgeId : ""}
-                localPositions={localPositions}
-                edgeDraftFrom={edgeDraftFrom}
-                onMoveNode={(name, position) => setLocalPositions((current) => ({ ...current, [name]: position }))}
-                onMoveEnd={(name, position) => void persistNodePosition(name, position)}
-                onSelectNode={selectNodeInspector}
-                onSelectEdge={selectEdgeInspector}
-                onSelectWorkflow={selectWorkflowInspector}
-                onAddNodeFromPalette={(implementation, position) => void addPaletteNode(implementation, position)}
-                onCreateEdge={(from, to) => void createEdgeFromCanvas(from, to)}
-              />
+              {showStudioDraftIde ? (
+                <section className="playground-canvas-panel studio-canvas-panel">
+                  <WorkflowCanvasSurface
+                    canvas={activeCanvas}
+                    entry={String(activeGraph.entry || "")}
+                    selectedNodeName={inspectorMode === "node" ? selectedNodeName : ""}
+                    selectedEdgeId={inspectorMode === "edge" ? selectedEdgeId : ""}
+                    localPositions={localPositions}
+                    edgeDraftFrom={edgeDraftFrom}
+                    onMoveNode={(name, position) => setLocalPositions((current) => ({ ...current, [name]: position }))}
+                    onMoveEnd={(name, position) => void persistNodePosition(name, position)}
+                    onSelectNode={selectNodeInspector}
+                    onSelectEdge={selectEdgeInspector}
+                    onSelectWorkflow={selectWorkflowInspector}
+                    onAddNodeFromPalette={(implementation, position) => void addPaletteNode(implementation, position)}
+                    onCreateEdge={(from, to) => void createEdgeFromCanvas(from, to)}
+                  />
+                </section>
+              ) : (
+                <WorkflowCanvasSurface
+                  canvas={activeCanvas}
+                  entry={String(activeGraph.entry || "")}
+                  selectedNodeName={inspectorMode === "node" ? selectedNodeName : ""}
+                  selectedEdgeId={inspectorMode === "edge" ? selectedEdgeId : ""}
+                  localPositions={localPositions}
+                  edgeDraftFrom={edgeDraftFrom}
+                  onMoveNode={(name, position) => setLocalPositions((current) => ({ ...current, [name]: position }))}
+                  onMoveEnd={(name, position) => void persistNodePosition(name, position)}
+                  onSelectNode={selectNodeInspector}
+                  onSelectEdge={selectEdgeInspector}
+                  onSelectWorkflow={selectWorkflowInspector}
+                  onAddNodeFromPalette={(implementation, position) => void addPaletteNode(implementation, position)}
+                  onCreateEdge={(from, to) => void createEdgeFromCanvas(from, to)}
+                />
+              )}
 
-              <div className={showStudioDraftIde ? "split-grid authoring-grid" : "three-column-grid authoring-grid"}>
+              <div className={showStudioDraftIde ? "live-trace-panel studio-side-panel authoring-grid" : "three-column-grid authoring-grid"}>
                 {showStudioDraftIde ? (
-                  <div className="studio-rail-tabs" role="tablist" aria-label="Studio side panel">
-                    <button
-                      id="studio-rail-tab-inspect"
-                      role="tab"
-                      aria-selected={studioRailMode === "inspect"}
-                      aria-controls="studio-side-panel-inspect"
-                      tabIndex={studioRailMode === "inspect" ? 0 : -1}
-                      className={studioRailMode === "inspect" ? "secondary-button active" : "secondary-button"}
-                      type="button"
-                      onClick={() => setStudioRailMode("inspect")}
-                    >
-                      Inspector
-                    </button>
-                    <button
-                      id="studio-rail-tab-run"
-                      role="tab"
-                      aria-selected={studioRailMode === "run"}
-                      aria-controls="studio-side-panel-run"
-                      tabIndex={studioRailMode === "run" ? 0 : -1}
-                      className={studioRailMode === "run" ? "secondary-button active" : "secondary-button"}
-                      type="button"
-                      onClick={() => setStudioRailMode("run")}
-                    >
-                      Run
-                    </button>
-                    <button
-                      id="studio-rail-tab-tools"
-                      role="tab"
-                      aria-selected={studioRailMode === "tools"}
-                      aria-controls="studio-side-panel-tools"
-                      tabIndex={studioRailMode === "tools" ? 0 : -1}
-                      className={studioRailMode === "tools" ? "secondary-button active" : "secondary-button"}
-                      type="button"
-                      onClick={() => setStudioRailMode("tools")}
-                    >
-                      Tools
-                    </button>
-                  </div>
+                  <>
+                    <div className="studio-live-meta">
+                      <div>
+                        <span className="eyebrow">Studio</span>
+                        <strong>{studioDraftTitle}</strong>
+                      </div>
+                      <div className="meta-row">
+                        <SourceBadge source={activeWorkflow?.source || "builtin"} />
+                        <StatusPill value={validationPillValue} />
+                        {activeDraft?.revision != null ? <span>Revision {activeDraft.revision}</span> : null}
+                      </div>
+                    </div>
+                    <div className="studio-rail-tabs" role="tablist" aria-label="Studio side panel">
+                      <button
+                        id="studio-rail-tab-inspect"
+                        role="tab"
+                        aria-selected={studioRailMode === "inspect"}
+                        aria-controls="studio-side-panel-inspect"
+                        tabIndex={studioRailMode === "inspect" ? 0 : -1}
+                        className={studioRailMode === "inspect" ? "secondary-button active" : "secondary-button"}
+                        type="button"
+                        onClick={() => setStudioRailMode("inspect")}
+                      >
+                        Inspector
+                      </button>
+                      <button
+                        id="studio-rail-tab-run"
+                        role="tab"
+                        aria-selected={studioRailMode === "run"}
+                        aria-controls="studio-side-panel-run"
+                        tabIndex={studioRailMode === "run" ? 0 : -1}
+                        className={studioRailMode === "run" ? "secondary-button active" : "secondary-button"}
+                        type="button"
+                        onClick={() => setStudioRailMode("run")}
+                      >
+                        Run
+                      </button>
+                      <button
+                        id="studio-rail-tab-tools"
+                        role="tab"
+                        aria-selected={studioRailMode === "tools"}
+                        aria-controls="studio-side-panel-tools"
+                        tabIndex={studioRailMode === "tools" ? 0 : -1}
+                        className={studioRailMode === "tools" ? "secondary-button active" : "secondary-button"}
+                        type="button"
+                        onClick={() => setStudioRailMode("tools")}
+                      >
+                        Tools
+                      </button>
+                    </div>
+                  </>
                 ) : null}
                 {(!showStudioDraftIde || studioRailMode === "inspect") ? (
                 <section

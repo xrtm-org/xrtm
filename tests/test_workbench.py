@@ -475,7 +475,8 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert ":root[data-theme=\"dark\"] .operations-stat-card" in app_css
         assert ":root[data-theme=\"dark\"] .operations-subpanel" in app_css
         assert ":root[data-theme=\"light\"] .studio-workspace .node-palette" in app_css
-        assert ":root[data-theme=\"light\"] .studio-workspace .studio-ide-panel > .section-heading" in app_css
+        assert ".studio-live-workspace.studio-ide-panel" in app_css
+        assert ".studio-live-meta" in app_css
         assert ".workflow-canvas-content" in app_css
         assert ".density-disclosure" in app_css
         assert re.search(r"\.product-main\s*\{[^}]*min-width:\s*0;", app_css, re.S)
@@ -525,22 +526,21 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
             {
                 "route": "/studio",
                 "api": "/api/studio",
-                "js_tokens": ("studio-workspace", "studio-ide-panel", "Browse all", "Quick insert", "Create or resume a local Studio draft"),
+                "js_tokens": ("studio-workspace", "studio-live-workspace", "studio-ide-panel", "Browse all", "Quick insert", "Create or resume a local Studio draft"),
                 "css_patterns": (
-                    r"\.studio-workspace \.studio-ide-panel\s*\{[^}]*grid-template-columns:\s*var\(--workspace-pane-left\)\s+var\(--workspace-pane-center\)\s+var\(--workspace-pane-right\);",
+                    r"\.studio-live-workspace\.studio-ide-panel\s*\{(?=[^}]*min-height:\s*var\(--workspace-ide-height\))(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*grid-template-columns:\s*var\(--workspace-pane-left\)\s+var\(--workspace-pane-center\)\s+var\(--workspace-pane-right\);",
                     r"\.studio-workspace\s*\{(?=[^}]*align-items:\s*stretch)(?=[^}]*min-height:\s*0)[^}]*\}",
                     r"\.studio-draft-mode\s*\{(?=[^}]*display:\s*flex)(?=[^}]*flex-direction:\s*column)(?=[^}]*height:\s*100%)[^}]*\}",
-                    r"\.studio-workspace \.node-palette\s*\{(?=[^}]*min-height:\s*0)(?=[^}]*overflow:\s*hidden)[^}]*\}",
+                    r"\.studio-live-workspace \.studio-palette-panel\s*\{(?=[^}]*min-height:\s*0)(?=[^}]*overflow:\s*auto)[^}]*\}",
                     r"\.studio-workspace \.node-palette-scroll\s*\{(?=[^}]*overflow:\s*auto)(?=[^}]*overscroll-behavior:\s*contain)[^}]*\}",
                     r"\.studio-draft-mode \.workbench-main\s*\{(?=[^}]*flex:\s*1\s+1\s+auto)(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
-                    r"\.studio-draft-mode \.studio-ide-panel\s*\{(?=[^}]*position:\s*relative)(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*min-height:\s*var\(--workspace-ide-height\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
-                    r"\.studio-draft-mode \.studio-ide-panel > \.section-heading\s*\{(?=[^}]*position:\s*absolute)(?=[^}]*pointer-events:\s*none)[^}]*\}",
+                    r"\.studio-live-workspace \.studio-side-panel\s*\{(?=[^}]*grid-template-rows:\s*auto\s+auto\s+minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
+                    r"\.studio-live-meta\s*\{(?=[^}]*display:\s*grid)(?=[^}]*border-bottom:\s*1px\s+solid)[^}]*\}",
                     r"\.workflow-canvas-shell\s*\{(?=[^}]*display:\s*flex)(?=[^}]*flex-direction:\s*column)(?=[^}]*overflow:\s*hidden)[^}]*\}",
-                    r"\.studio-draft-mode \.workflow-canvas-shell\s*\{(?=[^}]*position:\s*relative)(?=[^}]*padding-top:\s*0)[^}]*\}",
-                    r"\.studio-workspace \.workflow-canvas-shell\s*\{(?=[^}]*min-height:\s*0)(?=[^}]*height:\s*100%)[^}]*\}",
+                    r"\.studio-live-workspace \.studio-canvas-panel \.workflow-canvas-shell\s*\{(?=[^}]*grid-column:\s*1)(?=[^}]*grid-row:\s*1)(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.workflow-canvas-stage\s*\{(?=[^}]*flex:\s*1\s+1\s+auto)(?=[^}]*overflow:\s*auto)(?=[^}]*min-height:\s*0)[^}]*\}",
-                    r"@media \(max-width:\s*1180px\)\s*\{.*?\.studio-workspace \.studio-ide-panel\s*\{.*?grid-template-columns:\s*minmax\(12rem,\s*13\.5rem\)\s*minmax\(0,\s*1fr\);",
-                    r"@media \(max-width:\s*1024px\)\s*\{.*?\.studio-workspace \.studio-ide-panel\s*\{.*?grid-template-columns:\s*1fr;",
+                    r"@media \(max-width:\s*1180px\)\s*\{.*?\.studio-live-workspace\.studio-ide-panel\s*\{.*?grid-template-columns:\s*minmax\(12rem,\s*13\.5rem\)\s*minmax\(0,\s*1fr\);",
+                    r"@media \(max-width:\s*1024px\)\s*\{.*?\.studio-live-workspace\.studio-ide-panel\s*\{.*?grid-template-columns:\s*1fr;",
                 ),
             },
             {
@@ -550,6 +550,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
                 "css_patterns": (
                     r"\.playground-shell\s*\{(?=[^}]*align-items:\s*stretch)(?=[^}]*height:\s*100%)(?=[^}]*min-height:\s*0)[^}]*\}",
                     r"\.playground-live-workspace\s*\{(?=[^}]*height:\s*100%)(?=[^}]*min-height:\s*0)[^}]*grid-template-columns:\s*var\(--workspace-pane-left\)\s+var\(--workspace-pane-center\)\s+var\(--workspace-pane-right\);",
+                    r"\.playground-canvas-panel \.workflow-canvas-shell\s*\{(?=[^}]*height:\s*100%)(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.playground-canvas-panel \.workflow-canvas-stage\s*\{[^}]*min-height:\s*100%;",
                     r"\.live-trace-stack\s*\{(?=[^}]*overflow:\s*auto)(?=[^}]*min-height:\s*0)[^}]*\}",
                     r"@media \(max-width:\s*1360px\)\s*\{.*?:root\s*\{.*?--workspace-pane-left:\s*12\.5rem;.*?--workspace-pane-center:\s*minmax\(0,\s*1\.12fr\);.*?--workspace-pane-right:\s*16rem;",
