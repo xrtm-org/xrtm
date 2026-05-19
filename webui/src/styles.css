@@ -1868,7 +1868,7 @@ a:focus-visible {
 
 .studio-draft-mode .studio-ide-panel > .section-heading {
   position: absolute;
-  top: 4.15rem;
+  top: 0.85rem;
   left: 15.75rem;
   right: 18.85rem;
   z-index: 3;
@@ -2003,11 +2003,13 @@ a:focus-visible {
 }
 
 .studio-draft-mode .node-palette {
-  padding-top: 4.9rem;
+  padding-top: 0;
 }
 
 .studio-draft-mode .workflow-canvas-shell {
-  padding-top: 8.65rem;
+  position: relative;
+  z-index: 1;
+  padding-top: 0;
 }
 
 .studio-workspace .workflow-canvas-stage {
@@ -3032,7 +3034,7 @@ a:focus-visible {
     backdrop-filter: none;
   }
   .studio-draft-mode .studio-ide-panel > .section-heading {
-    top: 4.05rem;
+    top: 0.95rem;
     left: 0.95rem;
     right: 0.95rem;
   }
@@ -3045,7 +3047,8 @@ a:focus-visible {
     padding-top: 0;
   }
   .studio-draft-mode .workflow-canvas-shell {
-    padding-top: 4.5rem;
+    position: relative;
+    padding-top: 0;
   }
   .studio-workspace .authoring-grid {
     grid-column: 1 / -1;

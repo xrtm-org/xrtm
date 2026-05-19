@@ -389,6 +389,17 @@ def test_workbench_snapshot_and_html_expose_gui_loop(tmp_path: Path) -> None:
     assert "Loading the local-first app shell" in html
 
 
+def test_workbench_snapshot_centers_single_path_canvas(tmp_path: Path) -> None:
+    workflows_dir = tmp_path / "workflows"
+
+    snapshot = workbench_snapshot(Path("missing-runs"), workflows_dir, workflow_name="demo-provider-free")
+
+    ys = [int(node["y"]) for node in snapshot["canvas"]["nodes"]]
+    assert ys
+    assert min(ys) >= 200
+    assert len(set(ys)) == 1
+
+
 def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tmp_path: Path) -> None:
     workflows_dir = tmp_path / "workflows"
     runs_dir = tmp_path / "runs"
@@ -464,7 +475,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert ":root[data-theme=\"dark\"] .operations-stat-card" in app_css
         assert ":root[data-theme=\"dark\"] .operations-subpanel" in app_css
         assert ":root[data-theme=\"light\"] .studio-workspace .node-palette" in app_css
-        assert ":root[data-theme=\"light\"] .studio-workspace .studio-toolbar" in app_css
+        assert ":root[data-theme=\"light\"] .studio-workspace .studio-ide-panel > .section-heading" in app_css
         assert ".workflow-canvas-content" in app_css
         assert ".density-disclosure" in app_css
         assert re.search(r"\.product-main\s*\{[^}]*min-width:\s*0;", app_css, re.S)
@@ -523,7 +534,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
                     r"\.studio-draft-mode \.workbench-main\s*\{(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-draft-mode \.studio-ide-panel\s*\{(?=[^}]*position:\s*relative)(?=[^}]*height:\s*100%)(?=[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\))(?=[^}]*min-height:\s*0)(?=[^}]*overflow:\s*hidden)[^}]*\}",
                     r"\.studio-draft-mode \.studio-ide-panel > \.section-heading\s*\{(?=[^}]*position:\s*absolute)(?=[^}]*pointer-events:\s*none)[^}]*\}",
-                    r"\.studio-draft-mode \.studio-toolbar\s*\{(?=[^}]*position:\s*absolute)(?=[^}]*backdrop-filter:\s*blur\(12px\))[^}]*\}",
+                    r"\.studio-draft-mode \.workflow-canvas-shell\s*\{(?=[^}]*position:\s*relative)(?=[^}]*padding-top:\s*0)[^}]*\}",
                     r"\.studio-workspace \.workflow-canvas-shell\s*\{(?=[^}]*min-height:\s*0)(?=[^}]*height:\s*100%)[^}]*\}",
                     r"@media \(max-width:\s*1180px\)\s*\{.*?\.studio-workspace \.studio-ide-panel\s*\{.*?grid-template-columns:\s*minmax\(12rem,\s*13\.5rem\)\s*minmax\(0,\s*1fr\);",
                     r"@media \(max-width:\s*1024px\)\s*\{.*?\.studio-workspace \.studio-ide-panel\s*\{.*?grid-template-columns:\s*1fr;",
@@ -616,6 +627,9 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert "shell-icon-button" in app_js
         assert "ResizeObserver" in app_js
         assert "workflow-canvas-content" in app_js
+        assert "Workflow inspector" not in app_js
+        assert "Node inspector" not in app_js
+        assert "Edge inspector" not in app_js
         assert "Opening Studio graph IDE" in app_js
         studio_bootstrap_effect = re.search(
             r"setBusy\(\"Opening Studio graph IDE\"\).*?\}, \[\s*(?P<deps>.*?)\s*\]\);",

@@ -5511,17 +5511,6 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
               : <EmptyState title="Create a draft to unlock graph authoring" body="The canvas becomes editable as soon as you open a draft session." />
           ) : (
             <>
-              <div className="studio-toolbar">
-                <button className={inspectorMode === "workflow" ? "secondary-button active" : "secondary-button"} onClick={selectWorkflowInspector}>Workflow inspector</button>
-                <button className={inspectorMode === "node" ? "secondary-button active" : "secondary-button"} onClick={() => selectedNodeName && selectNodeInspector(selectedNodeName)} disabled={!selectedNodeName}>Node inspector</button>
-                <button className={inspectorMode === "edge" ? "secondary-button active" : "secondary-button"} onClick={() => selectedEdge && selectEdgeInspector(selectedEdge)} disabled={!selectedEdge}>Edge inspector</button>
-                {edgeDraftFrom ? (
-                  <button className="secondary-button active" onClick={() => setEdgeDraftFrom("")}>Creating edge from {edgeDraftFrom} · cancel</button>
-                ) : selectedNode ? (
-                  <button className="secondary-button" onClick={() => setEdgeDraftFrom(String(selectedNode.name))}>Start edge from selected node</button>
-                ) : null}
-              </div>
-
               <section className="node-palette" aria-label="Studio node palette">
                 <div>
                   <span className="eyebrow">Quick add</span>
