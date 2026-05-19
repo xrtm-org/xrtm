@@ -3159,7 +3159,7 @@ function AdvancedPage(): React.ReactElement {
     { label: "Visible lanes", value: cards.length, detail: "kept in view" },
     { label: "Default posture", value: "guided", detail: "not first-success" },
     { label: "Safety labels", value: "explicit", detail: "readiness stays honest" },
-    { label: "Release frame", value: "0.8.4", detail: "bug-fix + polish" },
+    { label: "Release frame", value: "0.8.5", detail: "bug-fix + polish" },
   ];
   const advancedFocusItems = [
     {
@@ -3275,7 +3275,7 @@ function AdvancedPage(): React.ReactElement {
             </article>
             <article className="advanced-note-card">
               <span className="eyebrow">Release trust</span>
-              <strong>0.8.4 remains polish work</strong>
+              <strong>0.8.5 remains polish work</strong>
               <p className="helper-text">This route clarifies existing lanes while keeping the broader product framing calm and truthful.</p>
             </article>
           </div>
