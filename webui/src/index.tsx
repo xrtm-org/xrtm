@@ -6145,12 +6145,48 @@ function GraphCanvasBase({
   onNodeClick?: (event: React.MouseEvent<HTMLButtonElement>, node: JsonObject) => void;
   renderNodeContents: (node: JsonObject) => React.ReactNode;
 }): React.ReactElement {
+  const shellRef = React.useRef<HTMLDivElement | null>(null);
   const stageRef = React.useRef<HTMLDivElement | null>(null);
+  const [viewportSize, setViewportSize] = useState({ width: minWidth, height: minHeight });
+  const measureViewport = () => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const style = window.getComputedStyle(shell);
+    const horizontalPadding = Number.parseFloat(style.paddingLeft || "0") + Number.parseFloat(style.paddingRight || "0");
+    const verticalPadding = Number.parseFloat(style.paddingTop || "0") + Number.parseFloat(style.paddingBottom || "0");
+    const next = {
+      width: Math.max(minWidth, Math.floor(shell.clientWidth - horizontalPadding)),
+      height: Math.max(minHeight, Math.floor(shell.clientHeight - verticalPadding)),
+    };
+    setViewportSize((current) => (current.width === next.width && current.height === next.height ? current : next));
+  };
+  useEffect(() => {
+    measureViewport();
+  });
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    measureViewport();
+    if (typeof ResizeObserver === "function") {
+      const observer = new ResizeObserver(() => {
+        measureViewport();
+      });
+      observer.observe(shell);
+      return () => observer.disconnect();
+    }
+    const onResize = () => {
+      measureViewport();
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [minHeight, minWidth]);
   if (!nodes.length) {
     return <EmptyState title={emptyState.title} body={emptyState.body} />;
   }
-  const width = Math.max(minWidth, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).x + widthPadding));
-  const height = Math.max(minHeight, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).y + heightPadding));
+  const contentWidth = Math.max(minWidth, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).x + widthPadding));
+  const contentHeight = Math.max(minHeight, ...nodes.map((node) => (positions[String(node.name)] || { x: Number(node.x || 0), y: Number(node.y || 0) }).y + heightPadding));
+  const width = Math.max(viewportSize.width, contentWidth);
+  const height = Math.max(viewportSize.height, contentHeight);
   const relativePoint = (event: { clientX: number; clientY: number }) => {
     const rect = stageRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
@@ -6162,6 +6198,7 @@ function GraphCanvasBase({
   });
   return (
     <div
+      ref={shellRef}
       className={shellClassName}
       onDragOver={(event) => {
         if (onShellDrop && Array.from(event.dataTransfer.types).includes("application/xrtm-node-implementation")) {

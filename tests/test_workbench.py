@@ -613,6 +613,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         assert "theme-icon-button" in app_js
         assert "shell-status-button" in app_js
         assert "shell-icon-button" in app_js
+        assert "ResizeObserver" in app_js
         assert "Opening Studio graph IDE" in app_js
         studio_bootstrap_effect = re.search(
             r"setBusy\(\"Opening Studio graph IDE\"\).*?\}, \[\s*(?P<deps>.*?)\s*\]\);",
