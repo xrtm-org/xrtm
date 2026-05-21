@@ -582,6 +582,13 @@ body {
   border-color: var(--warning-line);
 }
 
+.status-pill.optional,
+.status-pill.compatible {
+  background: #ece6db;
+  color: #625a4d;
+  border-color: #d4cab8;
+}
+
 .status-pill.experimental,
 .step-status.locked {
   background: #e8e2d7;
@@ -703,6 +710,13 @@ body {
 .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; }
 .info-card { border-radius: 1rem; padding: 1rem; }
 .info-card h4 { margin: 0 0 0.85rem; }
+.compact-stats-grid .metric-card {
+  min-height: auto;
+  gap: 0.35rem;
+}
+.compact-stats-grid .metric-card strong {
+  font-size: 1.25rem;
+}
 .key-value-list { display: grid; gap: 0.75rem; margin: 0; }
 .key-value-list div { display: grid; gap: 0.15rem; }
 .key-value-list dt, .context-list dt { font-size: 0.8rem; color: var(--muted); }
@@ -742,7 +756,49 @@ body {
   padding: 1rem;
   border-radius: 1rem;
 }
+.report-card-copy {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.report-card-actions {
+  justify-content: flex-end;
+}
 .report-card.missing { background: #f9efe1; border-color: #e6d0ae; }
+.export-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+.export-card {
+  display: grid;
+  gap: 0.6rem;
+}
+.workflow-guide-disclosure,
+.workflow-compatibility-card,
+.start-mode-card,
+.hub-compatibility-card {
+  display: grid;
+  gap: 0.75rem;
+}
+.workflow-contract-grid,
+.workflow-contract-card,
+.workflow-node-list,
+.workflow-node-card {
+  display: grid;
+  gap: 0.75rem;
+}
+.workflow-command {
+  display: block;
+  margin: 0;
+  padding: 0.72rem 0.85rem;
+  border-radius: 0.9rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.65);
+  color: #3f4752;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
 .action-stack, .action-list { display: grid; gap: 0.75rem; }
 .action-button { width: 100%; justify-content: flex-start; text-align: left; }
 .compare-run-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; margin: 0.5rem 0 1rem; }

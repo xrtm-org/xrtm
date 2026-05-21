@@ -142,6 +142,7 @@ def test_workbench_snapshot_loads_local_workflow_and_missing_model(tmp_path: Pat
     assert snapshot["safe_edit"]["questions_limit"]["max"] == 25
     assert snapshot["safe_edit"]["supported_edits"]
     assert snapshot["safe_edit"]["supported_edits"][0]["key"] == "questions_limit"
+    assert snapshot["compatibility"]["legacy_route"] == "/workbench"
 
     missing = workbench_snapshot(Path("missing-runs"), workflows_dir, workflow_name="does-not-exist")
     assert missing["workflow_error"] == "workflow does not exist: does-not-exist"
@@ -1105,12 +1106,27 @@ def test_webui_p0_api_routes_use_product_services(tmp_path: Path) -> None:
         assert {check["name"] for check in health["checks"]} >= {"Python", "Core packages", "Core imports"}
 
         providers = _request_json(f"{base_url}/api/providers/status")
+        assert providers["surface"]["name"] == "Provider status"
         assert providers["provider_free"]["ready"] is True
+        assert providers["provider_free"]["status"] == "ready"
+        assert "Shared CLI/WebUI launch contract" in providers["provider_free"]["trust_cues"]
+        assert providers["local_runtime"]["label"] == "Local runtime (optional)"
+        assert providers["local_runtime"]["status"] == "optional"
+        assert providers["cards"][1]["status"] == "optional"
         assert "openai-compatible-endpoint" in providers["first_class_categories"]
 
         explanation = _request_json(f"{base_url}/api/workflows/demo-provider-free/explain")
         assert explanation["workflow_name"] == "demo-provider-free"
         assert "runs" in explanation["explanation"]["summary"]
+
+        workflow_detail = _request_json(f"{base_url}/api/workflows/demo-provider-free")
+        assert workflow_detail["schema_version"] == "xrtm.webui.workflow-detail.v2"
+        assert workflow_detail["actions"]["run"]["href"] == "/api/workflows/demo-provider-free/run"
+        assert workflow_detail["actions"]["explain"]["cli_command"] == "xrtm workflow explain demo-provider-free"
+        assert workflow_detail["actions"]["validate"]["cli_command"] == "xrtm workflow validate demo-provider-free"
+        assert workflow_detail["compatibility"]["legacy_route"] == "/workbench?workflow=demo-provider-free"
+        assert workflow_detail["actions"]["run"]["trust_cues"][0] == "Provider-free mode remains the default released path for 0.8.7."
+        assert workflow_detail["explanation"]["nodes"]
 
         validation = _request_json(f"{base_url}/api/workflows/demo-provider-free/validate", method="POST")
         assert validation["ok"] is True
@@ -1128,6 +1144,19 @@ def test_webui_p0_api_routes_use_product_services(tmp_path: Path) -> None:
         assert launched["href"] == f"/runs/{launched['run_id']}"
         assert launched["compare"]["baseline_run_id"] == start_run["run_id"]
 
+        launched_from_detail = _request_json(
+            f"{base_url}/api/workflows/demo-provider-free/run",
+            method="POST",
+            payload={"limit": 1, "baseline_run_id": start_run["run_id"]},
+        )
+        assert launched_from_detail["workflow_name"] == "demo-provider-free"
+        assert launched_from_detail["compare"]["baseline_run_id"] == start_run["run_id"]
+
+        refreshed_detail = _request_json(f"{base_url}/api/workflows/demo-provider-free")
+        assert refreshed_detail["recent_runs"][0]["run_id"] == launched_from_detail["run_id"]
+        assert refreshed_detail["recent_runs"][0]["report_available"] is True
+        assert refreshed_detail["actions"]["run"]["baseline_options"][0]["run_id"] == launched_from_detail["run_id"]
+
         runs_payload = _request_json(f"{base_url}/api/runs")
         assert runs_payload["schema_version"] == "xrtm.webui.runs.v2"
         assert runs_payload["surface"]["name"] == "Observatory"
@@ -1142,6 +1171,10 @@ def test_webui_p0_api_routes_use_product_services(tmp_path: Path) -> None:
         run_detail = _request_json(f"{base_url}/api/runs/{result.run_id}")
         assert run_detail["observatory"]["title"] == "Run inspector"
         assert run_detail["execution_trace"]["items"]
+        assert run_detail["artifacts"]["report"]["status"] == "missing"
+        assert run_detail["artifacts"]["report"]["generate_href"] == f"/api/runs/{result.run_id}/report"
+        assert run_detail["artifacts"]["exports"][0]["filename"] == f"{result.run_id}.json"
+        assert run_detail["artifacts"]["exports"][1]["format"] == "csv"
 
         report = _request_json(f"{base_url}/api/runs/{result.run_id}/report", method="POST")
         assert report["href"] == f"/runs/{result.run_id}/report"
@@ -1479,9 +1512,70 @@ def test_run_detail_snapshot_surfaces_readable_forecast_rows_and_missing_report(
     assert snapshot["forecast_table"]["rows"][0]["question_title"]
     assert snapshot["artifacts"]["report"]["available"] is False
     assert snapshot["artifacts"]["report"]["href"] is None
+    assert snapshot["artifacts"]["report"]["generate_label"] == "Generate report"
     assert snapshot["artifacts"]["exports"][0]["href"] == f"/api/runs/{result.run_id}/export?format=json"
+    assert snapshot["artifacts"]["exports"][0]["filename"] == f"{result.run_id}.json"
+    assert snapshot["artifacts"]["exports"][0]["description"] == "Structured evidence bundle for CLI/WebUI parity review."
     assert snapshot["artifacts"]["items"][0]["label"] == "HTML report"
     assert "empty_state" in snapshot["uncertainty_summary"]
+
+
+def test_workflow_detail_snapshot_exposes_recent_runs_and_compatibility(tmp_path: Path) -> None:
+    registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
+    runs_dir = tmp_path / "runs"
+    result = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+
+    store = WebUIStateStore(tmp_path / "app-state.db")
+    store.ensure_schema()
+    store.refresh_indexes(runs_dir=runs_dir, registry=registry)
+
+    snapshot = store.workflow_detail_snapshot(runs_dir=runs_dir, registry=registry, workflow_name="demo-provider-free")
+
+    assert snapshot["schema_version"] == "xrtm.webui.workflow-detail.v2"
+    assert snapshot["surface"]["title"] == "Workflow inspector"
+    assert snapshot["summary_cards"][0] == {"label": "Source", "value": "builtin"}
+    assert snapshot["explanation"]["workflow_name"] == "demo-provider-free"
+    assert "provider-free" in snapshot["explanation"]["summary"]
+    assert snapshot["recent_runs"][0]["run_id"] == result.run_id
+    assert snapshot["recent_runs"][0]["href"] == f"/runs/{result.run_id}"
+    assert snapshot["recent_runs"][0]["report_available"] is True
+    assert snapshot["actions"]["explain"]["cli_command"] == "xrtm workflow explain demo-provider-free"
+    assert snapshot["actions"]["validate"]["success_label"] == "Workflow valid: demo-provider-free (xrtm.workflow.v1)"
+    assert snapshot["actions"]["run"]["href"] == "/api/workflows/demo-provider-free/run"
+    assert snapshot["actions"]["run"]["trust_cues"][2] == "Every run still lands in Observatory with report, export, and compare evidence."
+    assert snapshot["actions"]["run"]["baseline_options"][0]["run_id"] == result.run_id
+    assert snapshot["compatibility"]["primary_route"] == "/studio?workflow=demo-provider-free"
+    assert snapshot["compatibility"]["legacy_route"] == "/workbench?workflow=demo-provider-free"
+    assert snapshot["guided_actions"][0]["label"] == "Clone into local draft"
+
+
+def test_app_shell_snapshot_marks_available_local_runtime_when_healthy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
+    store = WebUIStateStore(tmp_path / "app-state.db")
+    store.ensure_schema()
+    healthy_status = {
+        "base_url": "http://127.0.0.1:11434/v1",
+        "health_url": "http://127.0.0.1:11434/health",
+        "models_url": "http://127.0.0.1:11434/v1/models",
+        "healthy": True,
+        "models": ["phi-4-mini", "qwen2.5-coder"],
+        "gpu": {"available": True},
+        "error": None,
+    }
+    monkeypatch.setattr(webui_state_module, "local_llm_status", lambda: healthy_status)
+
+    shell = store.app_shell_snapshot(runs_dir=tmp_path / "runs", registry=registry)
+
+    local_llm_card = next(item for item in shell["environment"]["cards"] if item["key"] == "local-llm")
+    readiness = next(item for item in shell["hub"]["readiness"] if item["key"] == "local-llm")
+    assert shell["app"]["system_status"]["detail"] == "Optional local runtime available: phi-4-mini, qwen2.5-coder"
+    assert local_llm_card["value"] == "Available"
+    assert local_llm_card["status"] == "available"
+    assert local_llm_card["detail"] == "phi-4-mini, qwen2.5-coder"
+    assert readiness["status"] == "available"
+    assert shell["overview"]["compatibility"]["secondary_cta"]["href"] == "/workbench"
 
 
 def test_compare_snapshot_groups_metrics_and_question_titles(tmp_path: Path) -> None:
@@ -1561,8 +1655,8 @@ def test_playground_state_store_runs_shared_sandbox_session(tmp_path: Path) -> N
     assert initial["context_preview"]["canvas"]["entry_id"].startswith("node:")
     shell = store.app_shell_snapshot(runs_dir=runs_dir, registry=registry)
     assert shell["app"]["subtitle"] == "Local forecasting cockpit"
-    assert shell["app"]["system_status"]["tone"] in {"healthy", "warning"}
-    assert shell["app"]["system_status"]["label"] in {"System healthy", "System needs attention"}
+    assert shell["app"]["system_status"]["tone"] == "healthy"
+    assert shell["app"]["system_status"]["label"] == "Provider-free baseline ready"
     assert shell["app"]["system_status"]["detail"]
     assert "Shared local shell" in shell["app"]["trust_cues"]
     assert "SQLite draft state" in shell["app"]["trust_cues"]
@@ -1585,11 +1679,12 @@ def test_playground_state_store_runs_shared_sandbox_session(tmp_path: Path) -> N
     assert shell["hub"]["doors"][0]["key"] == "quick-forecast"
     assert shell["hub"]["doors"][1]["primary_cta"]["href"].startswith("/studio")
     assert shell["hub"]["doors"][1]["secondary_cta"]["label"] == "Open legacy workbench"
+    assert shell["hub"]["compatibility"]["secondary_cta"]["href"] == "/workbench"
     assert shell["hub"]["templates"][0]["playground_href"].startswith("/playground?context=template")
     assert shell["hub"]["workflows"][0]["studio_href"].startswith("/studio?workflow=")
     local_llm_card = next(item for item in shell["environment"]["cards"] if item["key"] == "local-llm")
-    assert local_llm_card["label"] == "Local LLM"
-    assert local_llm_card["status"] in {"healthy", "unavailable"}
+    assert local_llm_card["label"] == "Local runtime"
+    assert local_llm_card["status"] in {"available", "optional"}
     runs_snapshot = store.runs_snapshot(runs_dir=runs_dir, registry=registry)
     assert runs_snapshot["analytics"]["summary"]["run_count"] == 0
     assert runs_snapshot["empty_state"]["body"] == "Clear filters or start a provider-free workflow to create a run for inspection."

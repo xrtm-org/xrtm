@@ -4,15 +4,20 @@ This page is the implementation-level source of truth for CLI/WebUI parity in
 `xrtm`. It follows the governance
 [Interface Parity and Claim Ownership Policy](https://github.com/xrtm-org/governance/blob/main/policies/interface-parity-and-claim-ownership-policy.md).
 
-Current baseline: published `xrtm==0.8.6`.
+Current baseline: published `xrtm==0.8.7`.
 
-The `0.8.6` release promotes the unified Hub → Studio → Playground →
-Observatory spine on the provider-free local product-shell baseline. The
-published release may claim Hub at `/` and `/hub`, Studio at `/studio`,
-graph-linked Playground trace review, Observatory at `/observatory`, and
-`/workbench` compatibility without implying a calibration dashboard, API/webhook
-control plane, arbitrary code/plugin graph editing, full persistent
-collaborative canvas layout, or commercial runtime path.
+The `0.8.7` release graduates the remaining provider-free WebUI partials on
+Hub/Start/Observatory/workflow detail while keeping Batch, Versions, API
+Control, webhook, and other future-release lanes outside the release promise.
+
+The `0.8.7` release is the provider-free parity-and-verification baseline.
+It promotes the unified Hub → Studio → Playground → Observatory spine, may
+claim Hub at `/` and `/hub`, Studio at `/studio`, graph-linked Playground trace
+review, Observatory at `/observatory`, workflow detail/run/validate/explain
+parity, report/export parity, and `/workbench` compatibility without implying a
+calibration dashboard, API/webhook control plane, arbitrary code/plugin graph
+editing, full persistent collaborative canvas layout, or a commercial runtime
+path.
 
 Source tip now also contains future-release product candidates for Batch,
 Versions, API Control, and signed webhook delivery. Keep those surfaces marked
@@ -36,21 +41,21 @@ as source-visible or future-release until package/docs/gates graduate together.
 | --- | --- | --- | --- | --- |
 | Hub shell | `/`, `/hub`, `GET /api/app-shell`, `GET /api/health`, `GET /api/workflows`, `GET /api/providers/status` | Hub composition over app-shell, doctor, workflow catalog, and provider snapshot services | `parity-ready` | Owns first-run home, template gallery, recent work, and quick entry into Playground/Studio without creating a separate app. |
 | Readiness/health | `/start`, `GET /api/health` | `xrtm.product.doctor.run_doctor`, `doctor_snapshot` | `parity-ready` | WebUI Start page renders the shared doctor snapshot and passed clean-room Gate 2 on the release build. |
-| Provider status | `/start`, `GET /api/providers/status` | `xrtm.product.providers.local_llm_status`, provider snapshot service | `partial` | WebUI Start page shows provider-free and local-LLM status from the shared provider snapshot. |
-| Overview shell | `/`, `GET /api/app-shell` | WebUI app-shell read model over runs, workflows, and resumable draft state | `partial` | Shared local shell summary over file-backed run history, workflow index, and resumable workbench state. |
+| Provider status | `/start`, `GET /api/providers/status` | `xrtm.product.providers.local_llm_status`, provider snapshot service | `parity-ready` | Start keeps the provider-free baseline explicit and shows optional local-runtime checks from the shared provider snapshot without widening the release promise. |
+| Overview shell | `/`, `GET /api/app-shell` | WebUI app-shell read model over runs, workflows, and resumable draft state | `parity-ready` | Shared local shell now covers recent work, indexed workflows, resumable draft continuity, and explicit Studio/Workbench compatibility posture. |
 | Run list/search | `/runs`, `GET /api/runs` | `xrtm.product.history.list_runs`, WebUI run read models | `parity-ready` | Covers `xrtm runs list` and the basic searchable view of `xrtm runs search`. |
 | Run detail | `/runs/<run-id>`, `GET /api/runs/<id>` | `resolve_run_dir`, run-detail read model, `ArtifactStore` | `parity-ready` | Covers the review intent of `xrtm runs show`. |
 | Run compare | `/runs/<candidate>/compare/<baseline>`, `GET /api/runs/<candidate>/compare/<baseline>` | `compare_runs`, WebUI compare snapshots | `parity-ready` | Covers `xrtm runs compare`. |
-| Run export | `/runs/<run-id>`, `GET /api/runs/<run-id>/export?format=json\|csv` | `xrtm.product.history.export_run` | `partial` | Uses the same export service as `xrtm runs export`; run detail exposes JSON/CSV actions. |
-| Report generation/viewing | `/runs/<run-id>`, `POST /api/runs/<run-id>/report`, `/runs/<run-id>/report` | `xrtm.product.reports.render_html_report` | `partial` | Uses the same report renderer as `xrtm report html`; run detail exposes generate/open actions. |
+| Run export | `/runs/<run-id>`, `GET /api/runs/<run-id>/export?format=json\|csv` | `xrtm.product.history.export_run` | `parity-ready` | Uses the same export service as `xrtm runs export`; run detail now exposes explicit JSON/CSV evidence cards and filenames. |
+| Report generation/viewing | `/runs/<run-id>`, `POST /api/runs/<run-id>/report`, `/runs/<run-id>/report` | `xrtm.product.reports.render_html_report` | `parity-ready` | Uses the same report renderer as `xrtm report html`; run detail exposes generate/open actions plus report state metadata. |
 | Observatory inspector | `/observatory`, run inspector aliases, `/runs/<run-id>`, and run/artifact APIs | Run-detail read model, `ArtifactStore`, compare/export/report services | `parity-ready` | Drill-down inspector for Studio/Playground runs with clearer probability/result/score/trace/export/compare review and an honest uncertainty empty state. This is not a shipped calibration dashboard, webhook/control-plane, or broader runtime promise. |
-| Workflow catalog | `/start`, Hub template gallery, `GET /api/workflows` | `WorkflowRegistry.list_workflows` | `partial` | Start page exposes the catalog for newcomer run setup; Hub makes template-to-Playground the quick forecast path. |
-| Workflow detail | `/workflows/<name>`, `GET /api/workflows/<name>` | `WorkflowRegistry.load`, WebUI workflow read model | `partial` | Dedicated WebUI page shows workflow metadata and canvas. |
-| Workflow explain | `/start`, `/workflows/<name>`, `GET /api/workflows/<name>/explain` | `xrtm.product.launch.explain_registered_workflow`, `WorkflowRegistry.explain` | `partial` | Shared explain payload backs Start/workflow detail and authored-workflow CLI inspection. |
-| Workflow validate | `/workflows/<name>`, `POST /api/workflows/<name>/validate` | `xrtm.product.launch.validate_registered_workflow`, `WorkflowRegistry.validate` | `partial` | Shared validation has a dedicated workflow-detail action outside draft flow. |
+| Workflow catalog | `/start`, Hub template gallery, `GET /api/workflows` | `WorkflowRegistry.list_workflows` | `parity-ready` | Start and Hub both expose the local workflow catalog clearly enough for provider-free discovery, selection, and drill-down. |
+| Workflow detail | `/workflows/<name>`, `GET /api/workflows/<name>` | `WorkflowRegistry.load`, WebUI workflow read model | `parity-ready` | Dedicated WebUI page now shows workflow metadata, explanation context, validate/run contract cues, recent runs, authoring posture, and canvas detail. |
+| Workflow explain | `/start`, `/workflows/<name>`, `GET /api/workflows/<name>`, `GET /api/workflows/<name>/explain` | `xrtm.product.launch.explain_registered_workflow`, `WorkflowRegistry.explain` | `parity-ready` | Shared explain payload now backs Start plus workflow-detail runtime/artifact/node-role cues with the same plain-language contract as the CLI. |
+| Workflow validate | `/workflows/<name>`, `POST /api/workflows/<name>/validate` | `xrtm.product.launch.validate_registered_workflow`, `WorkflowRegistry.validate` | `parity-ready` | Workflow detail now exposes the same safe validation contract and success semantics as `xrtm workflow validate`. |
 | First-success run | `/start`, Hub primary action, `POST /api/start` | `xrtm.product.launch.run_start_quickstart` | `parity-ready` | WebUI launches the same quickstart service used by `xrtm start` and passed release Gate 2. |
-| Demo run setup | `/start`, `POST /api/runs` | `xrtm.product.launch.run_demo_workflow` | `partial` | WebUI launches bounded demo runs with provider/runtime overrides through shared launch services. |
-| Workflow run | `/start`, `/workflows/<name>`, `POST /api/runs` | `xrtm.product.launch.run_registered_workflow` | `partial` | WebUI launches named workflows through the same shared launch service used by CLI workflow runs. |
+| Demo run setup | `/start`, `POST /api/runs` | `xrtm.product.launch.run_demo_workflow` | `parity-ready` | Start now exposes bounded demo setup with provider-free-first guidance, shared launch wiring, and explicit optional runtime posture. |
+| Workflow run | `/start`, `/workflows/<name>`, `POST /api/runs`, `POST /api/workflows/<name>/run` | `xrtm.product.launch.run_registered_workflow` | `parity-ready` | Start and workflow detail both launch named workflows through the same shared run service, with local-only overrides and immediate compare/report evidence handoff. |
 | Playground exploratory loop | `/playground`, `GET/PATCH /api/playground`, `POST /api/playground/run`, `POST /api/playground/runs/<run-id>/save-workflow\|save-profile` | `xrtm.product.launch.run_sandbox_session`, `save_sandbox_workflow`, `save_sandbox_profile`, WebUI playground state services | `parity-ready` | Shared sandbox state, one-custom-question-first flow, read-only step inspection, and explicit save-back wiring ship in both interfaces for the released provider-free sandbox contract. |
 | Playground graph trace | `/playground` trace panel and links from `/studio` to `/playground` runs | Sandbox session/run services plus trace read model linking workflow/draft node IDs to run steps/artifacts when graph trace artifacts exist | `parity-ready` | Released graph/canvas preview, ordered node trace, graph trace artifact state, executed-node highlighting, and an honest fallback when no graph trace artifact exists. |
 | Studio graph IDE | `/studio`, `GET /api/studio*` wrappers, graph snapshots, draft APIs, `GET /api/authoring/catalog` | `WorkflowAuthoringService`, draft services, built-in node catalog, validation/persistence services | `parity-ready` | Primary bounded drag-drop graph IDE over the existing workflow schema/node catalog. Supports local node dragging, palette click/drag-to-canvas add-node, node/edge/workflow selection, edge create/remove, entry setting, contextual inspector, and validate/save/run through Studio APIs. It is not arbitrary code/plugin editing or a generic diagramming app. |
@@ -65,7 +70,7 @@ as source-visible or future-release until package/docs/gates graduate together.
 | Monitors | `/operations`, `GET/POST /api/monitors`, `GET /api/monitors/<run-id>`, `POST /api/monitors/<run-id>/run-once\|pause\|resume\|halt` | `xrtm.product.monitoring.*`, monitor store/read models | `parity-ready` | Operator page exposes monitor lifecycle actions backed by shared monitor services and release proof. |
 | Artifact inventory and cleanup | `/operations`, `GET /api/artifacts/<run-id>`, `POST /api/artifacts/cleanup-preview`, `POST /api/artifacts/cleanup` | `ArtifactStore`, cleanup preview/confirm helpers | `parity-ready` | Operator page exposes artifact inventory plus explicit cleanup preview/confirm flow with release proof. |
 | Advanced lane visibility | `/advanced` | Advanced validation/benchmark/perf/competition command delegates | `advanced/experimental` | Keeps advanced lanes visible without promoting them as newcomer defaults. |
-| Legacy form workbench | `/workbench/clone`, `/workbench/edit`, `/workbench/validate`, `/workbench/run` | Legacy form handlers over draft services | `partial` | Superseded by JSON draft APIs; keep only as compatibility scaffolding. |
+| Legacy form workbench | `/workbench/clone`, `/workbench/edit`, `/workbench/validate`, `/workbench/run` | Legacy form handlers over draft services | `parity-ready` | Superseded by JSON draft APIs, but now explicitly positioned as the compatibility route over the same local draft services while Studio stays primary. |
 
 ## CLI capability matrix
 
@@ -73,18 +78,18 @@ as source-visible or future-release until package/docs/gates graduate together.
 | --- | --- | --- | --- | --- | --- | --- |
 | `xrtm doctor` | Newcomer readiness | `parity-ready` | released | `xrtm.product.doctor.run_doctor`, `doctor_snapshot` | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 complete |
 | `xrtm start` | First-success run | `parity-ready` | released | `xrtm.product.launch.run_start_quickstart` | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 complete |
-| `xrtm demo` | Demo run setup | `partial` | P0 | `xrtm.product.launch.run_demo_workflow` | `xrtm` future-release track | Gate 1 + selective Gate 2 if promoted |
-| `xrtm playground` | Run the bounded exploratory sandbox loop | `parity-ready` | released (`0.8.6`) | `xrtm.product.launch.run_sandbox_session`, `save_sandbox_workflow`, `save_sandbox_profile`, WebUI playground state services | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 provider-free baseline complete; any real-runtime or cloud/API playground claim still needs matching clean-room proof before promotion |
-| `xrtm workflow list` | Workflow discovery | `partial` | P0 | `WorkflowRegistry.list_workflows` | `xrtm` docs | Gate 1 |
-| `xrtm workflow show` | Workflow inspection | `partial` | P0 | `xrtm.product.launch.load_registered_workflow`, `WorkflowRegistry.load` | `xrtm` docs | Gate 1 |
-| `xrtm workflow validate` | Workflow validation | `partial` | P0 | `xrtm.product.launch.validate_registered_workflow`, `WorkflowRegistry.validate` | `xrtm` docs | Gate 1 + WebUI route/API smoke |
+| `xrtm demo` | Demo run setup | `parity-ready` | `released (0.8.7)` | `xrtm.product.launch.run_demo_workflow` | `xrtm` docs | Gate 1 + WebUI-only Gate 2 |
+| `xrtm playground` | Run the bounded exploratory sandbox loop | `parity-ready` | released | `xrtm.product.launch.run_sandbox_session`, `save_sandbox_workflow`, `save_sandbox_profile`, WebUI playground state services | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 provider-free baseline complete; any real-runtime or cloud/API playground claim still needs matching clean-room proof before promotion |
+| `xrtm workflow list` | Workflow discovery | `parity-ready` | `released (0.8.7)` | `WorkflowRegistry.list_workflows` | `xrtm` docs | Gate 1 |
+| `xrtm workflow show` | Workflow inspection | `parity-ready` | `released (0.8.7)` | `xrtm.product.launch.load_registered_workflow`, `WorkflowRegistry.load` | `xrtm` docs | Gate 1 |
+| `xrtm workflow validate` | Workflow validation | `parity-ready` | `released (0.8.7)` | `xrtm.product.launch.validate_registered_workflow`, `WorkflowRegistry.validate` | `xrtm` docs | Gate 1 + WebUI route/API smoke |
 | `xrtm workflow create scratch` | Start a new local workflow | `partial` | P0 | `WorkflowAuthoringService.create_workflow_from_scratch`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
 | `xrtm workflow create template` | Start from a starter template | `partial` | P0 | `WorkflowAuthoringService.create_workflow_from_template`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
 | `xrtm workflow clone` / `xrtm workflow create clone` | Clone a workflow into a local authoring draft | `partial` | P0 | `WorkflowAuthoringService.clone_workflow`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
 | `xrtm workflow edit metadata/questions/runtime/artifacts/scoring` | Update shared core workflow fields | `partial` | P0 | `WorkflowAuthoringService.update_*`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
 | `xrtm workflow edit node/edge/entry` | Safe graph authoring inside the released node library | `partial` | P0 | `WorkflowAuthoringService.add_node/update_node/remove_node/add_edge/remove_edge/set_entry`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
-| `xrtm workflow explain` | Workflow explanation | `partial` | P0 | `xrtm.product.launch.explain_registered_workflow`, `WorkflowRegistry.explain` | `xrtm` docs | Gate 1 |
-| `xrtm workflow run` | Run selected workflow | `partial` | P0 | `xrtm.product.launch.run_registered_workflow` | `xrtm` docs | Gate 1 + WebUI-only Gate 2 |
+| `xrtm workflow explain` | Workflow explanation | `parity-ready` | `released (0.8.7)` | `xrtm.product.launch.explain_registered_workflow`, `WorkflowRegistry.explain` | `xrtm` docs | Gate 1 |
+| `xrtm workflow run` | Run selected workflow | `parity-ready` | `released (0.8.7)` | `xrtm.product.launch.run_registered_workflow` | `xrtm` docs | Gate 1 + WebUI-only Gate 2 |
 | `xrtm profile starter` | Starter profile creation | `parity-ready` | released | `starter_profile`, `ProfileStore.create` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
 | `xrtm profile create` | Profile creation | `parity-ready` | released | `ProfileStore.create` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
 | `xrtm profile list` | Profile discovery | `parity-ready` | released | `ProfileStore.list_profiles` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
@@ -97,10 +102,10 @@ as source-visible or future-release until package/docs/gates graduate together.
 | `xrtm runs search` | Run search | `parity-ready` | released | `list_runs`, WebUI read models | `xrtm` docs | Existing released evidence |
 | `xrtm runs show` | Run detail | `parity-ready` | released | `resolve_run_dir`, `run_detail`, WebUI read models | `xrtm` docs | Existing released evidence |
 | `xrtm runs compare` | Run comparison | `parity-ready` | released | `compare_runs`, WebUI compare snapshots | `xrtm` docs | Existing released evidence |
-| `xrtm runs export` | Evidence export | `partial` | P0 | `xrtm.product.history.export_run` | `xrtm` docs, then `xrtm.org` | Gate 1 + WebUI-only Gate 2 |
+| `xrtm runs export` | Evidence export | `parity-ready` | `released (0.8.7)` | `xrtm.product.history.export_run` | `xrtm` docs, then `xrtm.org` | Gate 1 + WebUI-only Gate 2 |
 | `xrtm providers doctor` | Provider diagnostics | `partial` | P0 | `xrtm.product.providers.local_llm_status` | `xrtm` docs | Gate 1 + provider smoke if claimed |
 | `xrtm local-llm status` | Local model status | `partial` | P0 | `xrtm.product.providers.local_llm_status` | `xrtm` docs | Gate 1 + local-LLM evidence if promoted |
-| `xrtm report html` | Generate/open HTML report | `partial` | P0 | `xrtm.product.reports.render_html_report` | `xrtm` docs, then `xrtm.org` | Gate 1 + WebUI-only Gate 2 |
+| `xrtm report html` | Generate/open HTML report | `parity-ready` | `released (0.8.7)` | `xrtm.product.reports.render_html_report` | `xrtm` docs, then `xrtm.org` | Gate 1 + WebUI-only Gate 2 |
 | `xrtm monitor start` | Start monitor | `parity-ready` | released | `xrtm.product.monitoring.start_monitor` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
 | `xrtm monitor list` | List monitors | `parity-ready` | released | `list_monitors` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
 | `xrtm monitor show` | Inspect monitor | `parity-ready` | released | `load_monitor` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
@@ -125,7 +130,7 @@ as source-visible or future-release until package/docs/gates graduate together.
 
 ## Released parity proof
 
-The published `0.8.6` release proof should cover:
+The published `0.8.7` release proof should cover:
 
 1. open WebUI from a fresh install
 2. run readiness/doctor from the browser

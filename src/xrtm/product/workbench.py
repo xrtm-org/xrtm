@@ -101,6 +101,14 @@ def workbench_snapshot(
     return {
         "runs_dir": str(runs_dir),
         "workflows_dir": str(_workflow_root(workflows_dir)),
+        "compatibility": {
+            "primary_route": "/studio",
+            "legacy_route": "/workbench",
+            "summary": (
+                "Workbench stays available as the compatibility route while Studio is the primary graph IDE "
+                "over the same local draft and authored-workflow services."
+            ),
+        },
         "runs": runs,
         "authoring_catalog": workbench_authoring_catalog(registry),
         "selected_run_ref": selected_run_ref,

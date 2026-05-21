@@ -89,6 +89,12 @@ function parsePositiveIntegerInput(value: string): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function providerLabel(value: string | null | undefined): string {
+  if (value === "local-llm") return "Local runtime (optional)";
+  if (value === "mock") return "Provider-free baseline";
+  return value || "Provider-free baseline";
+}
+
 function runWithoutRowSelection(event: React.MouseEvent<HTMLElement>, action: () => void): void {
   event.stopPropagation();
   action();
@@ -550,29 +556,30 @@ function App(): React.ReactElement {
     { key: "workflows", label: "Workflows", value: shell.data?.environment?.workflows_dir || "—" },
     {
       key: "local-llm",
-      label: "Local LLM",
-      value: shell.data?.environment?.local_llm?.healthy ? "Healthy" : "Unavailable",
-      status: shell.data?.environment?.local_llm?.healthy ? "healthy" : "unavailable",
+      label: "Local runtime",
+      value: shell.data?.environment?.local_llm?.healthy ? "Available" : "Optional",
+      status: shell.data?.environment?.local_llm?.healthy ? "available" : "optional",
       detail: shell.data?.environment?.local_llm?.base_url || shell.data?.environment?.local_llm?.error || "Unavailable",
     },
     { key: "app-db", label: "App DB", value: shell.data?.environment?.app_db || "—" },
   ]) as JsonObject[];
   const localLlmCard = environmentCards.find((card) => environmentCardKey(card) === "local-llm");
   const shellStatus = ((appChrome.system_status as JsonObject | undefined) || (
-    localLlmCard?.status === "healthy"
-      ? {
-          tone: "healthy",
-          label: "System healthy",
-          detail: String(localLlmCard.detail || "Local model connectivity is ready."),
-        }
-      : localLlmCard?.status === "unavailable"
+    localLlmCard?.status === "available"
         ? {
-            tone: "warning",
-            label: "System needs attention",
-            detail: String(localLlmCard.detail || "Open System for local environment detail."),
+            tone: "healthy",
+            label: "Provider-free baseline ready",
+            detail: String(localLlmCard.detail || "Optional local runtime is available."),
           }
-        : {
-            tone: "neutral",
+        : localLlmCard?.status === "unavailable"
+          || localLlmCard?.status === "optional"
+          ? {
+              tone: "healthy",
+              label: "Provider-free baseline ready",
+              detail: String(localLlmCard.detail || "Optional local runtime is not configured."),
+            }
+          : {
+              tone: "neutral",
             label: "Open System",
             detail: "View compact local environment detail.",
           }
@@ -692,6 +699,8 @@ function HubPage({ shell, navigate }: { shell: JsonObject | null; navigate: (pat
   const templates = (hub.templates || []) as JsonObject[];
   const workflows = (hub.workflows || []) as JsonObject[];
   const readiness = (hub.readiness || []) as JsonObject[];
+  const recentRuns = (hub.recent_runs || shell?.overview?.recent_runs || []) as JsonObject[];
+  const compatibility = (hub.compatibility || shell?.overview?.compatibility || {}) as JsonObject;
   const counts = (hub.counts || shell?.overview?.counts || {}) as JsonObject;
   const latestRun = (hub.latest_run || shell?.overview?.latest_run) as JsonObject | null;
   const resumeTarget = (hub.resume_target || shell?.overview?.resume_target || {}) as JsonObject;
@@ -966,6 +975,28 @@ function HubPage({ shell, navigate }: { shell: JsonObject | null; navigate: (pat
                 <EmptyState title="No runs yet" body="Open Playground or the first-success quickstart to create a local run history entry." />
               )}
             </div>
+            {recentRuns.length > 1 ? (
+              <div className="hub-context-block">
+                <DensityDisclosure
+                  className="hub-recent-runs-disclosure"
+                  title={`Recent run shortcuts · ${recentRuns.length}`}
+                  detail="Keep the broader local evidence trail nearby without crowding the lead continuity card."
+                >
+                  <div className="action-list">
+                    {recentRuns.slice(1).map((item) => (
+                      <button
+                        key={String(item.run_id)}
+                        className="secondary-button action-button"
+                        onClick={() => navigate(String(item.href || `/observatory/${item.run_id}`))}
+                      >
+                        <span>{String(item.label || item.run_id)}</span>
+                        {item.summary ? <small>{String(item.summary)}</small> : null}
+                      </button>
+                    ))}
+                  </div>
+                </DensityDisclosure>
+              </div>
+            ) : null}
             <div className="hub-context-block">
               {readiness.length ? (
                 <DensityDisclosure
@@ -990,6 +1021,29 @@ function HubPage({ shell, navigate }: { shell: JsonObject | null; navigate: (pat
                 <EmptyState title="No readiness data" body="Hub readiness details were not available from the local shell." />
               )}
             </div>
+            {compatibility.summary ? (
+              <div className="hub-context-block">
+                <article className="info-card hub-compatibility-card">
+                  <div className="surface-header">
+                    <strong>{String(compatibility.label || "Workbench compatibility")}</strong>
+                    <StatusPill value="compatible" />
+                  </div>
+                  <p className="helper-text">{String(compatibility.summary)}</p>
+                  <div className="button-row">
+                    {compatibility.primary_cta?.href ? (
+                      <button className="secondary-button" onClick={() => navigate(String(compatibility.primary_cta.href))}>
+                        {String(compatibility.primary_cta.label || "Open Studio")}
+                      </button>
+                    ) : null}
+                    {compatibility.secondary_cta?.href ? (
+                      <button className="secondary-button" onClick={() => navigate(String(compatibility.secondary_cta.href))}>
+                        {String(compatibility.secondary_cta.label || "Open Workbench")}
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
+              </div>
+            ) : null}
           </section>
         </aside>
       </section>
@@ -2138,9 +2192,28 @@ function StartPage({
     selectedWorkflow ? `${bootstrap.api_root}/workflows/${encodeURIComponent(selectedWorkflow)}/explain` : null,
     [selectedWorkflow],
   );
+  const workflowItems = (workflows.data?.items || []) as JsonObject[];
+  const providerCards = (providers.data?.cards || []) as JsonObject[];
+  const modeCopy = {
+    start: {
+      title: "First-success quickstart",
+      body: "Runs the released provider-free baseline with the same local launch contract as the CLI start path.",
+      detail: "Best for a clean first run and release verification.",
+    },
+    demo: {
+      title: "Bounded demo setup",
+      body: "Keeps the demo local, bounded, and report-ready while preserving provider-free as the default runtime.",
+      detail: "Optional local runtime overrides stay explicit but do not widen the release promise.",
+    },
+    workflow: {
+      title: "Named workflow launch",
+      body: "Select one registered workflow, inspect its metadata, then launch a bounded run with shared services.",
+      detail: "Use the workflow catalog below when you need a clearer discovery path than the dropdown.",
+    },
+  }[mode];
 
   useEffect(() => {
-    const items = (workflows.data?.items || []) as JsonObject[];
+    const items = workflowItems;
     if (!selectedWorkflow && items.length) {
       setSelectedWorkflow(String(items[0].name || ""));
     }
@@ -2214,17 +2287,22 @@ function StartPage({
 
       <div className="split-grid">
         <section className="panel section-stack">
-          <div className="section-header">
-            <div>
-              <h3>Run controls</h3>
-              <p>Start small with the released baseline, then move to demo or named workflow execution.</p>
+            <div className="section-header">
+              <div>
+                <h3>Run controls</h3>
+                <p>Start small with the released baseline, then move to demo or named workflow execution.</p>
+              </div>
             </div>
-          </div>
-          <form
-            className="form-grid"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void launchRun();
+            <article className="info-card start-mode-card">
+              <h4>{modeCopy.title}</h4>
+              <p className="helper-text">{modeCopy.body}</p>
+              <span className="workflow-note">{modeCopy.detail}</span>
+            </article>
+            <form
+              className="form-grid"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void launchRun();
             }}
           >
             <label>
@@ -2252,7 +2330,7 @@ function StartPage({
                 <span>Provider</span>
                 <select value={provider} onChange={(event) => setProvider(event.target.value)}>
                   <option value="mock">Provider-free baseline</option>
-                  <option value="local-llm">Local OpenAI-compatible endpoint</option>
+                  <option value="local-llm">Local runtime (optional)</option>
                 </select>
               </label>
             ) : null}
@@ -2302,13 +2380,14 @@ function StartPage({
           <div className="section-header">
             <div>
               <h3>Environment health</h3>
-              <p>Readiness, provider status, and the currently selected workflow stay visible before you launch anything.</p>
+              <p>{String(providers.data?.surface?.summary || "Readiness, provider status, and the currently selected workflow stay visible before you launch anything.")}</p>
             </div>
           </div>
           <div className="stats-grid">
             <MetricCard label="Ready checks passing" value={(health.data?.checks || []).filter((item: JsonObject) => item.ok).length} />
             <MetricCard label="Checks total" value={(health.data?.checks || []).length} />
-            <MetricCard label="Local LLM healthy" value={String(Boolean(providers.data?.local_llm?.healthy))} />
+            <MetricCard label="Provider-free baseline" value={providers.data?.provider_free?.ready ? "Ready" : "Check"} />
+            <MetricCard label="Local runtime" value={providers.data?.local_runtime?.healthy ? "Available" : "Optional"} />
           </div>
           {health.error ? <Message tone="error" title="Health unavailable" body={health.error} /> : null}
           {(health.data?.checks || []).length ? (
@@ -2325,18 +2404,35 @@ function StartPage({
             </div>
           ) : null}
           <div className="provider-status-grid">
-            <article className="info-card">
-              <h4>Provider-free baseline</h4>
-              <p className="helper-text">Works out of the box for first success and deterministic smoke validation.</p>
-            </article>
-            <article className="info-card">
-              <h4>Local OpenAI-compatible</h4>
-              <p className="helper-text">
-                {providers.data?.local_llm?.healthy
-                  ? `Healthy at ${providers.data?.local_llm?.base_url || "configured endpoint"}.`
-                  : providers.data?.local_llm?.status || "Currently unavailable."}
-              </p>
-            </article>
+            {providerCards.length ? providerCards.map((item) => (
+              <article key={String(item.key || item.label)} className="info-card">
+                <div className="surface-header">
+                  <strong>{String(item.label || "Provider status")}</strong>
+                  <StatusPill value={String(item.status || "ready")} />
+                </div>
+                <p className="helper-text">{String(item.value || "—")}</p>
+                {item.detail ? <span className="workflow-note">{String(item.detail)}</span> : null}
+              </article>
+            )) : (
+              <>
+                <article className="info-card">
+                  <div className="surface-header">
+                    <strong>Provider-free baseline</strong>
+                    <StatusPill value="ready" />
+                  </div>
+                  <p className="helper-text">Ready</p>
+                  <span className="workflow-note">Released local baseline for first success, demos, and verification.</span>
+                </article>
+                <article className="info-card">
+                  <div className="surface-header">
+                    <strong>Local runtime (optional)</strong>
+                    <StatusPill value={providers.data?.local_llm?.healthy ? "available" : "optional"} />
+                  </div>
+                  <p className="helper-text">{providers.data?.local_llm?.healthy ? "Available" : "Optional"}</p>
+                  <span className="workflow-note">{String(providers.data?.local_llm?.base_url || providers.data?.local_llm?.error || "Optional local runtime not configured.")}</span>
+                </article>
+              </>
+            )}
           </div>
         </section>
       </div>
@@ -2351,58 +2447,115 @@ function StartPage({
         {workflowDetail.loading && !workflowDetail.data ? <LoadingCard label="Loading workflow detail" /> : null}
         {workflowDetail.error ? <Message tone="error" title="Workflow detail unavailable" body={workflowDetail.error} /> : null}
         {workflowDetail.data ? (
-          <div className="split-grid">
-            <section className="section-stack">
-              <article className="info-card">
-                <div className="surface-header">
-                  <div>
-                    <strong>{workflowDetail.data.workflow?.title || workflowDetail.data.workflow?.name}</strong>
-                    <p className="helper-text">{workflowDetail.data.workflow?.description || "No description available."}</p>
+          <>
+            <div className="split-grid">
+              <section className="section-stack">
+                <article className="info-card">
+                  <div className="surface-header">
+                    <div>
+                      <strong>{workflowDetail.data.workflow?.title || workflowDetail.data.workflow?.name}</strong>
+                      <p className="helper-text">{workflowDetail.data.workflow?.description || "No description available."}</p>
+                    </div>
+                    <span className={`source-pill ${workflowDetail.data.workflow?.source || "builtin"}`}>
+                      {workflowDetail.data.workflow?.source || "builtin"}
+                    </span>
                   </div>
-                  <span className={`source-pill ${workflowDetail.data.workflow?.source || "builtin"}`}>
-                    {workflowDetail.data.workflow?.source || "builtin"}
-                  </span>
+                  <div className="stats-grid compact-stats-grid">
+                    {(workflowDetail.data.summary_cards || []).map((card: JsonObject) => <MetricCard key={card.label} label={card.label} value={card.value} />)}
+                  </div>
+                </article>
+                <article className="info-card">
+                  <h4>Explain</h4>
+                  <p className="helper-text">{workflowExplain.data?.explanation?.summary || "Choose a workflow to load its explanation."}</p>
+                  {(workflowExplain.data?.explanation?.runtime_requirements || []).length ? (
+                    <ul className="guidance-list">
+                      {(workflowExplain.data?.explanation?.runtime_requirements || []).map((item: string) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {(workflowExplain.data?.explanation?.expected_artifacts || []).length ? (
+                    <DensityDisclosure
+                      className="workflow-guide-disclosure"
+                      title={`Expected artifacts · ${(workflowExplain.data?.explanation?.expected_artifacts || []).length}`}
+                      detail="Keep the shared evidence contract visible before running."
+                    >
+                      <ul className="guidance-list">
+                        {(workflowExplain.data?.explanation?.expected_artifacts || []).map((item: string) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </DensityDisclosure>
+                  ) : null}
+                </article>
+              </section>
+              <section className="section-stack">
+                <div className="canvas-grid">
+                  {(workflowDetail.data.canvas?.nodes || []).map((node: JsonObject) => (
+                    <article key={node.name} className="canvas-node">
+                      <strong>{node.name}</strong>
+                      <span>{node.kind}</span>
+                      <span>{node.description || node.implementation || "No description"}</span>
+                      <StatusPill value={node.status || "ready"} />
+                    </article>
+                  ))}
                 </div>
-                <dl className="context-list">
-                  <div>
-                    <dt>Runtime provider</dt>
-                    <dd>{workflowDetail.data.workflow?.runtime_provider || "mock"}</dd>
-                  </div>
-                  <div>
-                    <dt>Question limit</dt>
-                    <dd>{workflowDetail.data.workflow?.question_limit || "—"}</dd>
-                  </div>
-                  <div>
-                    <dt>Kind</dt>
-                    <dd>{workflowDetail.data.workflow?.workflow_kind || "workflow"}</dd>
-                  </div>
-                </dl>
-              </article>
-              <article className="info-card">
-                <h4>Explain</h4>
-                <p className="helper-text">{workflowExplain.data?.explanation?.summary || "Choose a workflow to load its explanation."}</p>
-                {(workflowExplain.data?.explanation?.runtime_requirements || []).length ? (
-                  <ul className="guidance-list">
-                    {(workflowExplain.data?.explanation?.runtime_requirements || []).map((item: string) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                ) : null}
-              </article>
-            </section>
-            <section className="section-stack">
-              <div className="canvas-grid">
-                {(workflowDetail.data.canvas?.nodes || []).map((node: JsonObject) => (
-                  <article key={node.name} className="canvas-node">
-                    <strong>{node.name}</strong>
-                    <span>{node.kind}</span>
-                    <span>{node.description || node.implementation || "No description"}</span>
-                    <StatusPill value={node.status || "ready"} />
+                {workflowDetail.data.compatibility?.summary ? (
+                  <article className="info-card">
+                    <h4>Authoring posture</h4>
+                    <p className="helper-text">{String(workflowDetail.data.compatibility.summary)}</p>
+                    <div className="button-row">
+                      <button className="secondary-button" onClick={() => navigate(String(workflowDetail.data.compatibility.primary_route || `/studio?workflow=${encodeURIComponent(selectedWorkflow)}`))}>
+                        Open Studio
+                      </button>
+                      <button className="secondary-button" onClick={() => navigate(String(workflowDetail.data.compatibility.legacy_route || `/workbench?workflow=${encodeURIComponent(selectedWorkflow)}`))}>
+                        Open Workbench
+                      </button>
+                    </div>
                   </article>
-                ))}
-              </div>
-            </section>
-          </div>
+                ) : null}
+              </section>
+            </div>
+            <DensityDisclosure
+              className="workflow-guide-disclosure"
+              title={`Workflow catalog · ${workflowItems.length}`}
+              detail="Browse reusable workflows here before switching the named-run control above."
+            >
+              {workflowItems.length ? (
+                <div className="workflow-list workflow-catalog">
+                  {workflowItems.map((item) => (
+                    <article key={String(item.name)} className={`workflow-tile${selectedWorkflow === item.name ? " active" : ""}`}>
+                      <div className="workflow-tile-head">
+                        <strong>{item.title || item.name}</strong>
+                        <SourceBadge source={String(item.source || "builtin")} />
+                      </div>
+                      <p className="workflow-note">{item.description || "Reusable workflow from the local registry."}</p>
+                      <div className="meta-row">
+                        <span>{providerLabel(String(item.runtime_provider || "mock"))}</span>
+                        <span>{formatValue(item.question_limit)} questions</span>
+                      </div>
+                      <div className="button-row">
+                        <button
+                          className="secondary-button"
+                          onClick={() => {
+                            setMode("workflow");
+                            setSelectedWorkflow(String(item.name || ""));
+                          }}
+                        >
+                          Use for run
+                        </button>
+                        <button className="secondary-button" onClick={() => navigate(`/workflows/${encodeURIComponent(String(item.name || ""))}`)}>
+                          Open detail
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="No workflows indexed" body="Refresh the workflow registry or create a local draft in Studio." />
+              )}
+            </DensityDisclosure>
+          </>
         ) : null}
       </section>
     </main>
@@ -2419,20 +2572,33 @@ function WorkflowDetailPage({
   onMutate: () => void;
 }): React.ReactElement {
   const detail = useJsonResource(`${bootstrap.api_root}/workflows/${encodeURIComponent(workflowName)}`, [workflowName]);
-  const explain = useJsonResource(`${bootstrap.api_root}/workflows/${encodeURIComponent(workflowName)}/explain`, [workflowName]);
-  const runs = useJsonResource(`${bootstrap.api_root}/runs`, [workflowName]);
   const [provider, setProvider] = useState("");
   const [limit, setLimit] = useState("");
   const [baselineRunId, setBaselineRunId] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: string; title: string; body: string } | null>(null);
+  const workflowSummaryCards = (detail.data?.summary_cards || []) as JsonObject[];
+  const recentRuns = (detail.data?.recent_runs || []) as JsonObject[];
+  const explanation = (detail.data?.explanation || {}) as JsonObject;
+  const workflowActions = (detail.data?.actions || {}) as JsonObject;
+  const explainAction = (workflowActions.explain || {}) as JsonObject;
+  const validateAction = (workflowActions.validate || {}) as JsonObject;
+  const runAction = (workflowActions.run || {}) as JsonObject;
+  const baselineOptions = (runAction.baseline_options || []) as JsonObject[];
+  const compatibility = (detail.data?.compatibility || {}) as JsonObject;
 
   useEffect(() => {
-    if (detail.data?.workflow && !provider) {
-      setProvider(detail.data.workflow.runtime_provider || "");
-      setLimit(String(detail.data.workflow.question_limit || ""));
+    if (!detail.data) return;
+    if (!provider) {
+      setProvider(String(runAction.default_provider || detail.data.workflow?.runtime_provider || ""));
     }
-  }, [detail.data, provider]);
+    if (!limit) {
+      const defaultLimit = runAction.default_limit ?? detail.data.workflow?.question_limit;
+      if (defaultLimit !== undefined && defaultLimit !== null && defaultLimit !== "") {
+        setLimit(String(defaultLimit));
+      }
+    }
+  }, [detail.data, provider, limit]);
 
   async function validateWorkflow() {
     setBusy("Validating workflow");
@@ -2442,9 +2608,34 @@ function WorkflowDetailPage({
         method: "POST",
         body: JSON.stringify({}),
       });
-      setNotice({ tone: "success", title: "Workflow valid", body: `${response.workflow_name} is ready to run.` });
+      setNotice({
+        tone: "success",
+        title: "Workflow valid",
+        body: String(validateAction.success_label || `${response.workflow_name} is ready to run.`),
+      });
     } catch (error) {
       setNotice(buildActionErrorNotice("validate", error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function openAuthoringSurface() {
+    if (detail.data?.workflow?.source === "local") {
+      navigate(String(compatibility.primary_route || `/studio?workflow=${encodeURIComponent(workflowName)}`));
+      return;
+    }
+    setBusy("Opening Studio draft");
+    setNotice(null);
+    try {
+      const created = await requestJson(`${bootstrap.api_root}/drafts`, {
+        method: "POST",
+        body: JSON.stringify({ source_workflow_name: workflowName }),
+      });
+      onMutate();
+      navigate(`/studio?draft=${encodeURIComponent(String(created.id || created.draft?.id || ""))}`);
+    } catch (error) {
+      setNotice(buildActionErrorNotice("open Studio", error));
     } finally {
       setBusy(null);
     }
@@ -2455,13 +2646,15 @@ function WorkflowDetailPage({
     setNotice(null);
     try {
       const payload: JsonObject = {
-        workflow_name: workflowName,
         write_report: true,
       };
       if (provider) payload.provider = provider;
       if (limit) payload.limit = Number(limit);
       if (baselineRunId) payload.baseline_run_id = baselineRunId;
-      const response = await requestJson(`${bootstrap.api_root}/runs`, { method: "POST", body: JSON.stringify(payload) });
+      const response = await requestJson(
+        `${bootstrap.api_root}/workflows/${encodeURIComponent(workflowName)}/run`,
+        { method: "POST", body: JSON.stringify(payload) },
+      );
       onMutate();
       setNotice({
         tone: "success",
@@ -2488,7 +2681,7 @@ function WorkflowDetailPage({
       <section className="panel hero-panel">
         <span className="eyebrow">Workflow</span>
         <h2>{detail.data.workflow?.title || detail.data.workflow?.name}</h2>
-        <p>{detail.data.workflow?.description || explain.data?.explanation?.summary || "Inspect, validate, and run this workflow from the WebUI."}</p>
+        <p>{detail.data.workflow?.description || explanation.summary || "Inspect, validate, and run this workflow from the WebUI."}</p>
         <div className="button-row">
           <button className="primary-button" onClick={runWorkflow} disabled={Boolean(busy)}>
             {busy === "Running workflow" ? busy : "Run workflow"}
@@ -2496,16 +2689,28 @@ function WorkflowDetailPage({
           <button className="secondary-button" onClick={validateWorkflow} disabled={Boolean(busy)}>
             {busy === "Validating workflow" ? busy : "Validate"}
           </button>
+          <button className="secondary-button" onClick={() => void openAuthoringSurface()} disabled={Boolean(busy)}>
+            {busy === "Opening Studio draft"
+              ? busy
+              : detail.data.workflow?.source === "local"
+                ? "Open Studio"
+                : "Clone into Studio"}
+          </button>
           <button className="secondary-button" onClick={() => navigate("/start")}>Back to start</button>
         </div>
       </section>
       {notice ? <Message tone={notice.tone} title={notice.title} body={notice.body} /> : null}
+      {workflowSummaryCards.length ? (
+        <section className="stats-grid">
+          {workflowSummaryCards.map((card: JsonObject) => <MetricCard key={card.label} label={card.label} value={card.value} />)}
+        </section>
+      ) : null}
       <div className="split-grid">
         <section className="panel section-stack">
           <div className="section-header">
             <div>
               <h3>Execution settings</h3>
-              <p>Override the released provider or question limit when you want a bounded comparison run.</p>
+              <p>Keep explain, validate, and run on one route while preserving the same local execution contract as the CLI.</p>
             </div>
           </div>
           <div className="two-field-grid">
@@ -2513,7 +2718,7 @@ function WorkflowDetailPage({
               <span>Provider</span>
               <select value={provider} onChange={(event) => setProvider(event.target.value)}>
                 <option value="mock">Provider-free baseline</option>
-                <option value="local-llm">Local OpenAI-compatible endpoint</option>
+                <option value="local-llm">Local runtime (optional)</option>
               </select>
             </label>
             <label>
@@ -2525,22 +2730,136 @@ function WorkflowDetailPage({
             <span>Baseline run for compare</span>
             <select value={baselineRunId} onChange={(event) => setBaselineRunId(event.target.value)}>
               <option value="">None</option>
-              {(runs.data?.items || []).map((run: JsonObject) => (
-                <option key={run.run_id} value={run.run_id}>
-                  {run.run_id}
+              {baselineOptions.map((run: JsonObject) => (
+                <option key={String(run.run_id)} value={String(run.run_id)}>
+                  {String(run.label || run.run_id)}
                 </option>
               ))}
             </select>
           </label>
-          <article className="info-card">
-            <h4>Explain</h4>
-            <p className="helper-text">{explain.data?.explanation?.summary || "Workflow explanation unavailable."}</p>
-            <ul className="guidance-list">
-              {(explain.data?.explanation?.expected_artifacts || []).map((item: string) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
+          <div className="info-grid workflow-contract-grid">
+            <article className="info-card workflow-contract-card">
+              <div className="section-header">
+                <div>
+                  <h4>Explain</h4>
+                  <p className="helper-text">{String(explainAction.summary || "Plain-language workflow walkthrough shared with the CLI explain command.")}</p>
+                </div>
+                <StatusPill value="shared explain" />
+              </div>
+              <p className="helper-text">{String(explanation.summary || explanation.error || "Workflow explanation unavailable.")}</p>
+              {(explanation.runtime_requirements || []).length ? (
+                <ul className="guidance-list">
+                  {(explanation.runtime_requirements || []).map((item: string) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : null}
+              <code className="workflow-command">{String(explainAction.cli_command || `xrtm workflow explain ${workflowName}`)}</code>
+            </article>
+            <article className="info-card workflow-contract-card">
+              <div className="section-header">
+                <div>
+                  <h4>Validate</h4>
+                  <p className="helper-text">{String(validateAction.summary || "Shared validation keeps the WebUI honest about what can run locally.")}</p>
+                </div>
+                <StatusPill value="shared validate" />
+              </div>
+              <ul className="guidance-list">
+                <li>{String(validateAction.success_label || `Workflow valid: ${workflowName}`)}</li>
+                <li>Validation stays inside the safe product node library and the released workflow schema.</li>
+                <li>Failures remain local and explicit so you can fix the workflow before execution.</li>
+              </ul>
+              <code className="workflow-command">{String(validateAction.cli_command || `xrtm workflow validate ${workflowName}`)}</code>
+            </article>
+            <article className="info-card workflow-contract-card">
+              <div className="section-header">
+                <div>
+                  <h4>Run contract</h4>
+                  <p className="helper-text">{String(runAction.summary || "Run this named workflow through the same shared launch service as the CLI.")}</p>
+                </div>
+                <StatusPill value={String(runAction.default_provider === "local-llm" ? "local optional" : "provider-free default")} />
+              </div>
+              {(runAction.trust_cues || []).length ? (
+                <ul className="guidance-list">
+                  {(runAction.trust_cues || []).map((item: string) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : null}
+              <code className="workflow-command">{String(runAction.cli_command || `xrtm workflow run ${workflowName}`)}</code>
+            </article>
+          </div>
+          <article className="info-card workflow-guide-disclosure">
+            <h4>Evidence and node roles</h4>
+            <p className="helper-text">Keep the shared runtime and evidence expectations visible before you run.</p>
+            {(explanation.expected_artifacts || []).length ? (
+              <DensityDisclosure
+                className="workflow-guide-disclosure"
+                title={`Expected artifacts · ${(explanation.expected_artifacts || []).length}`}
+                detail="Matches the CLI explain output for this workflow."
+              >
+                <ul className="guidance-list">
+                  {(explanation.expected_artifacts || []).map((item: string) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </DensityDisclosure>
+            ) : null}
+            {(explanation.nodes || []).length ? (
+              <DensityDisclosure
+                className="workflow-guide-disclosure"
+                title={`Plain-language node roles · ${(explanation.nodes || []).length}`}
+                detail="The same role summary shown by the CLI explain command."
+              >
+                <div className="action-stack workflow-node-list">
+                  {(explanation.nodes || []).map((node: JsonObject) => (
+                    <article key={String(node.name)} className="surface-card workflow-node-card">
+                      <div className="section-header">
+                        <strong>{String(node.name || "node")}</strong>
+                        <StatusPill value={String(node.runtime || detail.data.workflow?.runtime_provider || "ready")} />
+                      </div>
+                      <p className="helper-text">{String(node.summary || node.kind || "No role summary available.")}</p>
+                    </article>
+                  ))}
+                </div>
+              </DensityDisclosure>
+            ) : null}
+            {(compatibility.summary || compatibility.primary_route) ? (
+              <div className="info-card workflow-compatibility-card">
+                <h4>Authoring posture</h4>
+                <p className="helper-text">{String(compatibility.summary || "Studio stays primary while Workbench remains available for compatibility.")}</p>
+                <div className="button-row">
+                  <button className="secondary-button" onClick={() => navigate(String(compatibility.primary_route || `/studio?workflow=${encodeURIComponent(workflowName)}`))}>
+                    Open Studio
+                  </button>
+                  <button className="secondary-button" onClick={() => navigate(String(compatibility.legacy_route || `/workbench?workflow=${encodeURIComponent(workflowName)}`))}>
+                    Open Workbench
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </article>
+          {recentRuns.length ? (
+            <DensityDisclosure
+              className="workflow-guide-disclosure"
+              title={`Recent runs · ${recentRuns.length}`}
+              detail="Open recent evidence for this workflow without leaving the detail route."
+            >
+              <div className="action-list">
+                {recentRuns.map((run: JsonObject) => (
+                  <button key={String(run.run_id)} className="secondary-button action-button" onClick={() => navigate(String(run.href || `/runs/${run.run_id}`))}>
+                    <span>{String(run.label || run.run_id)}</span>
+                    {run.summary ? <small>{String(run.summary)}</small> : null}
+                  </button>
+                ))}
+              </div>
+            </DensityDisclosure>
+          ) : (
+            <EmptyState
+              title={detail.data.recent_runs_empty_state?.title || "No recent runs for this workflow"}
+              body={detail.data.recent_runs_empty_state?.body || "Launch a bounded run to seed workflow-specific evidence."}
+            />
+          )}
         </section>
         <section className="panel section-stack">
           <div className="section-header">
@@ -2837,7 +3156,7 @@ function OperationsPage({ navigate, onMutate }: { navigate: (path: string) => vo
               <span>Provider</span>
               <select value={profileProvider} onChange={(event) => setProfileProvider(event.target.value)}>
                 <option value="mock">Provider-free baseline</option>
-                <option value="local-llm">Local OpenAI-compatible endpoint</option>
+                <option value="local-llm">Local runtime (optional)</option>
               </select>
             </label>
             <label className="operations-field-span">
@@ -3160,7 +3479,7 @@ function AdvancedPage(): React.ReactElement {
     { label: "Visible lanes", value: cards.length, detail: "kept in view" },
     { label: "Default posture", value: "guided", detail: "not first-success" },
     { label: "Safety labels", value: "explicit", detail: "readiness stays honest" },
-    { label: "Release frame", value: "0.8.6", detail: "bug-fix + polish" },
+    { label: "Release frame", value: "0.8.7", detail: "parity + verification" },
   ];
   const advancedFocusItems = [
     {
@@ -3261,7 +3580,7 @@ function AdvancedPage(): React.ReactElement {
           <div className="operations-keyline-list">
             <div><span>Primary audience</span><strong>operators who already know the lane</strong></div>
             <div><span>Interaction model</span><strong>inspect first, expand deliberately</strong></div>
-            <div><span>Product promise</span><strong>polish and clarification, not new feature families</strong></div>
+            <div><span>Product promise</span><strong>provider-free parity and verification, not new feature families</strong></div>
           </div>
           <div className="operations-card-grid advanced-card-grid">
             <article className="advanced-note-card">
@@ -3276,8 +3595,8 @@ function AdvancedPage(): React.ReactElement {
             </article>
             <article className="advanced-note-card">
               <span className="eyebrow">Release trust</span>
-              <strong>0.8.6 remains polish work</strong>
-              <p className="helper-text">This route clarifies existing lanes while keeping the broader product framing calm and truthful.</p>
+              <strong>0.8.7 stays provider-free parity work</strong>
+              <p className="helper-text">This route clarifies existing lanes while keeping the broader product framing local, calm, and truthful.</p>
             </article>
           </div>
         </article>
@@ -3856,17 +4175,8 @@ function RunDetailPage({
             </button>
           ) : null}
           {report.available ? (
-            <a className="secondary-link" href={report.href} target="_blank" rel="noreferrer">Open HTML report</a>
+            <a className="secondary-link" href={report.href} target="_blank" rel="noreferrer">{report.open_label || "Open HTML report"}</a>
           ) : null}
-          <button className="secondary-button" onClick={generateReport} disabled={busy === "Generating report"}>
-            {busy === "Generating report" ? busy : report.available ? "Regenerate report" : "Generate report"}
-          </button>
-          {(run.artifacts?.exports || [
-            { label: "Export JSON", href: `${bootstrap.api_root}/runs/${runId}/export?format=json` },
-            { label: "Export CSV", href: `${bootstrap.api_root}/runs/${runId}/export?format=csv` },
-          ]).map((item: JsonObject) => (
-            <a key={item.label} className="secondary-link" href={item.href}>{item.label}</a>
-          ))}
         </div>
       </section>
       <section className="stats-grid">
@@ -4001,12 +4311,12 @@ function RunDetailPage({
                 <p>Use the report when available; fall back to raw files when it is not.</p>
               </div>
             </div>
-            <ReportCard report={report} />
+            <ReportCard report={report} onGenerate={generateReport} generating={busy === "Generating report"} />
             <ArtifactList items={run.artifacts?.items || []} />
             {(run.artifacts?.exports || []).length ? (
-              <div className="button-row">
+              <div className="workflow-list export-card-grid">
                 {(run.artifacts?.exports || []).map((item: JsonObject) => (
-                  <a key={item.label} className="secondary-link" href={item.href}>{item.label}</a>
+                  <ExportCard key={String(item.label)} item={item} />
                 ))}
               </div>
             ) : null}
@@ -7444,22 +7754,48 @@ function ArtifactList({ items }: { items: JsonObject[] }): React.ReactElement {
   );
 }
 
-function ReportCard({ report }: { report?: JsonObject | null }): React.ReactElement {
+function ReportCard(
+  { report, onGenerate, generating = false }: { report?: JsonObject | null; onGenerate?: () => void; generating?: boolean },
+): React.ReactElement {
   if (!report) {
     return <EmptyState title="No report metadata" body="This surface did not expose report availability information." />;
   }
   return (
     <section className={`report-card ${report.available ? "available" : "missing"}`}>
-      <div>
+      <div className="report-card-copy">
         <strong>{report.label || "HTML report"}</strong>
         <p>{report.description || "No report description available."}</p>
+        {report.path ? <span className="workflow-note">{report.path}</span> : null}
       </div>
-      {report.available ? (
-        <a className="secondary-link" href={report.href} target="_blank" rel="noreferrer">Open report</a>
-      ) : (
-        <span className="availability-pill missing">Unavailable</span>
-      )}
+      <div className="button-row report-card-actions">
+        {report.available ? (
+          <a className="secondary-link" href={report.href} target="_blank" rel="noreferrer">{report.open_label || "Open report"}</a>
+        ) : (
+          <span className="availability-pill missing">Unavailable</span>
+        )}
+        {onGenerate ? (
+          <button className="secondary-button" onClick={onGenerate} disabled={generating}>
+            {generating ? "Generating report" : report.generate_label || (report.available ? "Regenerate report" : "Generate report")}
+          </button>
+        ) : null}
+      </div>
     </section>
+  );
+}
+
+function ExportCard({ item }: { item: JsonObject }): React.ReactElement {
+  return (
+    <article className="info-card export-card">
+      <div className="surface-header">
+        <strong>{String(item.label || "Export")}</strong>
+        <StatusPill value={String(item.format || "file")} />
+      </div>
+      <p className="helper-text">{String(item.description || "Download exported run evidence.")}</p>
+      {item.filename ? <span className="workflow-note">{String(item.filename)}</span> : null}
+      <a className="secondary-link" href={String(item.href || "#")} download={item.filename ? String(item.filename) : undefined}>
+        Download
+      </a>
+    </article>
   );
 }
 

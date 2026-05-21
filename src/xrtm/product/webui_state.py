@@ -411,11 +411,31 @@ class WebUIStateStore:
         preferred_workflow_name = _preferred_hub_workflow(workflows)
         preferred_template_id = _preferred_hub_template(starter_templates)
         local_llm_snapshot = local_llm_status()
-        local_llm_detail = (
+        local_runtime_detail = (
             ", ".join(str(model) for model in local_llm_snapshot.get("models", [])[:2])
             if local_llm_snapshot.get("healthy") and local_llm_snapshot.get("models")
             else local_llm_snapshot.get("error") or local_llm_snapshot.get("base_url") or "Unavailable"
         )
+        recent_runs = [
+            {
+                "run_id": item.get("run_id"),
+                "label": _run_label(item),
+                "summary": _mapping(item.get("observatory")).get("summary") or _run_label(item),
+                "href": f"/observatory/{item.get('run_id')}",
+                "report_available": bool(_mapping(item.get("observatory")).get("report_available")),
+            }
+            for item in runs[:3]
+            if item.get("run_id") is not None
+        ]
+        compatibility = {
+            "label": "Workbench compatibility",
+            "summary": (
+                "Studio is the primary authoring surface. The legacy /workbench route remains available for "
+                "compatible draft and form-driven flows over the same local services."
+            ),
+            "primary_cta": {"label": "Open Studio", "href": f"/studio?workflow={preferred_workflow_name}"},
+            "secondary_cta": {"label": "Open Workbench", "href": "/workbench"},
+        }
         return {
             "app": {
                 "name": "XRTM WebUI",
@@ -423,9 +443,13 @@ class WebUIStateStore:
                 "subtitle": "Local forecasting cockpit",
                 "summary": "File-backed runs, local workflows, and resumable SQLite state in one muted local shell.",
                 "system_status": {
-                    "tone": "healthy" if local_llm_snapshot.get("healthy") else "warning",
-                    "label": "System healthy" if local_llm_snapshot.get("healthy") else "System needs attention",
-                    "detail": local_llm_detail,
+                    "tone": "healthy",
+                    "label": "Provider-free baseline ready",
+                    "detail": (
+                        f"Optional local runtime available: {local_runtime_detail}"
+                        if local_llm_snapshot.get("healthy")
+                        else "Provider-free baseline is ready. Optional local runtime is not configured."
+                    ),
                 },
                 "trust_cues": [
                     "Shared local shell",
@@ -470,10 +494,10 @@ class WebUIStateStore:
                     },
                     {
                         "key": "local-llm",
-                        "label": "Local LLM",
-                        "value": "Healthy" if local_llm_snapshot.get("healthy") else "Unavailable",
-                        "detail": local_llm_detail,
-                        "status": "healthy" if local_llm_snapshot.get("healthy") else "unavailable",
+                        "label": "Local runtime",
+                        "value": "Available" if local_llm_snapshot.get("healthy") else "Optional",
+                        "detail": local_runtime_detail,
+                        "status": "available" if local_llm_snapshot.get("healthy") else "optional",
                     },
                     {
                         "key": "app-db",
@@ -493,7 +517,9 @@ class WebUIStateStore:
                 },
                 "counts": {"runs": len(runs), "workflows": len(workflows)},
                 "latest_run": latest_run,
+                "recent_runs": recent_runs,
                 "resume_target": resume_target,
+                "compatibility": compatibility,
                 "empty": not runs,
                 "empty_state": {
                     "title": "Start from a flagship workflow",
@@ -549,7 +575,9 @@ class WebUIStateStore:
                 ],
                 "counts": {"runs": len(runs), "workflows": len(workflows), "templates": len(starter_templates)},
                 "latest_run": latest_run,
+                "recent_runs": recent_runs,
                 "resume_target": resume_target,
+                "compatibility": compatibility,
                 "readiness": [
                     {
                         "key": "local-state",
@@ -567,10 +595,10 @@ class WebUIStateStore:
                     },
                     {
                         "key": "local-llm",
-                        "label": "Local OpenAI-compatible endpoint",
-                        "value": "Healthy" if local_llm_snapshot.get("healthy") else "Optional",
-                        "detail": local_llm_detail,
-                        "status": "healthy" if local_llm_snapshot.get("healthy") else "optional",
+                        "label": "Local runtime (optional)",
+                        "value": "Available" if local_llm_snapshot.get("healthy") else "Optional",
+                        "detail": local_runtime_detail,
+                        "status": "available" if local_llm_snapshot.get("healthy") else "optional",
                     },
                 ],
                 "templates": [
@@ -1789,7 +1817,7 @@ class WebUIStateStore:
         if query:
             sql += " AND search_text LIKE ?"
             parameters.append(f"%{query.lower()}%")
-        sql += " ORDER BY run_id DESC"
+        sql += " ORDER BY COALESCE(updated_at, indexed_at) DESC, run_id DESC"
         with self._connect() as connection:
             rows = connection.execute(sql, parameters).fetchall()
         return [_decorate_run_list_item(_json_load(row["run_json"])) for row in rows]
@@ -1799,16 +1827,101 @@ class WebUIStateStore:
             rows = connection.execute("SELECT workflow_json FROM workflow_index ORDER BY name").fetchall()
         return [_json_load(row["workflow_json"]) for row in rows]
 
-    def workflow_detail_snapshot(self, registry: WorkflowRegistry, workflow_name: str) -> dict[str, Any]:
+    def workflow_detail_snapshot(self, *, runs_dir: Path, registry: WorkflowRegistry, workflow_name: str) -> dict[str, Any]:
+        self.refresh_indexes(runs_dir=runs_dir, registry=registry)
         summary = self._workflow_summary(registry, workflow_name)
         blueprint = registry.load(workflow_name)
+        explanation = _workflow_explanation_snapshot(workflow_name=workflow_name, blueprint=blueprint, registry=registry)
+        workflow_runs = [
+            item
+            for item in self.list_runs()
+            if _mapping(item.get("workflow")).get("name") == workflow_name and item.get("run_id") is not None
+        ]
+        recent_runs = [
+            {
+                "run_id": item.get("run_id"),
+                "label": _run_label(item),
+                "summary": _mapping(item.get("observatory")).get("summary") or _run_label(item),
+                "href": f"/runs/{item.get('run_id')}",
+                "report_available": bool(_mapping(item.get("observatory")).get("report_available")),
+            }
+            for item in workflow_runs
+        ][:3]
+        baseline_options = [
+            {
+                "run_id": item.get("run_id"),
+                "label": _run_label(item),
+                "summary": _mapping(item.get("observatory")).get("summary") or _run_label(item),
+                "status": item.get("status"),
+                "provider": item.get("provider"),
+                "href": f"/runs/{item.get('run_id')}",
+                "report_available": bool(_mapping(item.get("observatory")).get("report_available")),
+            }
+            for item in workflow_runs
+        ][:8]
         return {
+            "schema_version": "xrtm.webui.workflow-detail.v2",
+            "surface": {
+                "name": "Workflow detail",
+                "title": "Workflow inspector",
+                "summary": "Inspect metadata, explanation, recent evidence, and the released workflow canvas before running.",
+                "canonical_href": f"/workflows/{workflow_name}",
+            },
             "workflow": summary,
             "blueprint": blueprint.to_json_dict(),
             "canvas": workflow_canvas(blueprint),
+            "explanation": explanation,
             "authoring": authoring_model(blueprint),
             "safe_edit": safe_edit_model(blueprint),
             "editable": summary["source"] == "local",
+            "summary_cards": [
+                {"label": "Source", "value": summary.get("source") or "builtin"},
+                {"label": "Runtime", "value": summary.get("runtime_provider") or blueprint.runtime.provider},
+                {"label": "Questions", "value": summary.get("question_limit") or blueprint.questions.limit},
+                {"label": "Nodes", "value": len(blueprint.graph.nodes)},
+            ],
+            "recent_runs": recent_runs,
+            "recent_runs_empty_state": {
+                "title": "No recent runs for this workflow",
+                "body": "Launch a bounded run from Start or this detail view to seed workflow-specific evidence.",
+            },
+            "actions": {
+                "explain": {
+                    "href": f"/api/workflows/{workflow_name}/explain",
+                    "method": "GET",
+                    "summary": "Shared plain-language explanation over the same validated workflow contract as the CLI.",
+                    "cli_command": f"xrtm workflow explain {workflow_name}",
+                },
+                "validate": {
+                    "href": f"/api/workflows/{workflow_name}/validate",
+                    "method": "POST",
+                    "summary": "Checks the released workflow against the same safe node library and schema rules as the CLI.",
+                    "cli_command": f"xrtm workflow validate {workflow_name}",
+                    "success_label": f"Workflow valid: {workflow_name} ({blueprint.schema_version})",
+                },
+                "run": {
+                    "href": f"/api/workflows/{workflow_name}/run",
+                    "method": "POST",
+                    "summary": "Launches this named workflow through the shared authored-workflow runner with optional local-only overrides.",
+                    "cli_command": f"xrtm workflow run {workflow_name}",
+                    "default_provider": blueprint.runtime.provider,
+                    "default_limit": blueprint.questions.limit,
+                    "baseline_options": baseline_options,
+                    "trust_cues": [
+                        "Provider-free mode remains the default released path for 0.8.7.",
+                        "Local runtime overrides stay optional and local-only.",
+                        "Every run still lands in Observatory with report, export, and compare evidence.",
+                    ],
+                },
+            },
+            "compatibility": {
+                "summary": (
+                    "Studio is the primary authoring surface. The legacy Workbench route remains available for "
+                    "compatible draft workflows over the same local services."
+                ),
+                "primary_route": f"/studio?workflow={workflow_name}",
+                "legacy_route": f"/workbench?workflow={workflow_name}",
+            },
             "guided_actions": self._workflow_guided_actions(summary),
         }
 
@@ -4171,6 +4284,29 @@ def _decorate_run_list_item(run: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+def _workflow_explanation_snapshot(
+    *, workflow_name: str, blueprint: WorkflowBlueprint, registry: WorkflowRegistry
+) -> dict[str, Any]:
+    try:
+        explanation = launch_module.explain_authored_workflow(blueprint=blueprint, registry=registry)
+    except (FileNotFoundError, ValueError) as exc:
+        return {
+            "workflow_name": workflow_name,
+            "summary": "Workflow explanation unavailable until the current workflow validates successfully.",
+            "runtime_requirements": [],
+            "expected_artifacts": [],
+            "parallel_groups": {},
+            "conditional_routes": {},
+            "nodes": [],
+            "error": str(exc),
+        }
+    return {
+        "workflow_name": workflow_name,
+        **explanation,
+        "error": None,
+    }
+
+
 def _probability_summary(forecast_rows: list[dict[str, Any]]) -> dict[str, Any]:
     probabilities = [float(row["probability"]) for row in forecast_rows if isinstance(row.get("probability"), (int, float))]
     brier_scores = [float(row["brier_score"]) for row in forecast_rows if isinstance(row.get("brier_score"), (int, float))]
@@ -4327,8 +4463,20 @@ def _execution_trace_item(row: Mapping[str, Any], *, index: int, source: str) ->
 
 def _export_items(run_id: str) -> list[dict[str, str]]:
     return [
-        {"label": "Export JSON", "format": "json", "href": f"/api/runs/{run_id}/export?format=json"},
-        {"label": "Export CSV", "format": "csv", "href": f"/api/runs/{run_id}/export?format=csv"},
+        {
+            "label": "Export JSON",
+            "format": "json",
+            "href": f"/api/runs/{run_id}/export?format=json",
+            "filename": f"{run_id}.json",
+            "description": "Structured evidence bundle for CLI/WebUI parity review.",
+        },
+        {
+            "label": "Export CSV",
+            "format": "csv",
+            "href": f"/api/runs/{run_id}/export?format=csv",
+            "filename": f"{run_id}.csv",
+            "description": "Tabular forecast rows for spreadsheet and audit workflows.",
+        },
     ]
 
 
@@ -4553,7 +4701,13 @@ def _report_state(run_dir: Path, run_id: str, run: Mapping[str, Any]) -> dict[st
     return {
         "label": "HTML report",
         "available": available,
+        "status": "ready" if available else "missing",
         "href": f"/runs/{run_id}/report" if available else None,
+        "open_label": "Open report",
+        "generate_href": f"/api/runs/{run_id}/report",
+        "generate_method": "POST",
+        "generate_label": "Regenerate report" if available else "Generate report",
+        "filename": "report.html",
         "path": str(report_path),
         "description": (
             "Open the rendered HTML report in a new tab."
