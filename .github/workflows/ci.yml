@@ -200,11 +200,13 @@ jobs:
       - name: Install built wheel and smoke CLI
         shell: bash
         run: |
-          python -m venv /tmp/xrtm-wheel-smoke
-          uv pip install --python /tmp/xrtm-wheel-smoke/bin/python -e ./data -e ./eval -e ./forecast -e ./train dist/xrtm-*.whl
-          /tmp/xrtm-wheel-smoke/bin/python scripts/check_installed_cli_surface.py --xrtm-bin /tmp/xrtm-wheel-smoke/bin/xrtm
-          /tmp/xrtm-wheel-smoke/bin/xrtm doctor
-          /tmp/xrtm-wheel-smoke/bin/xrtm web --smoke
+          wheel_smoke_root=".ci-wheel-smoke/${{ matrix.python-version }}"
+          rm -rf "$wheel_smoke_root"
+          python -m venv "$wheel_smoke_root/venv"
+          uv pip install --python "$wheel_smoke_root/venv/bin/python" -e ./data -e ./eval -e ./forecast -e ./train dist/xrtm-*.whl
+          "$wheel_smoke_root/venv/bin/python" scripts/check_installed_cli_surface.py \
+            --xrtm-bin "$wheel_smoke_root/venv/bin/xrtm" \
+            --workspace-dir "$wheel_smoke_root/workspace"
 
   released-stack-smoke:
     name: Released stack smoke ${{ matrix.python-version }}
@@ -293,13 +295,16 @@ jobs:
       - name: Install release-track stack
         shell: bash
         run: |
-          python -m venv /tmp/xrtm-release-smoke
-          uv pip install --python /tmp/xrtm-release-smoke/bin/python -e ./data -e ./eval -e ./forecast -e ./train dist/xrtm-*.whl
+          release_smoke_root=".ci-release-smoke/${{ matrix.python-version }}"
+          rm -rf "$release_smoke_root"
+          python -m venv "$release_smoke_root/venv"
+          uv pip install --python "$release_smoke_root/venv/bin/python" -e ./data -e ./eval -e ./forecast -e ./train dist/xrtm-*.whl
 
       - name: Smoke release-track stack
         shell: bash
         run: |
-          release_smoke_bin=/tmp/xrtm-release-smoke/bin
+          release_smoke_root=".ci-release-smoke/${{ matrix.python-version }}"
+          release_smoke_bin="$release_smoke_root/venv/bin"
           "$release_smoke_bin"/xrtm --version
           "$release_smoke_bin"/xrtm-data --version
           "$release_smoke_bin"/forecast --version
@@ -313,13 +318,9 @@ jobs:
           import xrtm.train
           print("released stack imports ok")
           PY
-          "$release_smoke_bin"/python scripts/check_installed_cli_surface.py --xrtm-bin "$release_smoke_bin"/xrtm
-          "$release_smoke_bin"/xrtm doctor
-          "$release_smoke_bin"/xrtm start --runs-dir /tmp/xrtm-release-smoke
-          "$release_smoke_bin"/xrtm runs show latest --runs-dir /tmp/xrtm-release-smoke
-          "$release_smoke_bin"/xrtm artifacts inspect --latest --runs-dir /tmp/xrtm-release-smoke
-          "$release_smoke_bin"/xrtm report html --latest --runs-dir /tmp/xrtm-release-smoke
-          "$release_smoke_bin"/xrtm web --runs-dir /tmp/xrtm-release-smoke --smoke
+          "$release_smoke_bin"/python scripts/check_installed_cli_surface.py \
+            --xrtm-bin "$release_smoke_bin"/xrtm \
+            --workspace-dir "$release_smoke_root/workspace"
 
   live-webui-route-smoke:
     name: Live WebUI route smoke

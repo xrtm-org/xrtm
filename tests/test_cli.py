@@ -516,9 +516,13 @@ def test_workflow_authoring_commands_create_and_edit_safe_local_workflows() -> N
             ],
         )
         scratch_output = _strip_ansi(scratch.output)
+        scratch_compact = " ".join(scratch_output.split())
         assert scratch.exit_code == 0, scratch_output
         assert "Workflow created:" in scratch_output
         assert "xrtm workflow show authored-scratch" in scratch_output
+        assert "xrtm workflow explain authored-scratch --workflows-dir workflows" in scratch_output
+        assert "xrtm workflow validate authored-scratch --workflows-dir workflows" in scratch_output
+        assert "xrtm workflow run authored-scratch --workflows-dir workflows --runs-dir runs" in scratch_compact
 
         template = runner.invoke(
             cli,
@@ -1572,10 +1576,12 @@ def test_profiles_and_run_history_commands_support_repeatable_workflows() -> Non
         assert "forecasts" in runs_show.output
         assert "team-alpha" in runs_show.output
         assert runs_export_json.exit_code == 0, runs_export_json.output
+        assert "Run exported as JSON:" in _strip_ansi(runs_export_json.output)
         exported_json = json.loads(Path("export.json").read_text(encoding="utf-8"))
         assert exported_json["run"]["run_id"] == run_id
         assert exported_json["run"]["user"] == "team-alpha"
         assert runs_export_csv.exit_code == 0, runs_export_csv.output
+        assert "Run exported as CSV:" in _strip_ansi(runs_export_csv.output)
         csv_content = Path("export.csv").read_text(encoding="utf-8")
         assert "run_id" in csv_content
         assert "user" in csv_content
@@ -1682,6 +1688,9 @@ def test_latest_run_shortcuts_cover_common_inspection_flows() -> None:
         assert "run.json" in artifacts_inspect.output
         assert report.exit_code == 0, report.output
         assert str(latest / "report.html") in report.output
+        assert "Report follow-through" in _strip_ansi(report.output)
+        assert f"Inspect artifacts: xrtm artifacts inspect {latest}" in _strip_ansi(report.output)
+        assert "Browse the same workspace: xrtm web --runs-dir runs" in _strip_ansi(report.output)
 
 
 def test_latest_run_shortcuts_surface_help_and_errors() -> None:
@@ -1849,6 +1858,8 @@ def test_tui_and_web_smoke_over_run_artifacts() -> None:
         assert "demo-provider-free" in tui_output
         assert "No monitor runs" in tui_output
         assert web.exit_code == 0, web.output
+        assert "workbench ready" in _strip_ansi(web.output)
+        assert "workflow(s)" in _strip_ansi(web.output)
         assert len(snapshot["runs"]) == 1
         assert snapshot["monitors"] == []
         assert snapshot["runs"][0]["workflow"]["name"] == "demo-provider-free"

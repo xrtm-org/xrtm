@@ -271,7 +271,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 return
             workflow_match = re.match(r"^/api/workflows/([^/]+)$", path)
             if workflow_match:
-                self._send_json(self.state_store.workflow_detail_snapshot(self._registry(), workflow_match.group(1)))
+                self._send_json(
+                    self.state_store.workflow_detail_snapshot(
+                        runs_dir=self.runs_dir,
+                        registry=self._registry(),
+                        workflow_name=workflow_match.group(1),
+                    )
+                )
                 return
             if path.startswith("/runs/") and path.endswith("/report"):
                 self._send_report(path.removeprefix("/runs/").removesuffix("/report"))
@@ -301,23 +307,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
             if path == "/api/runs":
                 payload = self._read_json()
                 workflow_name = _optional_json_value(payload, "workflow_name")
-                baseline_run_id = _optional_json_value(payload, "baseline_run_id")
                 if workflow_name:
-                    result = launch_module.run_registered_workflow(
-                        workflow_name,
-                        workflows_dir=self.workflows_dir,
-                        runs_dir=self.runs_dir,
-                        limit=_optional_json_int(payload, "limit"),
-                        provider=_optional_json_value(payload, "provider"),
-                        base_url=_optional_json_value(payload, "base_url"),
-                        model=_optional_json_value(payload, "model"),
-                        api_key=_optional_json_value(payload, "api_key"),
-                        max_tokens=_optional_json_int(payload, "max_tokens"),
-                        write_report=_optional_json_bool(payload, "write_report", default=True),
-                        user=_optional_json_value(payload, "user"),
+                    self._send_json(
+                        self._registered_workflow_run_payload(workflow_name, payload),
+                        status=HTTPStatus.CREATED,
                     )
-                    self._send_json(_run_result_payload(result, baseline_run_id=baseline_run_id), status=HTTPStatus.CREATED)
                     return
+                baseline_run_id = _optional_json_value(payload, "baseline_run_id")
                 provider = _optional_json_value(payload, "provider") or "mock"
                 result = launch_module.run_demo_workflow(
                     provider=provider,
@@ -662,6 +658,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     }
                 )
                 return
+            workflow_run = re.match(r"^/api/workflows/([^/]+)/run$", path)
+            if workflow_run:
+                payload = self._read_json()
+                self._send_json(
+                    self._registered_workflow_run_payload(workflow_run.group(1), payload),
+                    status=HTTPStatus.CREATED,
+                )
+                return
             if path in {"/workbench/clone", "/workbench/edit", "/workbench/validate", "/workbench/run"}:
                 self._handle_legacy_form_post(path)
                 return
@@ -756,6 +760,26 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
     def _registry(self):
         return workflow_registry_for(self.workflows_dir)
+
+    def _registered_workflow_run_payload(self, workflow_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        baseline_run_id = _optional_json_value(payload, "baseline_run_id")
+        result = launch_module.run_registered_workflow(
+            workflow_name,
+            workflows_dir=self.workflows_dir,
+            runs_dir=self.runs_dir,
+            limit=_optional_json_int(payload, "limit"),
+            provider=_optional_json_value(payload, "provider"),
+            base_url=_optional_json_value(payload, "base_url"),
+            model=_optional_json_value(payload, "model"),
+            api_key=_optional_json_value(payload, "api_key"),
+            max_tokens=_optional_json_int(payload, "max_tokens"),
+            write_report=_optional_json_bool(payload, "write_report", default=True),
+            user=_optional_json_value(payload, "user"),
+        )
+        return {
+            **_run_result_payload(result, baseline_run_id=baseline_run_id),
+            "workflow_name": workflow_name,
+        }
 
     def _profiles_dir(self) -> Path:
         return _profiles_dir_from_workflows(self.workflows_dir)
@@ -1159,15 +1183,62 @@ def _cleanup_payload(keep: int, candidates: list[Path]) -> dict[str, Any]:
 
 
 def _provider_status_snapshot() -> dict[str, Any]:
+    local_runtime = local_llm_status()
+    local_models = [str(model) for model in local_runtime.get("models", []) if model]
+    local_runtime_detail = (
+        ", ".join(local_models[:2])
+        if local_runtime.get("healthy") and local_models
+        else local_runtime.get("error") or local_runtime.get("base_url") or "Optional local runtime not configured."
+    )
     return {
+        "surface": {
+            "name": "Provider status",
+            "summary": (
+                "Keep the released provider-free baseline explicit while showing optional local runtime checks "
+                "without widening the local product promise."
+            ),
+        },
         "first_class_categories": [OPENAI_COMPATIBLE_CATEGORY, CODING_AGENT_CLI_CATEGORY],
         "provider_free": {
-            "label": "Provider-free deterministic baseline",
+            "label": "Provider-free baseline",
+            "status": "ready",
+            "summary": "Released local baseline for first success, bounded demos, and verification runs.",
             "runtime": provider_runtime_metadata("mock"),
             "validation_mode": PROVIDER_FREE_VALIDATION_MODE,
             "ready": True,
+            "trust_cues": [
+                "No API keys required",
+                "Deterministic smoke validation",
+                "Shared CLI/WebUI launch contract",
+            ],
         },
-        "local_llm": local_llm_status(),
+        "local_runtime": {
+            "label": "Local runtime (optional)",
+            "status": "available" if local_runtime.get("healthy") else "optional",
+            "summary": "Optional local runtime checks stay visible for local-only experiments when configured.",
+            "healthy": bool(local_runtime.get("healthy")),
+            "detail": local_runtime_detail,
+            "base_url": local_runtime.get("base_url"),
+            "models": local_models,
+            "gpu": local_runtime.get("gpu"),
+        },
+        "local_llm": local_runtime,
+        "cards": [
+            {
+                "key": "provider-free",
+                "label": "Provider-free baseline",
+                "value": "Ready",
+                "detail": "Released local baseline for start, demo, and workflow verification.",
+                "status": "ready",
+            },
+            {
+                "key": "local-runtime",
+                "label": "Local runtime (optional)",
+                "value": "Available" if local_runtime.get("healthy") else "Optional",
+                "detail": local_runtime_detail,
+                "status": "available" if local_runtime.get("healthy") else "optional",
+            },
+        ],
     }
 
 

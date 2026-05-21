@@ -253,6 +253,40 @@ def test_status_snapshot_marks_outdated_checkout_when_repo_head_changes(
     assert "older checkout" in manager.status_text()
 
 
+def test_route_smoke_covers_studio_playground_and_static_shell_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_module()
+    manager = module.LiveWebUIManager(_manager_paths(tmp_path, module, instance_name="validation"))
+    requested: list[str] = []
+
+    class FakeResponse:
+        status = 200
+
+        def __init__(self, url: str) -> None:
+            self.url = url
+
+        def __enter__(self):
+            requested.append(self.url)
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def read(self, _size: int = -1) -> bytes:
+            return b"ok"
+
+    monkeypatch.setattr(module, "urlopen", lambda url, timeout=2.0: FakeResponse(url))
+
+    manager.route_smoke("http://127.0.0.1:8876")
+
+    assert requested == [f"http://127.0.0.1:8876{path}" for path in module.ROUTE_SMOKE_PATHS]
+    assert "/api/studio" in module.ROUTE_SMOKE_PATHS
+    assert "/api/playground" in module.ROUTE_SMOKE_PATHS
+    assert "/static/app.js" in module.ROUTE_SMOKE_PATHS
+    assert "/static/app.css" in module.ROUTE_SMOKE_PATHS
+
+
 def test_shared_instance_requires_explicit_ack_for_mutations(tmp_path: Path) -> None:
     module = _load_module()
     manager = module.LiveWebUIManager(_manager_paths(tmp_path, module))

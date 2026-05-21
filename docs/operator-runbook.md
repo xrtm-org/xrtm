@@ -66,17 +66,17 @@ arbitrary graph, JSON, implementation, plugin, or code editor.
 The terminal exposes the same shared backend through `xrtm workflow create ...`
 and `xrtm workflow edit ...` when you prefer text-led authoring.
 
-In `0.8.6`, the same released shell exposes `/playground` for a bounded
-graph-linked exploratory sandbox: one custom question first, optional tiny
-follow-up batches capped at 5, graph/canvas preview, ordered node trace,
-executed-node highlighting, honest fallback when no graph trace artifact exists,
-and explicit save-back to workflow/profile only. Keep playground runs
-exploratory and separate from benchmark or release evidence by default, and
-keep the released runtime wording provider-free unless wider validation is
-published separately.
+In `0.8.7`, the same released shell keeps `/playground` for a bounded
+graph-linked exploratory sandbox on the provider-free parity baseline: one
+custom question first, optional tiny follow-up batches capped at 5,
+graph/canvas preview, ordered node trace, executed-node highlighting, honest
+fallback when no graph trace artifact exists, and explicit save-back to
+workflow/profile only. Keep playground runs exploratory and separate from
+benchmark or release evidence by default, and keep the released runtime wording
+provider-free unless wider validation is published separately.
 
 ```bash
-xrtm playground --workflow demo-provider-free --question "Will the released 0.8.6 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
+xrtm playground --workflow demo-provider-free --question "Will the released 0.8.7 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
 ```
 
 Use the terminal TUI when you only need read-only review:
