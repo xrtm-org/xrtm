@@ -322,3 +322,13 @@ def test_validate_cli_surface_rejects_missing_builtin_workflow(tmp_path: Path) -
 
     with pytest.raises(RuntimeError, match="xrtm workflow list is missing required entries: flagship-benchmark"):
         module.validate_cli_surface(fake_xrtm, workspace_dir=tmp_path / "workspace")
+
+
+def test_parse_args_defaults_workspace_to_temp_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(sys, "argv", ["check_installed_cli_surface.py"])
+
+    args = module.parse_args()
+
+    assert args.workspace_dir == tmp_path / ".installed-cli-surface-smoke"

@@ -7,6 +7,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REQUIRED_TOP_LEVEL_COMMANDS = (
@@ -335,10 +336,14 @@ def validate_cli_surface(xrtm_bin: Path, *, workspace_dir: Path) -> None:
         raise RuntimeError(f"xrtm artifacts cleanup --delete should leave 2 runs, found {len(remaining_runs)}")
 
 
+def default_workspace_dir() -> Path:
+    return Path(tempfile.gettempdir()) / ".installed-cli-surface-smoke"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--xrtm-bin", type=Path, default=Path("xrtm"))
-    parser.add_argument("--workspace-dir", type=Path, default=Path(".installed-cli-surface-smoke"))
+    parser.add_argument("--workspace-dir", type=Path, default=default_workspace_dir())
     return parser.parse_args()
 
 
