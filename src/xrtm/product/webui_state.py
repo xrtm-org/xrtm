@@ -1908,7 +1908,7 @@ class WebUIStateStore:
                     "default_limit": blueprint.questions.limit,
                     "baseline_options": baseline_options,
                     "trust_cues": [
-                        "Deterministic mode remains the default released path for 0.8.7.",
+                        "Deterministic mode remains the default released path for 0.8.8.",
                         "Local runtime overrides stay optional and local-only.",
                         "Every run still lands in Observatory with report, export, and compare evidence.",
                     ],

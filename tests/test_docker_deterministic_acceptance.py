@@ -992,7 +992,7 @@ def test_run_product_shell_includes_workflow_authoring_and_playground(tmp_path, 
         install_source="wheelhouse",
         wheelhouse_dir=tmp_path / "wheelhouse",
         artifacts_dir=tmp_path / "artifacts",
-        xrtm_spec="xrtm==0.8.7",
+        xrtm_spec="xrtm==0.8.8",
         base_env={},
         scratch_dir=tmp_path / "scratch",
     )
