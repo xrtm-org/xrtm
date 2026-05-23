@@ -13,7 +13,7 @@ xrtm profile show my-local
 xrtm run profile my-local
 ```
 
-`xrtm profile starter` creates a reusable provider-free local profile under
+`xrtm profile starter` creates a reusable deterministic local profile under
 `.xrtm/profiles/` so you can rerun the same shape without retyping options.
 
 The WebUI equivalent lives under `http://127.0.0.1:8765/operations`, where the
@@ -67,16 +67,16 @@ The terminal exposes the same shared backend through `xrtm workflow create ...`
 and `xrtm workflow edit ...` when you prefer text-led authoring.
 
 In `0.8.7`, the same released shell keeps `/playground` for a bounded
-graph-linked exploratory sandbox on the provider-free parity baseline: one
+graph-linked exploratory sandbox on the deterministic parity baseline: one
 custom question first, optional tiny follow-up batches capped at 5,
 graph/canvas preview, ordered node trace, executed-node highlighting, honest
 fallback when no graph trace artifact exists, and explicit save-back to
 workflow/profile only. Keep playground runs exploratory and separate from
 benchmark or release evidence by default, and keep the released runtime wording
-provider-free unless wider validation is published separately.
+deterministic unless wider validation is published separately.
 
 ```bash
-xrtm playground --workflow demo-provider-free --question "Will the released 0.8.7 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
+xrtm playground --workflow demo-deterministic --question "Will the released 0.8.7 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
 ```
 
 Use the terminal TUI when you only need read-only review:
@@ -88,12 +88,12 @@ xrtm tui --runs-dir runs
 ## 4. Monitor and clean up a runs directory
 
 ```bash
-xrtm monitor start --provider mock --limit 2 --runs-dir runs
+xrtm monitor start --provider deterministic --limit 2 --runs-dir runs
 xrtm monitor list --runs-dir runs
 xrtm artifacts cleanup --runs-dir runs --keep 50
 ```
 
-The mock/provider-free monitor lane is the safe default for routine operator
+The deterministic/deterministic monitor lane is the safe default for routine operator
 checks.
 
 The WebUI Operations page exposes monitor start/list/show/run-once/pause/

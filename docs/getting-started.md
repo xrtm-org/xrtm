@@ -3,9 +3,9 @@
 This is the authoritative first-success path for the published
 `xrtm==0.8.7` package.
 
-The `0.8.7` release is a provider-free parity-and-verification release. It
+The `0.8.7` release is a deterministic parity-and-verification release. It
 keeps the bounded local Hub → Studio → Playground → Observatory product spine,
-graduates the remaining provider-free Hub/Start/workflow-detail/Observatory
+graduates the remaining deterministic Hub/Start/workflow-detail/Observatory
 parity surfaces, and stays claim-pinned to that released contract: no
 calibration dashboard, no API/webhook control plane, no arbitrary code/plugin
 graph editing, no full persistent collaborative canvas layout, and no
@@ -35,7 +35,7 @@ xrtm start
 
 **CLI-led first success**
 
-`xrtm start` runs the released provider-free first-success path. It checks the
+`xrtm start` runs the released deterministic first-success path. It checks the
 installed stack, writes a scored local run under `runs/`, and prints the next
 commands for reviewing that run.
 
@@ -77,7 +77,7 @@ The released WebUI is a polished local-only React/TypeScript app shell backed
 by a Python JSON API. It gives you the same local forecasting cockpit lanes —
 Hub at `/` and `/hub`, Start, Runs, Workflow detail, Operations, Studio,
 Playground, Observatory, run detail, compare, Advanced visibility, and
-`/workbench` compatibility — without widening the provider-free `0.8.7`
+`/workbench` compatibility — without widening the deterministic `0.8.7`
 capability contract.
 
 With the default local workspace layout, reusable workflows stay in
@@ -112,27 +112,27 @@ xrtm workflow run my-workflow --workflows-dir .xrtm/workflows --runs-dir runs
 ```
 
 The released `xrtm==0.8.7` package keeps the bounded graph-linked
-Playground lane on the provider-free parity baseline. Open
+Playground lane on the deterministic parity baseline. Open
 `http://127.0.0.1:8765/playground` from the same local shell when you want one
 custom question first, optional tiny follow-up batches capped at 5, graph/canvas
 preview, ordered node trace, executed-node highlighting, an honest fallback when
 no graph trace artifact exists, and explicit save-back to workflow/profile only.
 Keep those runs exploratory and separate from benchmark or release evidence by
-default, and keep the released runtime wording provider-free unless wider
+default, and keep the released runtime wording deterministic unless wider
 validation is published separately.
 
 ```bash
-xrtm playground --workflow demo-provider-free --question "Will the released 0.8.7 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
+xrtm playground --workflow demo-deterministic --question "Will the released 0.8.7 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
 ```
 
-That released Playground command uses the provider-free baseline path and the
+That released Playground command uses the deterministic baseline path and the
 same shared sandbox contract as the WebUI route.
 
 ## 5. Run from Hub or Start, then author safely, validate, run, trace, and compare
 
 From the Hub, `/start`, or `/workflows/<name>`:
 
-1. run the provider-free quickstart or a bounded named workflow
+1. run the deterministic quickstart or a bounded named workflow
 2. inspect the generated run detail
 3. open or regenerate the HTML report
 4. export JSON or CSV evidence
@@ -141,7 +141,7 @@ From the Hub, `/start`, or `/workflows/<name>`:
 From Studio, with `/workbench` available as a compatibility route:
 
 1. use Overview or Runs to inspect the baseline you want to keep in view
-2. start from scratch, a starter template, or a clone of `demo-provider-free`
+2. start from scratch, a starter template, or a clone of `demo-deterministic`
 3. edit shared core workflow fields or safe node/edge/entry changes inside the released product schema/node library
 4. save and validate the draft inline
 5. run a candidate

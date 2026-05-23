@@ -141,12 +141,12 @@ def validate_runtime_validation(repo_root: Path, contract: dict, scope: str):
             )
         )
 
-    if config.get("baseline_mode") != "provider-free":
+    if config.get("baseline_mode") != "deterministic":
         failures.append(
             (
                 "docs/release-command-contract.json",
                 0,
-                "runtime_validation baseline_mode must stay 'provider-free'",
+                "runtime_validation baseline_mode must stay 'deterministic'",
             )
         )
 
@@ -163,12 +163,12 @@ def validate_runtime_validation(repo_root: Path, contract: dict, scope: str):
         )
 
     prohibited_profiles = set(categories) | set(local_profiles) | set(commercial_profiles)
-    if "provider-free" in prohibited_profiles:
+    if "deterministic" in prohibited_profiles:
         failures.append(
             (
                 "docs/release-command-contract.json",
                 0,
-                "provider-free is a baseline/testing mode and must not appear as a first-class category or profile",
+                "deterministic is a baseline/testing mode and must not appear as a first-class category or profile",
             )
         )
 

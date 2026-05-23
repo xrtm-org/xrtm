@@ -40,9 +40,9 @@ from xrtm.product.workflows import (
 
 MAX_SAFE_QUESTION_LIMIT = 25
 WORKFLOW_KIND_OPTIONS = ("workflow", "demo", "benchmark", "competition")
-RUNTIME_PROVIDER_OPTIONS = ("mock", "local-llm")
+RUNTIME_PROVIDER_OPTIONS = ("deterministic", "local-llm")
 _DEFAULT_NODE_RUNTIMES = {
-    "xrtm.product.workflow_nodes.provider_free_candidate_node": "provider-free-demo",
+    "xrtm.product.workflow_nodes.deterministic_candidate_node": "deterministic-demo",
     "xrtm.product.workflow_nodes.candidate_forecast_node": "local-openai-compatible",
     "xrtm.product.workflow_nodes.time_series_baseline_node": "time-series-baseline",
 }
@@ -383,7 +383,7 @@ def workbench_authoring_catalog(registry: WorkflowRegistry) -> dict[str, Any]:
             {
                 "key": "scratch",
                 "label": "Start from scratch",
-                "detail": "Create a new safe provider-free starter workflow and open it in a draft session.",
+                "detail": "Create a new safe deterministic starter workflow and open it in a draft session.",
             },
             {
                 "key": "template",

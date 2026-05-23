@@ -4,8 +4,8 @@ This script demonstrates how to run recurring forecasts on a schedule with
 trend tracking and reporting.
 
 Usage:
-    python monitor.py --provider mock --questions-file questions.json --run-once
-    python monitor.py --provider mock --questions-file questions.json --schedule "every day at 09:00"
+    python monitor.py --provider deterministic --questions-file questions.json --run-once
+    python monitor.py --provider deterministic --questions-file questions.json --schedule "every day at 09:00"
 """
 
 import argparse
@@ -149,7 +149,7 @@ class MonitorPipeline:
 
     async def _create_analyst(self) -> ForecastingAnalyst:
         """Create forecasting analyst."""
-        if self.provider_name == "mock":
+        if self.provider_name in {"deterministic", "deterministic"}:
             provider = DeterministicProvider()
         else:
             from xrtm.forecast import create_forecasting_analyst
@@ -300,7 +300,7 @@ async def run_once_async(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Scheduled monitor for XRTM forecasting")
-    parser.add_argument("--provider", default="mock", help="Provider to use")
+    parser.add_argument("--provider", default="deterministic", help="Provider to use")
     parser.add_argument("--model", help="Model ID for provider")
     parser.add_argument("--questions-file", required=True, help="Questions configuration file")
     parser.add_argument("--runs-dir", default="monitor-runs", help="Directory for monitor runs")

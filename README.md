@@ -26,13 +26,13 @@ That guide walks the released `xrtm==0.8.7` journey in one place:
    workflow fields plus node/edge/entry changes, validate, run, and compare
 8. use the released Playground lane for one custom question first, graph/canvas
    trace linkage, read-only step inspection, and explicit save-back to
-   workflow/profile on the provider-free release baseline
+   workflow/profile on the deterministic release baseline
 9. inspect run evidence in Observatory at `/observatory`
 10. choose your next path
 
-The `0.8.7` release is a provider-free parity-and-verification release. It
+The `0.8.7` release is a deterministic parity-and-verification release. It
 keeps the bounded local Hub → Studio → Playground → Observatory product spine,
-graduates the remaining provider-free Hub/Start/workflow-detail/Observatory
+graduates the remaining deterministic Hub/Start/workflow-detail/Observatory
 parity surfaces, and does not claim a calibration dashboard, API/webhook
 control plane, arbitrary code/plugin graph editing, full persistent
 collaborative canvas layout, or a commercial runtime path without separate
@@ -61,7 +61,7 @@ place.
 - [Python API Reference](docs/python-api-reference.md)
 - [Integration Examples](examples/integration/)
 - [Interface Parity Matrix](docs/interface-parity.md) for the current CLI/WebUI capability map and next parity targets
-- [0.8.x Feature Track](docs/next-release-feature-track.md) for the released 0.8.7 provider-free parity spine and future bounded surfaces
+- [0.8.x Feature Track](docs/next-release-feature-track.md) for the released 0.8.7 deterministic parity spine and future bounded surfaces
 - [Stack Versioning Policy](https://github.com/xrtm-org/governance/blob/main/policies/stack-versioning-policy.md) for `xrtm` as the product-anchor release and cross-repo version ownership
 - Full documentation: [xrtm.org](https://xrtm.org)
 

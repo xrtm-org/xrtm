@@ -50,7 +50,7 @@ def _write_observatory_run_fixture(
         "run_id": run_id,
         "run_dir": str(run_dir),
         "status": "completed",
-        "provider": "mock",
+        "provider": "deterministic",
         "command": "xrtm test observatory",
         "created_at": "2026-05-01T10:00:00+00:00",
         "updated_at": "2026-05-01T10:00:30+00:00",
@@ -95,7 +95,7 @@ def test_workbench_clones_and_applies_only_safe_edits(tmp_path: Path) -> None:
             "questions_limit": "3",
             "artifacts_write_report": "false",
             "weight:aggregate_candidates:primary_candidate": "70",
-            "weight:aggregate_candidates:provider_free_control": "20",
+            "weight:aggregate_candidates:deterministic_control": "20",
             "weight:aggregate_candidates:time_series_baseline": "10",
         },
     )
@@ -103,7 +103,7 @@ def test_workbench_clones_and_applies_only_safe_edits(tmp_path: Path) -> None:
     assert updated.questions.limit == 3
     assert updated.artifacts.write_report is False
     weights = updated.graph.nodes["aggregate_candidates"].config["weights"]
-    assert set(weights) == {"primary_candidate", "provider_free_control", "time_series_baseline"}
+    assert set(weights) == {"primary_candidate", "deterministic_control", "time_series_baseline"}
     assert sum(weights.values()) == pytest.approx(1.0)
     assert weights["primary_candidate"] == pytest.approx(0.7)
     saved = json.loads(path.read_text(encoding="utf-8"))
@@ -122,7 +122,7 @@ def test_workbench_clones_and_applies_only_safe_edits(tmp_path: Path) -> None:
                 "questions_limit": "3",
                 "artifacts_write_report": "false",
                 "weight:aggregate_candidates:primary_candidate": "70",
-                "weight:aggregate_candidates:provider_free_control": "20",
+                "weight:aggregate_candidates:deterministic_control": "20",
             },
         )
 
@@ -130,13 +130,13 @@ def test_workbench_clones_and_applies_only_safe_edits(tmp_path: Path) -> None:
 def test_workbench_snapshot_loads_local_workflow_and_missing_model(tmp_path: Path) -> None:
     workflows_dir = tmp_path / "workflows"
     registry = WorkflowRegistry(local_roots=(workflows_dir,))
-    clone_workflow_for_edit(registry, source_name="demo-provider-free", target_name="flagship-benchmark")
+    clone_workflow_for_edit(registry, source_name="demo-deterministic", target_name="flagship-benchmark")
 
     snapshot = workbench_snapshot(Path("missing-runs"), workflows_dir, workflow_name="flagship-benchmark")
 
     assert snapshot["selected_workflow_name"] == "flagship-benchmark"
     assert snapshot["selected_workflow_source"]["source"] == "local"
-    assert snapshot["selected_workflow"]["title"] == "XRTM install and provider-free demo"
+    assert snapshot["selected_workflow"]["title"] == "XRTM install and deterministic demo"
     assert snapshot["validation"]["ok"] is True
     assert snapshot["canvas"]["nodes"]
     assert snapshot["safe_edit"]["questions_limit"]["max"] == 25
@@ -176,11 +176,11 @@ def test_workbench_edit_rejects_non_local_and_unexpected_fields(tmp_path: Path) 
     with pytest.raises(WorkbenchInputError, match="clone this workflow"):
         apply_workbench_edit(
             registry,
-            workflow_name="demo-provider-free",
+            workflow_name="demo-deterministic",
             values={"questions_limit": "1", "artifacts_write_report": "true"},
         )
 
-    clone_workflow_for_edit(registry, source_name="demo-provider-free", target_name="my-demo")
+    clone_workflow_for_edit(registry, source_name="demo-deterministic", target_name="my-demo")
     with pytest.raises(WorkbenchInputError, match="unsupported edit field"):
         apply_workbench_edit(
             registry,
@@ -203,7 +203,7 @@ def test_workbench_edit_rejects_bad_safe_edit_values(tmp_path: Path) -> None:
         "questions_limit": "3",
         "artifacts_write_report": "false",
         "weight:aggregate_candidates:primary_candidate": "70",
-        "weight:aggregate_candidates:provider_free_control": "20",
+        "weight:aggregate_candidates:deterministic_control": "20",
         "weight:aggregate_candidates:time_series_baseline": "10",
     }
     bad_cases = [
@@ -277,24 +277,24 @@ def test_workbench_validate_run_and_compare_paths_are_bounded(
     monkeypatch.setattr(launch_module, "run_authored_workflow", fake_run_authored_workflow)
     monkeypatch.setattr(workbench_module, "compare_runs", fake_compare_runs)
 
-    validation = validate_workbench_workflow(registry, "demo-provider-free")
+    validation = validate_workbench_workflow(registry, "demo-deterministic")
     result = run_workbench_workflow(
         registry,
-        workflow_name="demo-provider-free",
+        workflow_name="demo-deterministic",
         runs_dir=runs_dir,
         baseline_run_ref="baseline-run",
         user="analyst",
     )
 
-    assert validation == {"ok": True, "errors": [], "workflow": "demo-provider-free"}
+    assert validation == {"ok": True, "errors": [], "workflow": "demo-deterministic"}
     assert result.run_id == "edited-run"
     assert result.baseline_run_id == "baseline-run"
     assert result.compare_rows == [{"metric": "status", "left": "succeeded", "right": "succeeded"}]
-    assert observed["validated_workflow"] == "demo-provider-free"
+    assert observed["validated_workflow"] == "demo-deterministic"
     assert observed["validated_registry"] is registry
-    assert observed["workflow"] == "demo-provider-free"
+    assert observed["workflow"] == "demo-deterministic"
     assert observed["registry"] is registry
-    assert observed["command"] == "xrtm web workflow run demo-provider-free"
+    assert observed["command"] == "xrtm web workflow run demo-deterministic"
     assert observed["runs_dir"] == runs_dir
     assert observed["user"] == "analyst"
     assert observed["compare"] == (baseline_dir, runs_dir / "edited-run")
@@ -302,7 +302,7 @@ def test_workbench_validate_run_and_compare_paths_are_bounded(
     with pytest.raises(ValueError, match="invalid run reference"):
         run_workbench_workflow(
             registry,
-            workflow_name="demo-provider-free",
+            workflow_name="demo-deterministic",
             runs_dir=runs_dir,
             baseline_run_ref="../escape",
         )
@@ -393,7 +393,7 @@ def test_workbench_snapshot_and_html_expose_gui_loop(tmp_path: Path) -> None:
 def test_workbench_snapshot_centers_single_path_canvas(tmp_path: Path) -> None:
     workflows_dir = tmp_path / "workflows"
 
-    snapshot = workbench_snapshot(Path("missing-runs"), workflows_dir, workflow_name="demo-provider-free")
+    snapshot = workbench_snapshot(Path("missing-runs"), workflows_dir, workflow_name="demo-deterministic")
 
     ys = [int(node["y"]) for node in snapshot["canvas"]["nodes"]]
     assert ys
@@ -409,11 +409,11 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
     store = WebUIStateStore(app_db_path)
     store.ensure_schema()
 
-    run_result = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+    run_result = run_workbench_workflow(registry, workflow_name="demo-deterministic", runs_dir=runs_dir)
     version = store.create_workflow_version(
         registry=registry,
         values={
-            "workflow_name": "demo-provider-free",
+            "workflow_name": "demo-deterministic",
             "label": "Visual acceptance lineage snapshot with an intentionally verbose title",
         },
     )
@@ -444,7 +444,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
         runs_dir=runs_dir,
         values={
             "context_type": "workflow",
-            "workflow_name": "demo-provider-free",
+            "workflow_name": "demo-deterministic",
             "question_prompt": (
                 "Will the redesigned Playground keep long single-question prompts readable without a browser gate?"
             ),
@@ -682,7 +682,7 @@ def test_webui_visual_acceptance_routes_use_shell_contracts_and_layout_guards(tm
 
         playground = _request_json(f"{base_url}/api/playground")
         assert playground["session"]["ready_to_run"] is True
-        assert playground["context_preview"]["reference_name"] == "demo-provider-free"
+        assert playground["context_preview"]["reference_name"] == "demo-deterministic"
         assert playground["graph_preview"]["nodes"]
 
         observatory = _request_json(f"{base_url}/api/runs")
@@ -722,10 +722,10 @@ def test_workbench_webui_creates_draft_and_rejects_unsafe_patch(tmp_path: Path) 
         created = _request_json(
             f"{base_url}/api/drafts",
             method="POST",
-            payload={"source_workflow_name": "demo-provider-free"},
+            payload={"source_workflow_name": "demo-deterministic"},
         )
         assert created["id"].startswith("draft-")
-        assert created["draft_workflow_name"].startswith("demo-provider-free-draft")
+        assert created["draft_workflow_name"].startswith("demo-deterministic-draft")
         assert (workflows_dir / f"{created['draft_workflow_name']}.json").exists()
         assert created["guidance"]["limitations"]
         assert created["guidance"]["supported_edits"]
@@ -762,7 +762,7 @@ def test_webui_authoring_catalog_and_creation_modes(tmp_path: Path) -> None:
 
         catalog = _request_json(f"{base_url}/api/authoring/catalog")
         assert {item["key"] for item in catalog["creation_modes"]} == {"scratch", "template", "clone"}
-        assert {item["template_id"] for item in catalog["templates"]} >= {"provider-free-demo", "ensemble-starter"}
+        assert {item["template_id"] for item in catalog["templates"]} >= {"deterministic-demo", "ensemble-starter"}
         assert any(item["implementation"].endswith("question_context_node") for item in catalog["node_catalog"])
 
         scratch = _request_json(
@@ -792,7 +792,7 @@ def test_webui_authoring_catalog_and_creation_modes(tmp_path: Path) -> None:
         assert template["creation_mode"] == "template"
         assert template["template_id"] == "ensemble-starter"
         assert template["authoring"]["graph"]["parallel_groups"]["candidate_fanout"] == [
-            "provider_free_control",
+            "deterministic_control",
             "time_series_baseline",
         ]
         assert (workflows_dir / "template-webui-authoring.json").exists()
@@ -802,12 +802,12 @@ def test_webui_authoring_catalog_and_creation_modes(tmp_path: Path) -> None:
             method="POST",
             payload={
                 "creation_mode": "clone",
-                "source_workflow_name": "demo-provider-free",
+                "source_workflow_name": "demo-deterministic",
                 "draft_workflow_name": "clone-webui-authoring",
             },
         )
         assert cloned["creation_mode"] == "clone"
-        assert cloned["source_workflow_name"] == "demo-provider-free"
+        assert cloned["source_workflow_name"] == "demo-deterministic"
         assert cloned["workflow"]["source"] == "local"
         assert (workflows_dir / "clone-webui-authoring.json").exists()
     finally:
@@ -847,7 +847,7 @@ def test_webui_authoring_patch_updates_workflow_fields_and_graph(tmp_path: Path)
                         "tags": ["webui", "authoring"],
                     },
                     "questions": {"limit": 3},
-                    "runtime": {"provider": "mock", "base_url": None, "model": None, "max_tokens": 512},
+                    "runtime": {"provider": "deterministic", "base_url": None, "model": None, "max_tokens": 512},
                     "artifacts": {
                         "write_report": True,
                         "write_blueprint_copy": True,
@@ -975,7 +975,7 @@ def test_studio_api_alias_exposes_graph_contract_and_preview_validation(tmp_path
                 "action": {
                     "type": "update-node",
                     "node_name": "aggregate_candidates",
-                    "config": {"weights": {"provider_free_control": 70, "time_series_baseline": 30}},
+                    "config": {"weights": {"deterministic_control": 70, "time_series_baseline": 30}},
                 }
             },
         )
@@ -983,7 +983,7 @@ def test_studio_api_alias_exposes_graph_contract_and_preview_validation(tmp_path
         assert patched["validation"]["persisted"] is False
         aggregate = next(node for node in patched["canvas"]["nodes"] if node["name"] == "aggregate_candidates")
         assert aggregate["description"]
-        assert aggregate["config"]["weights"]["provider_free_control"] == pytest.approx(0.7)
+        assert aggregate["config"]["weights"]["deterministic_control"] == pytest.approx(0.7)
 
         loaded = _request_json(f"{base_url}/api/studio/drafts/{draft_id}")
         assert loaded["studio"]["read_only_graph_sections"] == ["parallel_groups", "conditional_routes"]
@@ -1025,7 +1025,7 @@ def test_webui_authoring_clone_flow_runs_and_compares_candidate(tmp_path: Path) 
     workflows_dir = tmp_path / "workflows"
     runs_dir = tmp_path / "runs"
     registry = WorkflowRegistry(local_roots=(workflows_dir,))
-    baseline = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+    baseline = run_workbench_workflow(registry, workflow_name="demo-deterministic", runs_dir=runs_dir)
 
     server = create_web_server(runs_dir=runs_dir, workflows_dir=workflows_dir, port=0)
     thread = Thread(target=server.serve_forever, daemon=True)
@@ -1039,7 +1039,7 @@ def test_webui_authoring_clone_flow_runs_and_compares_candidate(tmp_path: Path) 
             method="POST",
             payload={
                 "creation_mode": "clone",
-                "source_workflow_name": "demo-provider-free",
+                "source_workflow_name": "demo-deterministic",
                 "draft_workflow_name": "clone-authoring-compare",
                 "baseline_run_id": baseline.run_id,
             },
@@ -1059,7 +1059,7 @@ def test_webui_authoring_clone_flow_runs_and_compares_candidate(tmp_path: Path) 
                         "tags": ["compare"],
                     },
                     "questions": {"limit": 1},
-                    "runtime": {"provider": "mock", "base_url": None, "model": None, "max_tokens": 768},
+                    "runtime": {"provider": "deterministic", "base_url": None, "model": None, "max_tokens": 768},
                     "artifacts": {
                         "write_report": True,
                         "write_blueprint_copy": True,
@@ -1089,7 +1089,7 @@ def test_webui_p0_api_routes_use_product_services(tmp_path: Path) -> None:
     workflows_dir = tmp_path / "workflows"
     runs_dir = tmp_path / "runs"
     registry = WorkflowRegistry(local_roots=(workflows_dir,))
-    result = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+    result = run_workbench_workflow(registry, workflow_name="demo-deterministic", runs_dir=runs_dir)
     report_path = runs_dir / result.run_id / "report.html"
     report_path.unlink()
 
@@ -1107,30 +1107,30 @@ def test_webui_p0_api_routes_use_product_services(tmp_path: Path) -> None:
 
         providers = _request_json(f"{base_url}/api/providers/status")
         assert providers["surface"]["name"] == "Provider status"
-        assert providers["provider_free"]["ready"] is True
-        assert providers["provider_free"]["status"] == "ready"
-        assert "Shared CLI/WebUI launch contract" in providers["provider_free"]["trust_cues"]
+        assert providers["deterministic"]["ready"] is True
+        assert providers["deterministic"]["status"] == "ready"
+        assert "Shared CLI/WebUI launch contract" in providers["deterministic"]["trust_cues"]
         assert providers["local_runtime"]["label"] == "Local runtime (optional)"
         assert providers["local_runtime"]["status"] == "optional"
         assert providers["cards"][1]["status"] == "optional"
         assert "openai-compatible-endpoint" in providers["first_class_categories"]
 
-        explanation = _request_json(f"{base_url}/api/workflows/demo-provider-free/explain")
-        assert explanation["workflow_name"] == "demo-provider-free"
+        explanation = _request_json(f"{base_url}/api/workflows/demo-deterministic/explain")
+        assert explanation["workflow_name"] == "demo-deterministic"
         assert "runs" in explanation["explanation"]["summary"]
 
-        workflow_detail = _request_json(f"{base_url}/api/workflows/demo-provider-free")
+        workflow_detail = _request_json(f"{base_url}/api/workflows/demo-deterministic")
         assert workflow_detail["schema_version"] == "xrtm.webui.workflow-detail.v2"
-        assert workflow_detail["actions"]["run"]["href"] == "/api/workflows/demo-provider-free/run"
-        assert workflow_detail["actions"]["explain"]["cli_command"] == "xrtm workflow explain demo-provider-free"
-        assert workflow_detail["actions"]["validate"]["cli_command"] == "xrtm workflow validate demo-provider-free"
-        assert workflow_detail["compatibility"]["legacy_route"] == "/workbench?workflow=demo-provider-free"
-        assert workflow_detail["actions"]["run"]["trust_cues"][0] == "Provider-free mode remains the default released path for 0.8.7."
+        assert workflow_detail["actions"]["run"]["href"] == "/api/workflows/demo-deterministic/run"
+        assert workflow_detail["actions"]["explain"]["cli_command"] == "xrtm workflow explain demo-deterministic"
+        assert workflow_detail["actions"]["validate"]["cli_command"] == "xrtm workflow validate demo-deterministic"
+        assert workflow_detail["compatibility"]["legacy_route"] == "/workbench?workflow=demo-deterministic"
+        assert workflow_detail["actions"]["run"]["trust_cues"][0] == "Deterministic mode remains the default released path for 0.8.7."
         assert workflow_detail["explanation"]["nodes"]
 
-        validation = _request_json(f"{base_url}/api/workflows/demo-provider-free/validate", method="POST")
+        validation = _request_json(f"{base_url}/api/workflows/demo-deterministic/validate", method="POST")
         assert validation["ok"] is True
-        assert validation["workflow_name"] == "demo-provider-free"
+        assert validation["workflow_name"] == "demo-deterministic"
 
         start_run = _request_json(f"{base_url}/api/start", method="POST", payload={"limit": 1, "user": "starter"})
         assert start_run["href"].startswith("/runs/")
@@ -1139,20 +1139,20 @@ def test_webui_p0_api_routes_use_product_services(tmp_path: Path) -> None:
         launched = _request_json(
             f"{base_url}/api/runs",
             method="POST",
-            payload={"workflow_name": "demo-provider-free", "limit": 1, "baseline_run_id": start_run["run_id"]},
+            payload={"workflow_name": "demo-deterministic", "limit": 1, "baseline_run_id": start_run["run_id"]},
         )
         assert launched["href"] == f"/runs/{launched['run_id']}"
         assert launched["compare"]["baseline_run_id"] == start_run["run_id"]
 
         launched_from_detail = _request_json(
-            f"{base_url}/api/workflows/demo-provider-free/run",
+            f"{base_url}/api/workflows/demo-deterministic/run",
             method="POST",
             payload={"limit": 1, "baseline_run_id": start_run["run_id"]},
         )
-        assert launched_from_detail["workflow_name"] == "demo-provider-free"
+        assert launched_from_detail["workflow_name"] == "demo-deterministic"
         assert launched_from_detail["compare"]["baseline_run_id"] == start_run["run_id"]
 
-        refreshed_detail = _request_json(f"{base_url}/api/workflows/demo-provider-free")
+        refreshed_detail = _request_json(f"{base_url}/api/workflows/demo-deterministic")
         assert refreshed_detail["recent_runs"][0]["run_id"] == launched_from_detail["run_id"]
         assert refreshed_detail["recent_runs"][0]["report_available"] is True
         assert refreshed_detail["actions"]["run"]["baseline_options"][0]["run_id"] == launched_from_detail["run_id"]
@@ -1200,7 +1200,7 @@ def test_run_export_cleans_up_temp_files_on_failure(tmp_path: Path, monkeypatch:
     workflows_dir = tmp_path / "workflows"
     runs_dir = tmp_path / "runs"
     registry = WorkflowRegistry(local_roots=(workflows_dir,))
-    result = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+    result = run_workbench_workflow(registry, workflow_name="demo-deterministic", runs_dir=runs_dir)
 
     def _failing_export(_run_dir: Path, output_path: Path, *, format: str) -> None:
         output_path.write_text(f"partial-{format}", encoding="utf-8")
@@ -1232,7 +1232,7 @@ def test_cli_and_webui_run_mutations_share_launch_services(
     profiles_dir = tmp_path / ".xrtm" / "profiles"
     runs_dir = tmp_path / "runs"
     workflows_dir.mkdir(parents=True)
-    profile = WorkflowProfile(name="ops-profile", provider="mock", limit=2, runs_dir=str(runs_dir))
+    profile = WorkflowProfile(name="ops-profile", provider="deterministic", limit=2, runs_dir=str(runs_dir))
     ProfileStore(profiles_dir).create(profile)
 
     start_run_dir = runs_dir / "start-run"
@@ -1248,7 +1248,7 @@ def test_cli_and_webui_run_mutations_share_launch_services(
         calls.append(("start", limit, runs_dir, user))
         return SimpleNamespace(
             run_id="start-run",
-            run=SimpleNamespace(run_id="start-run", run_dir=start_run_dir, status="succeeded", provider="mock", command="xrtm start"),
+            run=SimpleNamespace(run_id="start-run", run_dir=start_run_dir, status="succeeded", provider="deterministic", command="xrtm start"),
         )
 
     def fake_run_workflow(
@@ -1273,7 +1273,7 @@ def test_cli_and_webui_run_mutations_share_launch_services(
                 run_id="workflow-run",
                 run_dir=workflow_run_dir,
                 status="succeeded",
-                provider=provider or "mock",
+                provider=provider or "deterministic",
                 command=command or f"xrtm workflow run {name}",
             ),
         )
@@ -1282,7 +1282,7 @@ def test_cli_and_webui_run_mutations_share_launch_services(
         calls.append(("profile", name, profiles_dir, runs_dir))
         return SimpleNamespace(
             run_id="profile-run",
-            run=SimpleNamespace(run_id="profile-run", run_dir=profile_run_dir, status="succeeded", provider="mock", command=f"xrtm run profile {name}"),
+            run=SimpleNamespace(run_id="profile-run", run_dir=profile_run_dir, status="succeeded", provider="deterministic", command=f"xrtm run profile {name}"),
         )
 
     monkeypatch.setattr(cli_main, "run_doctor", lambda *args, **kwargs: True)
@@ -1300,7 +1300,7 @@ def test_cli_and_webui_run_mutations_share_launch_services(
         [
             "workflow",
             "run",
-            "demo-provider-free",
+            "demo-deterministic",
             "--workflows-dir",
             str(workflows_dir),
             "--runs-dir",
@@ -1308,7 +1308,7 @@ def test_cli_and_webui_run_mutations_share_launch_services(
             "--limit",
             "1",
             "--provider",
-            "mock",
+            "deterministic",
         ],
     )
     cli_profile = runner.invoke(cli, ["run", "profile", "ops-profile", "--profiles-dir", str(profiles_dir), "--runs-dir", str(runs_dir)])
@@ -1328,7 +1328,7 @@ def test_cli_and_webui_run_mutations_share_launch_services(
         web_workflow = _request_json(
             f"{base_url}/api/runs",
             method="POST",
-            payload={"workflow_name": "demo-provider-free", "limit": 1, "provider": "mock"},
+            payload={"workflow_name": "demo-deterministic", "limit": 1, "provider": "deterministic"},
         )
         web_profile = _request_json(f"{base_url}/api/profiles/ops-profile/run", method="POST")
 
@@ -1341,10 +1341,10 @@ def test_cli_and_webui_run_mutations_share_launch_services(
         thread.join(timeout=5)
 
     assert calls[0] == ("start", 1, runs_dir, "cli-user")
-    assert calls[1][:6] == ("workflow", "demo-provider-free", workflows_dir, runs_dir, 1, "mock")
+    assert calls[1][:6] == ("workflow", "demo-deterministic", workflows_dir, runs_dir, 1, "deterministic")
     assert calls[2] == ("profile", "ops-profile", profiles_dir, runs_dir)
     assert calls[3] == ("start", 1, runs_dir, "web-user")
-    assert calls[4][:6] == ("workflow", "demo-provider-free", workflows_dir, runs_dir, 1, "mock")
+    assert calls[4][:6] == ("workflow", "demo-deterministic", workflows_dir, runs_dir, 1, "deterministic")
     assert calls[5] == ("profile", "ops-profile", profiles_dir, None)
 
 
@@ -1374,7 +1374,7 @@ def test_webui_operator_api_routes_manage_profiles_monitors_and_cleanup(tmp_path
         profile_run = _request_json(f"{base_url}/api/profiles/starter/run", method="POST")
         assert profile_run["href"] == f"/runs/{profile_run['run_id']}"
 
-        monitor = _request_json(f"{base_url}/api/monitors", method="POST", payload={"limit": 1, "provider": "mock"})
+        monitor = _request_json(f"{base_url}/api/monitors", method="POST", payload={"limit": 1, "provider": "deterministic"})
         monitor_id = monitor["run_id"]
         listed_monitors = _request_json(f"{base_url}/api/monitors")
         assert any(item["run_id"] == monitor_id for item in listed_monitors["items"])
@@ -1419,7 +1419,7 @@ def test_webui_playground_saveback_routes_persist_workflow_then_profile(tmp_path
     workflows_dir = tmp_path / ".xrtm" / "workflows"
     runs_dir = tmp_path / "runs"
     session = launch_module.run_sandbox_session(
-        template_id="provider-free-demo",
+        template_id="deterministic-demo",
         question="Will the playground save-back routes persist reusable state?",
         runs_dir=runs_dir,
         write_report=False,
@@ -1454,10 +1454,38 @@ def test_webui_playground_saveback_routes_persist_workflow_then_profile(tmp_path
         thread.join(timeout=5)
 
 
+def test_webui_api_get_errors_return_json_payloads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workflows_dir = tmp_path / "workflows"
+    server = create_web_server(runs_dir=tmp_path / "runs", workflows_dir=workflows_dir, port=0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        _, port = server.server_address
+        base_url = f"http://127.0.0.1:{port}"
+
+        handler = server.RequestHandlerClass.keywords["state_store"]
+        monkeypatch.setattr(
+            handler,
+            "workflow_detail_snapshot",
+            lambda **_kwargs: (_ for _ in ()).throw(ValueError("unsupported workflow runtime provider: broken-runtime")),
+        )
+
+        with pytest.raises(HTTPError) as excinfo:
+            _request_json(f"{base_url}/api/workflows/demo-deterministic")
+        assert excinfo.value.code == 400
+        assert "application/json" in excinfo.value.headers.get("Content-Type", "")
+        payload = json.loads(excinfo.value.read().decode("utf-8"))
+        assert payload["error"] == "unsupported workflow runtime provider: broken-runtime"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_webui_playground_save_profile_route_preserves_shared_error_semantics(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     session = launch_module.run_sandbox_session(
-        template_id="provider-free-demo",
+        template_id="deterministic-demo",
         question="Will the shared save-back error reach the WebUI route?",
         runs_dir=runs_dir,
         write_report=False,
@@ -1488,7 +1516,7 @@ def test_webui_playground_save_profile_route_preserves_shared_error_semantics(tm
 def test_run_detail_snapshot_surfaces_readable_forecast_rows_and_missing_report(tmp_path: Path) -> None:
     registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
     runs_dir = tmp_path / "runs"
-    result = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+    result = run_workbench_workflow(registry, workflow_name="demo-deterministic", runs_dir=runs_dir)
     report_path = runs_dir / result.run_id / "report.html"
     report_path.unlink()
 
@@ -1523,29 +1551,29 @@ def test_run_detail_snapshot_surfaces_readable_forecast_rows_and_missing_report(
 def test_workflow_detail_snapshot_exposes_recent_runs_and_compatibility(tmp_path: Path) -> None:
     registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
     runs_dir = tmp_path / "runs"
-    result = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+    result = run_workbench_workflow(registry, workflow_name="demo-deterministic", runs_dir=runs_dir)
 
     store = WebUIStateStore(tmp_path / "app-state.db")
     store.ensure_schema()
     store.refresh_indexes(runs_dir=runs_dir, registry=registry)
 
-    snapshot = store.workflow_detail_snapshot(runs_dir=runs_dir, registry=registry, workflow_name="demo-provider-free")
+    snapshot = store.workflow_detail_snapshot(runs_dir=runs_dir, registry=registry, workflow_name="demo-deterministic")
 
     assert snapshot["schema_version"] == "xrtm.webui.workflow-detail.v2"
     assert snapshot["surface"]["title"] == "Workflow inspector"
     assert snapshot["summary_cards"][0] == {"label": "Source", "value": "builtin"}
-    assert snapshot["explanation"]["workflow_name"] == "demo-provider-free"
-    assert "provider-free" in snapshot["explanation"]["summary"]
+    assert snapshot["explanation"]["workflow_name"] == "demo-deterministic"
+    assert "deterministic" in snapshot["explanation"]["summary"]
     assert snapshot["recent_runs"][0]["run_id"] == result.run_id
     assert snapshot["recent_runs"][0]["href"] == f"/runs/{result.run_id}"
     assert snapshot["recent_runs"][0]["report_available"] is True
-    assert snapshot["actions"]["explain"]["cli_command"] == "xrtm workflow explain demo-provider-free"
-    assert snapshot["actions"]["validate"]["success_label"] == "Workflow valid: demo-provider-free (xrtm.workflow.v1)"
-    assert snapshot["actions"]["run"]["href"] == "/api/workflows/demo-provider-free/run"
+    assert snapshot["actions"]["explain"]["cli_command"] == "xrtm workflow explain demo-deterministic"
+    assert snapshot["actions"]["validate"]["success_label"] == "Workflow valid: demo-deterministic (xrtm.workflow.v1)"
+    assert snapshot["actions"]["run"]["href"] == "/api/workflows/demo-deterministic/run"
     assert snapshot["actions"]["run"]["trust_cues"][2] == "Every run still lands in Observatory with report, export, and compare evidence."
     assert snapshot["actions"]["run"]["baseline_options"][0]["run_id"] == result.run_id
-    assert snapshot["compatibility"]["primary_route"] == "/studio?workflow=demo-provider-free"
-    assert snapshot["compatibility"]["legacy_route"] == "/workbench?workflow=demo-provider-free"
+    assert snapshot["compatibility"]["primary_route"] == "/studio?workflow=demo-deterministic"
+    assert snapshot["compatibility"]["legacy_route"] == "/workbench?workflow=demo-deterministic"
     assert snapshot["guided_actions"][0]["label"] == "Clone into local draft"
 
 
@@ -1581,8 +1609,8 @@ def test_app_shell_snapshot_marks_available_local_runtime_when_healthy(
 def test_compare_snapshot_groups_metrics_and_question_titles(tmp_path: Path) -> None:
     registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
     runs_dir = tmp_path / "runs"
-    baseline = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
-    candidate = run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+    baseline = run_workbench_workflow(registry, workflow_name="demo-deterministic", runs_dir=runs_dir)
+    candidate = run_workbench_workflow(registry, workflow_name="demo-deterministic", runs_dir=runs_dir)
 
     store = WebUIStateStore(tmp_path / "app-state.db")
     store.ensure_schema()
@@ -1611,7 +1639,7 @@ def test_refresh_indexes_replaces_rows_without_full_table_clears(
 ) -> None:
     registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
     runs_dir = tmp_path / "runs"
-    run_workbench_workflow(registry, workflow_name="demo-provider-free", runs_dir=runs_dir)
+    run_workbench_workflow(registry, workflow_name="demo-deterministic", runs_dir=runs_dir)
 
     store = WebUIStateStore(tmp_path / "app-state.db")
     store.ensure_schema()
@@ -1656,7 +1684,7 @@ def test_playground_state_store_runs_shared_sandbox_session(tmp_path: Path) -> N
     shell = store.app_shell_snapshot(runs_dir=runs_dir, registry=registry)
     assert shell["app"]["subtitle"] == "Local forecasting cockpit"
     assert shell["app"]["system_status"]["tone"] == "healthy"
-    assert shell["app"]["system_status"]["label"] == "Provider-free baseline ready"
+    assert shell["app"]["system_status"]["label"] == "Deterministic baseline ready"
     assert shell["app"]["system_status"]["detail"]
     assert "Shared local shell" in shell["app"]["trust_cues"]
     assert "SQLite draft state" in shell["app"]["trust_cues"]
@@ -1687,7 +1715,7 @@ def test_playground_state_store_runs_shared_sandbox_session(tmp_path: Path) -> N
     assert local_llm_card["status"] in {"available", "optional"}
     runs_snapshot = store.runs_snapshot(runs_dir=runs_dir, registry=registry)
     assert runs_snapshot["analytics"]["summary"]["run_count"] == 0
-    assert runs_snapshot["empty_state"]["body"] == "Clear filters or start a provider-free workflow to create a run for inspection."
+    assert runs_snapshot["empty_state"]["body"] == "Clear filters or start a deterministic workflow to create a run for inspection."
     assert len(runs_snapshot["analytics"]["calibration_curve"]) == 10
     assert len(runs_snapshot["analytics"]["uncertainty_distribution"]) == 10
 
@@ -1696,18 +1724,18 @@ def test_playground_state_store_runs_shared_sandbox_session(tmp_path: Path) -> N
         runs_dir=runs_dir,
         values={
             "context_type": "template",
-            "template_id": "provider-free-demo",
+            "template_id": "deterministic-demo",
             "question_prompt": "Will the playground surface expose ordered step inspection?",
             "question_title": "Playground inspection coverage",
         },
     )
-    assert updated["session"]["template_id"] == "provider-free-demo"
+    assert updated["session"]["template_id"] == "deterministic-demo"
     assert updated["session"]["question_title"] == "Playground inspection coverage"
 
     launched = store.run_playground_session(registry=registry, runs_dir=runs_dir)
 
     assert launched["last_result"]["run"]["command"] == "xrtm web playground"
-    assert launched["last_result"]["context"]["template_id"] == "provider-free-demo"
+    assert launched["last_result"]["context"]["template_id"] == "deterministic-demo"
     assert launched["last_result"]["inspection_steps"][0]["node_id"] == "load_questions"
     assert launched["last_result"]["graph_trace_artifact"]["available"] is True
     assert launched["last_result"]["execution_trace"]["source"] == "graph_trace"
@@ -1767,7 +1795,7 @@ def test_playground_state_store_uses_shared_launch_contract(monkeypatch: pytest.
         run_payload = {
             "run_id": "sandbox-web-shared",
             "status": "completed",
-            "provider": "mock",
+            "provider": "deterministic",
             "command": kwargs["command"],
             "created_at": "2026-05-01T10:00:00+00:00",
             "updated_at": "2026-05-01T10:00:05+00:00",
@@ -1813,7 +1841,7 @@ def test_playground_state_store_uses_shared_launch_contract(monkeypatch: pytest.
         runs_dir=runs_dir,
         values={
             "context_type": "workflow",
-            "workflow_name": "demo-provider-free",
+            "workflow_name": "demo-deterministic",
             "question_prompt": "Will the WebUI stay on the shared contract?",
         },
     )
@@ -1869,12 +1897,12 @@ def test_playground_webui_routes_update_state_and_run_session(tmp_path: Path) ->
             method="PATCH",
             payload={
                 "context_type": "workflow",
-                "workflow_name": "demo-provider-free",
+                "workflow_name": "demo-deterministic",
                 "question_prompt": "Will the WebUI playground reuse the shared sandbox backend?",
                 "resolution_criteria": "Resolves YES if the response comes from the shared sandbox layer.",
             },
         )
-        assert updated["session"]["workflow_name"] == "demo-provider-free"
+        assert updated["session"]["workflow_name"] == "demo-deterministic"
         assert updated["session"]["question_prompt"].startswith("Will the WebUI playground")
 
         launched = _request_json(
@@ -1882,7 +1910,7 @@ def test_playground_webui_routes_update_state_and_run_session(tmp_path: Path) ->
             method="POST",
             payload={
                 "context_type": "workflow",
-                "workflow_name": "demo-provider-free",
+                "workflow_name": "demo-deterministic",
                 "question_prompt": "Will the WebUI playground reuse the shared sandbox backend?",
             },
         )
@@ -1913,14 +1941,14 @@ def test_webui_state_store_product_foundation_schema_and_safe_mutations(tmp_path
 
     workflow_version = store.create_workflow_version(
         registry=registry,
-        values={"workflow_name": "demo-provider-free", "label": "Provider-free v1"},
+        values={"workflow_name": "demo-deterministic", "label": "Provider-free v1"},
     )
-    assert workflow_version["workflow_name"] == "demo-provider-free"
+    assert workflow_version["workflow_name"] == "demo-deterministic"
     assert workflow_version["source"] == "workflow"
     assert workflow_version["is_default"] is True
-    assert workflow_version["blueprint"]["runtime"]["provider"] == "mock"
+    assert workflow_version["blueprint"]["runtime"]["provider"] == "deterministic"
     assert workflow_version["graph"] == workflow_version["blueprint"]["graph"]
-    assert workflow_version["config"]["runtime"]["provider"] == "mock"
+    assert workflow_version["config"]["runtime"]["provider"] == "deterministic"
     assert workflow_version["canvas"]["nodes"]
     assert workflow_version["run_provenance"]["execution_linkage"]["status"] == "metadata-only"
     assert workflow_version["metadata"]["no_arbitrary_code"] is True
@@ -1928,7 +1956,7 @@ def test_webui_state_store_product_foundation_schema_and_safe_mutations(tmp_path
     assert fetched_version["id"] == workflow_version["id"]
     assert fetched_version["lineage"] == []
 
-    unsafe_payload = registry.load("demo-provider-free").to_json_dict()
+    unsafe_payload = registry.load("demo-deterministic").to_json_dict()
     unsafe_payload["name"] = "unsafe-webui-version"
     unsafe_payload["graph"]["nodes"]["forecast"]["implementation"] = "unsafe.custom.plugin_node"
     registry.local_roots[0].mkdir(parents=True, exist_ok=True)
@@ -1974,7 +2002,7 @@ def test_webui_state_store_product_foundation_schema_and_safe_mutations(tmp_path
     assert restored["version"]["parent_id"] == workflow_version["id"]
     assert restored["version"]["is_default"] is True
     assert store.get_workflow_version(workflow_version["id"])["is_default"] is False
-    assert store.versions_snapshot(registry=registry)["defaults"]["demo-provider-free"] == restored["version"]["id"]
+    assert store.versions_snapshot(registry=registry)["defaults"]["demo-deterministic"] == restored["version"]["id"]
 
     batch = store.create_batch_run(
         registry=registry,
@@ -2036,12 +2064,12 @@ def test_webui_product_foundation_api_routes_are_local_first(tmp_path: Path) -> 
         version = _request_json(
             f"{base_url}/api/versions",
             method="POST",
-            payload={"workflow_name": "demo-provider-free", "label": "API foundation v1"},
+            payload={"workflow_name": "demo-deterministic", "label": "API foundation v1"},
         )
         assert version["id"].startswith("version-")
         assert version["graph"]["nodes"]
         assert version["canvas"]["nodes"]
-        assert version["config"]["runtime"]["provider"] == "mock"
+        assert version["config"]["runtime"]["provider"] == "deterministic"
 
         fetched_version = _request_json(f"{base_url}/api/versions/{version['id']}")
         assert fetched_version["id"] == version["id"]
@@ -2055,7 +2083,7 @@ def test_webui_product_foundation_api_routes_are_local_first(tmp_path: Path) -> 
             payload={"user": "api-local"},
         )
         assert version_run["version_id"] == version["id"]
-        assert version_run["workflow_name"] == "demo-provider-free"
+        assert version_run["workflow_name"] == "demo-deterministic"
         assert version_run["href"].startswith("/runs/")
 
         fetched_version = _request_json(f"{base_url}/api/versions/{version['id']}")
@@ -2082,7 +2110,7 @@ def test_webui_product_foundation_api_routes_are_local_first(tmp_path: Path) -> 
         assert version_diff["summary"]["same_workflow"] is True
 
         versions = _request_json(f"{base_url}/api/versions")
-        assert versions["defaults"]["demo-provider-free"] == version["id"]
+        assert versions["defaults"]["demo-deterministic"] == version["id"]
         assert versions["guidance"]["no_arbitrary_code"] is True
 
         batch = _request_json(
@@ -2126,7 +2154,7 @@ def test_webui_product_foundation_api_routes_are_local_first(tmp_path: Path) -> 
         cancelled = _request_json(
             f"{base_url}/api/batch",
             method="POST",
-            payload={"workflow_name": "demo-provider-free", "rows": [{"question": "Will cancel work?"}]},
+            payload={"workflow_name": "demo-deterministic", "rows": [{"question": "Will cancel work?"}]},
         )
         cancelled = _request_json(
             f"{base_url}/api/batch/{cancelled['id']}",
@@ -2197,9 +2225,9 @@ def test_batch_runner_executes_and_exports_rows(tmp_path: Path) -> None:
     batch = store.create_batch_run(
         registry=registry,
         values={
-            "workflow_name": "demo-provider-free",
+            "workflow_name": "demo-deterministic",
             "label": "Local regression batch",
-            "rows": [{"question": "Will provider-free batch rows execute?"}, {"question": "Will Observatory see row runs?"}],
+            "rows": [{"question": "Will deterministic batch rows execute?"}, {"question": "Will Observatory see row runs?"}],
         },
     )
     assert batch["status"] == "staged"

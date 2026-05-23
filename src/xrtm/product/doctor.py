@@ -14,7 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from xrtm.product.pipeline import package_versions
-from xrtm.product.providers import local_llm_status
+from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, local_llm_status
 
 SUPPORTED_PYTHON = ">=3.11,<3.14"
 SUPPORTED_PYTHON_MIN = (3, 11)
@@ -81,7 +81,8 @@ def doctor_snapshot(*, base_url: str | None = None, runs_dir: Path = DEFAULT_RUN
         "local_llm": local_llm_status(base_url=base_url),
         "next": {
             "start_command": RELEASED_START_COMMAND,
-            "provider_free_required": True,
+            "deterministic_required": True,
+            "default_provider": DETERMINISTIC_PROVIDER_NAME,
             "local_llm_optional": True,
         },
     }
@@ -133,13 +134,13 @@ def _import_check() -> DoctorCheck:
         return DoctorCheck(
             name="Core imports",
             ok=True,
-            detail="Provider-free smoke/baseline runtime imports loaded successfully.",
+            detail="Deterministic baseline runtime imports loaded successfully.",
         )
     return DoctorCheck(
         name="Core imports",
         ok=False,
         detail="Import failures: " + "; ".join(failures),
-        fix="Reinstall or repair the failing package imports before running the default provider-free smoke/baseline demo.",
+        fix="Reinstall or repair the failing package imports before running the default deterministic baseline demo.",
     )
 
 
@@ -178,7 +179,7 @@ def _runs_dir_check(runs_dir: Path) -> DoctorCheck:
         name="Default runs dir",
         ok=False,
         detail=f"{display} cannot be created because {parent} is not writable.",
-        fix="Choose a writable working directory before running the provider-free smoke/baseline path.",
+        fix="Choose a writable working directory before running the deterministic baseline path.",
     )
 
 
@@ -199,7 +200,7 @@ def _print_package_versions(console: Console, versions: dict[str, str]) -> None:
 
 
 def _print_readiness_checks(console: Console, checks: list[DoctorCheck]) -> None:
-    table = Table(title="Provider-Free Smoke/Baseline Checks")
+    table = Table(title="Deterministic Baseline Checks")
     table.add_column("Check", style="cyan")
     table.add_column("Status")
     table.add_column("Details")
@@ -213,7 +214,7 @@ def _print_readiness_summary(console: Console, ready: bool) -> None:
     status = "READY" if ready else "NOT READY"
     color = "green" if ready else "red"
     lines = [
-        f"Default provider-free smoke/baseline first run: {status}",
+        f"Default deterministic first run: {status}",
         f"Released next command: {RELEASED_START_COMMAND}",
         "xrtm doctor verifies package health; the released guided quickstart writes the first scored run and report.",
         "No API keys, commercial endpoint, or local model server are required for this path.",
@@ -229,14 +230,14 @@ def _print_next_steps(console: Console, ready: bool, checks: list[DoctorCheck]) 
             "3. Confirm artifacts with xrtm artifacts inspect --latest --runs-dir runs",
             "4. Open/regenerate the report with xrtm report html --latest --runs-dir runs",
             "5. Browse shipped workflows with xrtm workflow list",
-            "6. Inspect the demo workflow with xrtm workflow show demo-provider-free",
+            "6. Inspect the demo workflow with xrtm workflow show demo-deterministic",
             "7. Browse the same run with xrtm web --runs-dir runs or xrtm tui --runs-dir runs",
             "8. Make the same workflow repeatable with xrtm profile starter my-local --runs-dir runs",
             "9. Only after that, treat local-llm as the optional local OpenAI-compatible endpoint path.",
         ]
     else:
         failed_checks = [check for check in checks if not check.ok]
-        lines = ["1. Fix the blocking provider-free smoke/baseline checks above."]
+        lines = ["1. Fix the blocking deterministic baseline checks above."]
         for index, check in enumerate(failed_checks, start=2):
             action = check.fix or check.detail
             lines.append(f"{index}. {check.name}: {action}")
@@ -250,7 +251,7 @@ def _print_local_llm_panel(console: Console, status: dict) -> None:
     color = "green" if healthy else "yellow"
     readiness = "ready" if healthy else "not ready (optional)"
     lines = [
-        "local-llm is the released local OpenAI-compatible endpoint profile and does not affect provider-free readiness.",
+        "local-llm is the released local OpenAI-compatible endpoint profile and does not affect deterministic readiness.",
         f"Status: {readiness}",
         f"Base URL: {status['base_url']}",
         f"Health URL: {status['health_url']}",

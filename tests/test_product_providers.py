@@ -5,8 +5,8 @@ from unittest.mock import patch
 import xrtm.product.providers as providers_module
 from xrtm.product.providers import (
     DEFAULT_LOCAL_LLM_BASE_URL,
+    DETERMINISTIC_VALIDATION_MODE,
     OPENAI_COMPATIBLE_CATEGORY,
-    PROVIDER_FREE_VALIDATION_MODE,
     build_provider,
     local_llm_base_url,
     provider_runtime_metadata,
@@ -75,7 +75,7 @@ def test_build_provider_surfaces_local_llm_status_failure() -> None:
     assert DEFAULT_LOCAL_LLM_BASE_URL in message
     assert "curl http://localhost:8080/health" in message
     assert "connection refused" in message
-    assert "provider-free smoke mode" in message
+    assert "deterministic baseline mode" in message
 
 
 def test_build_provider_rejects_unknown_provider_with_taxonomy_guidance() -> None:
@@ -88,20 +88,20 @@ def test_build_provider_rejects_unknown_provider_with_taxonomy_guidance() -> Non
 
     assert "OpenAI-compatible endpoint profile" in message
     assert "coding-agent CLI contracts" in message
-    assert "provider-free smoke is a testing/baseline mode" in message
+    assert "deterministic mode is a testing/baseline mode" in message
 
 
-def test_provider_runtime_metadata_keeps_provider_free_out_of_first_class_categories() -> None:
-    mock_metadata = provider_runtime_metadata("mock")
+def test_provider_runtime_metadata_keeps_deterministic_out_of_first_class_categories() -> None:
+    deterministic_metadata = provider_runtime_metadata("deterministic")
     local_metadata = provider_runtime_metadata("local-llm")
 
-    assert mock_metadata["category"] is None
-    assert mock_metadata["validation_mode"] == PROVIDER_FREE_VALIDATION_MODE
-    assert mock_metadata["is_provider_free_baseline"] is True
+    assert deterministic_metadata["category"] is None
+    assert deterministic_metadata["validation_mode"] == DETERMINISTIC_VALIDATION_MODE
+    assert deterministic_metadata["is_deterministic_baseline"] is True
     assert local_metadata["category"] == OPENAI_COMPATIBLE_CATEGORY
     assert local_metadata["profile"] == "local-llm"
     assert local_metadata["deployment"] == "local"
-    assert local_metadata["is_provider_free_baseline"] is False
+    assert local_metadata["is_deterministic_baseline"] is False
 
 
 def test_provider_snapshot_marks_local_llm_as_openai_compatible_profile() -> None:

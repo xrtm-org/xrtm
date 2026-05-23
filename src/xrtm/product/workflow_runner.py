@@ -17,7 +17,7 @@ from xrtm.product.pipeline import (
     _prepare_run,
     _select_questions,
 )
-from xrtm.product.providers import provider_snapshot
+from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, normalize_provider_name, provider_snapshot
 from xrtm.product.reports import render_html_report
 from xrtm.product.workflow_graph import CompiledGraph, WorkflowGraphState, compile_workflow_blueprint, graph_trace_rows
 from xrtm.product.workflows import (
@@ -51,7 +51,8 @@ def build_demo_workflow_blueprint(
     max_tokens: int,
     workflow_kind: str = "demo",
 ) -> WorkflowBlueprint:
-    runtime_name = "provider-free-demo" if provider == "mock" else "local-openai-compatible"
+    provider = normalize_provider_name(provider)
+    runtime_name = "deterministic-demo" if provider == DETERMINISTIC_PROVIDER_NAME else "local-openai-compatible"
     nodes = {
         "load_questions": NodeSpec(kind="tool", implementation="xrtm.product.workflow_nodes.load_questions_node"),
         "forecast": NodeSpec(

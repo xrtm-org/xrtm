@@ -10,8 +10,8 @@ import pytest
 
 
 def _load_module():
-    module_path = Path(__file__).resolve().parents[1] / "scripts" / "docker_provider_free_acceptance.py"
-    spec = importlib.util.spec_from_file_location("docker_provider_free_acceptance", module_path)
+    module_path = Path(__file__).resolve().parents[1] / "scripts" / "docker_deterministic_acceptance.py"
+    spec = importlib.util.spec_from_file_location("docker_deterministic_acceptance", module_path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -20,12 +20,12 @@ def _load_module():
     return module
 
 
-def test_default_artifacts_dir_uses_docker_provider_free_path() -> None:
+def test_default_artifacts_dir_uses_docker_deterministic_path() -> None:
     module = _load_module()
 
     path = module.default_artifacts_dir(Path("/workspace"), "20260507T190000Z")
 
-    assert path == Path("/workspace/acceptance-studies/docker-provider-free/20260507T190000Z")
+    assert path == Path("/workspace/acceptance-studies/docker-deterministic/20260507T190000Z")
 
 
 def test_install_commands_separate_wheelhouse_and_pypi_modes() -> None:
@@ -52,6 +52,28 @@ def test_default_specs_support_repo_root_equal_to_workspace_root(tmp_path) -> No
 
     assert xrtm_spec == "xrtm==0.3.0"
     assert forecast_spec == "xrtm-forecast==0.6.6"
+
+
+def test_developer_example_script_prefers_deterministic_path(tmp_path: Path) -> None:
+    module = _load_module()
+    deterministic_path = (
+        tmp_path / "forecast" / "examples" / "providers" / "deterministic_analyst" / "run_deterministic_analyst.py"
+    )
+    deterministic_path.parent.mkdir(parents=True)
+    deterministic_path.write_text("print('ok')\n", encoding="utf-8")
+
+    assert module.developer_example_script(tmp_path) == deterministic_path
+
+
+def test_developer_example_script_falls_back_to_provider_free_path(tmp_path: Path) -> None:
+    module = _load_module()
+    provider_free_path = (
+        tmp_path / "forecast" / "examples" / "providers" / "provider_free_analyst" / "run_provider_free_analyst.py"
+    )
+    provider_free_path.parent.mkdir(parents=True)
+    provider_free_path.write_text("print('ok')\n", encoding="utf-8")
+
+    assert module.developer_example_script(tmp_path) == provider_free_path
 
 
 def test_repo_source_dir_prefers_repo_root_when_workspace_has_no_xrtm_checkout(tmp_path: Path) -> None:
@@ -85,7 +107,7 @@ def test_docker_run_command_is_disposable_and_mounts_persistent_artifacts(monkey
         artifact_source="wheelhouse",
         artifacts_dir=Path("/artifacts-host"),
         wheelhouse_dir=Path("/wheelhouse-host"),
-        image_tag="xrtm-provider-free-acceptance:py311",
+        image_tag="xrtm-deterministic-acceptance:py311",
         python_image="python:3.11-slim",
         xrtm_spec="xrtm==0.3.0",
         forecast_spec="xrtm-forecast==0.6.6",
@@ -111,7 +133,7 @@ def test_docker_run_command_supports_repo_root_equal_to_workspace_root(monkeypat
         artifact_source="wheelhouse",
         artifacts_dir=Path("/artifacts-host"),
         wheelhouse_dir=Path("/wheelhouse-host"),
-        image_tag="xrtm-provider-free-acceptance:py311",
+        image_tag="xrtm-deterministic-acceptance:py311",
         python_image="python:3.11-slim",
         xrtm_spec="xrtm==0.3.0",
         forecast_spec="xrtm-forecast==0.6.6",
@@ -142,7 +164,7 @@ def test_prepare_host_artifacts_dir_uses_managed_sandbox_when_requested(tmp_path
             "id": "sandbox-123",
             "path": str(created_dir),
             "state": "active",
-            "purpose": "docker-provider-free acceptance (pypi)",
+            "purpose": "docker-deterministic acceptance (pypi)",
             "type": "validation",
             "expires_at": "2026-05-12T00:00:00Z",
             "cleanup_policy": {"mode": "manual"},
@@ -176,7 +198,7 @@ def test_prepare_host_artifacts_dir_uses_managed_sandbox_when_requested(tmp_path
         args=args,
         workspace_root_path=workspace_root,
         repo_name="xrtm",
-        purpose="docker-provider-free acceptance (pypi)",
+        purpose="docker-deterministic acceptance (pypi)",
         default_dir_factory=module.default_artifacts_dir,
     )
 
@@ -192,7 +214,7 @@ def test_prepare_host_artifacts_dir_uses_managed_sandbox_when_requested(tmp_path
         "--repo",
         "xrtm",
         "--purpose",
-        "docker-provider-free acceptance (pypi)",
+        "docker-deterministic acceptance (pypi)",
         "--type",
         "validation",
         "--cleanup-policy",
@@ -235,8 +257,8 @@ def test_run_first_success_uses_released_start_journey(tmp_path, monkeypatch) ->
         ["xrtm", "doctor"],
         ["xrtm", "start", "--runs-dir", str(runs_dir)],
         ["xrtm", "workflow", "list"],
-        ["xrtm", "workflow", "show", "demo-provider-free"],
-        ["xrtm", "workflow", "run", "demo-provider-free", "--runs-dir", str(runs_dir)],
+        ["xrtm", "workflow", "show", "demo-deterministic"],
+        ["xrtm", "workflow", "run", "demo-deterministic", "--runs-dir", str(runs_dir)],
         ["xrtm", "runs", "show", "latest", "--runs-dir", str(runs_dir)],
         ["xrtm", "artifacts", "inspect", "--latest", "--runs-dir", str(runs_dir)],
         ["xrtm", "report", "html", "--latest", "--runs-dir", str(runs_dir)],
@@ -297,7 +319,7 @@ def test_run_workflow_authoring_covers_cli_and_webui_paths(tmp_path, monkeypatch
         elif url.endswith("/api/authoring/catalog"):
             body = {
                 "creation_modes": [{"key": "scratch"}, {"key": "template"}, {"key": "clone"}],
-                "templates": [{"template_id": "provider-free-demo"}],
+                "templates": [{"template_id": "deterministic-demo"}],
             }
         elif url.endswith("/api/drafts") and method == "POST":
             workflows_dir.mkdir(parents=True, exist_ok=True)
@@ -386,7 +408,7 @@ def test_run_workflow_authoring_covers_cli_and_webui_paths(tmp_path, monkeypatch
         ["xrtm", "runs", "show", "scratch-run", "--runs-dir", str(runs_dir)],
         ["xrtm", "runs", "compare", "baseline-run", "scratch-run", "--runs-dir", str(runs_dir)],
         ["xrtm", "report", "html", str(runs_dir / "scratch-run")],
-        ["xrtm", "workflow", "create", "clone", "demo-provider-free", "gate2-clone-authoring", "--workflows-dir", str(workflows_dir)],
+        ["xrtm", "workflow", "create", "clone", "demo-deterministic", "gate2-clone-authoring", "--workflows-dir", str(workflows_dir)],
         [
             "xrtm",
             "workflow",
@@ -468,8 +490,8 @@ def test_run_playground_covers_cli_and_webui_paths(tmp_path, monkeypatch) -> Non
         return {
             "schema_version": "xrtm.sandbox-session.v1",
             "run_id": "cli-playground-run",
-            "run": {"provider": "mock", "status": "completed"},
-            "context": {"context_type": "workflow", "workflow_name": "demo-provider-free"},
+            "run": {"provider": "deterministic", "status": "completed"},
+            "context": {"context_type": "workflow", "workflow_name": "demo-deterministic"},
             "labeling": {
                 "classification": "exploratory",
                 "inspection_mode": "read-only ordered step inspection",
@@ -497,8 +519,8 @@ def test_run_playground_covers_cli_and_webui_paths(tmp_path, monkeypatch) -> Non
             ],
             "save_back": {
                 "mode": "explicit",
-                "workflow": {"status": "ready", "recommended_name": "demo-provider-free"},
-                "profile": {"status": "ready", "workflow_name": "demo-provider-free"},
+                "workflow": {"status": "ready", "recommended_name": "demo-deterministic"},
+                "profile": {"status": "ready", "workflow_name": "demo-deterministic"},
             },
         }
 
@@ -506,8 +528,8 @@ def test_run_playground_covers_cli_and_webui_paths(tmp_path, monkeypatch) -> Non
         return {
             "schema_version": "xrtm.sandbox-session.v1",
             "run_id": "web-playground-run",
-            "run": {"provider": "mock", "status": "completed"},
-            "context": {"context_type": "template", "template_id": "provider-free-demo"},
+            "run": {"provider": "deterministic", "status": "completed"},
+            "context": {"context_type": "template", "template_id": "deterministic-demo"},
             "labeling": {
                 "classification": "exploratory",
                 "inspection_mode": "read-only ordered step inspection",
@@ -535,7 +557,7 @@ def test_run_playground_covers_cli_and_webui_paths(tmp_path, monkeypatch) -> Non
             ],
             "save_back": {
                 "mode": "explicit",
-                "workflow": {"status": "ready", "recommended_name": "provider-free-demo"},
+                "workflow": {"status": "ready", "recommended_name": "deterministic-demo"},
                 "profile": {"status": "requires_workflow_save", "requires_saved_workflow": True},
             },
         }
@@ -688,9 +710,9 @@ def test_run_playground_covers_cli_and_webui_paths(tmp_path, monkeypatch) -> Non
             "xrtm",
             "playground",
             "--workflow",
-            "demo-provider-free",
+            "demo-deterministic",
             "--question",
-            "Will the provider-free CLI playground custom-question flow pass Gate 2?",
+            "Will the deterministic CLI playground custom-question flow pass Gate 2?",
             "--workflows-dir",
             str(workflows_dir),
             "--runs-dir",
@@ -706,7 +728,7 @@ def test_run_playground_covers_cli_and_webui_paths(tmp_path, monkeypatch) -> Non
         "baseline_run_id": "baseline-run",
         "cli": {
             "run_id": "cli-playground-run",
-            "provider": "mock",
+            "provider": "deterministic",
             "question_count": 1,
             "inspection_step_ids": ["load_questions", "forecast", "score"],
             "inspection_ordered": True,
@@ -716,7 +738,7 @@ def test_run_playground_covers_cli_and_webui_paths(tmp_path, monkeypatch) -> Non
         },
         "webui": {
             "run_id": "web-playground-run",
-            "provider": "mock",
+            "provider": "deterministic",
             "question_count": 1,
             "inspection_step_ids": ["load_questions", "forecast", "score"],
             "inspection_ordered": True,
@@ -739,7 +761,7 @@ def test_run_host_records_managed_sandbox_metadata(tmp_path, monkeypatch) -> Non
     module = _load_module()
     workspace_root = tmp_path / "workspace"
     xrtm_repo_root = workspace_root / "xrtm"
-    artifacts_dir = tmp_path / "managed-provider-free"
+    artifacts_dir = tmp_path / "managed-deterministic"
     manager_path = tmp_path / "sandbox_manager.py"
     registry_root = tmp_path / "registry"
     workspace_root.mkdir()
@@ -753,7 +775,7 @@ def test_run_host_records_managed_sandbox_metadata(tmp_path, monkeypatch) -> Non
             "id": "sandbox-123",
             "path": str(artifacts_dir),
             "state": "active",
-            "purpose": "docker-provider-free acceptance (pypi)",
+            "purpose": "docker-deterministic acceptance (pypi)",
             "type": "validation",
             "expires_at": "2026-05-12T00:00:00Z",
             "cleanup_policy": {"mode": "delete"},
@@ -857,7 +879,7 @@ def test_run_benchmark_matrix_covers_benchmark_and_competition_surfaces(tmp_path
             "--split",
             "eval",
             "--provider",
-            "mock",
+            "deterministic",
             "--limit",
             "5",
             "--iterations",
@@ -884,13 +906,13 @@ def test_run_benchmark_matrix_covers_benchmark_and_competition_surfaces(tmp_path
             str(journey_dir / "benchmark-output"),
             "--release-gate-mode",
             "--baseline-label",
-            "mock-control",
+            "deterministic-control",
             "--baseline-provider",
-            "mock",
+            "deterministic",
             "--candidate-label",
-            "mock-candidate",
+            "deterministic-candidate",
             "--candidate-provider",
-            "mock",
+            "deterministic",
         ],
         [
             "xrtm",
@@ -910,13 +932,13 @@ def test_run_benchmark_matrix_covers_benchmark_and_competition_surfaces(tmp_path
             str(journey_dir / "benchmark-output"),
             "--release-gate-mode",
             "--baseline-label",
-            "mock-control",
+            "deterministic-control",
             "--baseline-provider",
-            "mock",
+            "deterministic",
             "--candidate-label",
-            "mock-candidate",
+            "deterministic-candidate",
             "--candidate-provider",
-            "mock",
+            "deterministic",
         ],
         [
             "xrtm",
@@ -926,7 +948,7 @@ def test_run_benchmark_matrix_covers_benchmark_and_competition_surfaces(tmp_path
             "--runs-dir",
             str(competition_runs_dir),
             "--provider",
-            "mock",
+            "deterministic",
             "--limit",
             "2",
         ],

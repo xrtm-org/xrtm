@@ -7,6 +7,6 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 
 WORKDIR /app
 
-COPY scripts/docker_provider_free_acceptance.py /app/docker_provider_free_acceptance.py
+COPY scripts/docker_deterministic_acceptance.py /app/docker_deterministic_acceptance.py
 
-ENTRYPOINT ["python", "/app/docker_provider_free_acceptance.py"]
+ENTRYPOINT ["python", "/app/docker_deterministic_acceptance.py"]

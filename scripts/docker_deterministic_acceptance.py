@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Disposable Docker clean-room runner for provider-free acceptance."""
+"""Disposable Docker clean-room runner for deterministic acceptance."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 WORKSPACE_REPOS = ("data", "eval", "forecast", "train", "xrtm")
-DEFAULT_IMAGE_TAG = "xrtm-provider-free-acceptance:py311"
+DEFAULT_IMAGE_TAG = "xrtm-deterministic-acceptance:py311"
 DEFAULT_PYTHON_IMAGE = "python:3.11-slim"
 CONTAINER_WORKSPACE_ROOT = Path("/workspace")
 DEFAULT_MANAGED_SANDBOX_TTL_HOURS = 24.0
@@ -79,7 +79,7 @@ def utc_timestamp() -> str:
 
 
 def default_artifacts_dir(root: Path, timestamp: str | None = None) -> Path:
-    return root / "acceptance-studies" / "docker-provider-free" / (timestamp or utc_timestamp())
+    return root / "acceptance-studies" / "docker-deterministic" / (timestamp or utc_timestamp())
 
 
 def env_flag_enabled(value: str | None) -> bool:
@@ -208,6 +208,18 @@ def default_specs(root: Path, xrtm_repo_root_path: Path | None = None) -> tuple[
     )
 
 
+def developer_example_script(workspace_root_path: Path) -> Path:
+    candidates = [
+        workspace_root_path / "forecast" / "examples" / "providers" / "deterministic_analyst" / "run_deterministic_analyst.py",
+        workspace_root_path / "forecast" / "examples" / "providers" / "provider_free_analyst" / "run_provider_free_analyst.py",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    searched = ", ".join(str(path) for path in candidates)
+    raise FileNotFoundError(f"Deterministic analyst example not found; searched: {searched}")
+
+
 def command_text(command: Iterable[str]) -> str:
     return " ".join(shlex.quote(part) for part in command)
 
@@ -325,7 +337,7 @@ def docker_build_command(repo_root: Path, image_tag: str, python_image: str) -> 
         "docker",
         "build",
         "-f",
-        str(repo_root / "docker" / "provider-free-acceptance.Dockerfile"),
+        str(repo_root / "docker" / "deterministic-acceptance.Dockerfile"),
         "-t",
         image_tag,
         "--build-arg",
@@ -554,14 +566,14 @@ def run_first_success(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any
         env=env,
     )
     run_logged(
-        ["xrtm", "workflow", "show", "demo-provider-free"],
+        ["xrtm", "workflow", "show", "demo-deterministic"],
         log_path=journey_dir / "workflow-show.log",
         cwd=journey_dir,
         env=env,
     )
     before_workflow = discover_run_ids(runs_dir)
     run_logged(
-        ["xrtm", "workflow", "run", "demo-provider-free", "--runs-dir", str(runs_dir)],
+        ["xrtm", "workflow", "run", "demo-deterministic", "--runs-dir", str(runs_dir)],
         log_path=journey_dir / "workflow-run.log",
         cwd=journey_dir,
         env=env,
@@ -604,7 +616,7 @@ def run_operator(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
     journey_dir = artifacts_dir / "xrtm-release" / "operator"
     prepare_artifacts_dir(journey_dir)
     runs_dir = journey_dir / "runs"
-    profile_name = "docker-local-mock"
+    profile_name = "docker-local-deterministic"
     before_profile = discover_run_ids(runs_dir)
     run_logged(
         [
@@ -613,7 +625,7 @@ def run_operator(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
             "create",
             profile_name,
             "--provider",
-            "mock",
+            "deterministic",
             "--limit",
             "2",
             "--runs-dir",
@@ -640,7 +652,7 @@ def run_operator(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
     profile_run_id = new_run_id(before_profile, runs_dir)
     before_monitor = discover_run_ids(runs_dir)
     run_logged(
-        ["xrtm", "monitor", "start", "--provider", "mock", "--limit", "2", "--runs-dir", "runs"],
+        ["xrtm", "monitor", "start", "--provider", "deterministic", "--limit", "2", "--runs-dir", "runs"],
         log_path=journey_dir / "monitor-start.log",
         cwd=journey_dir,
         env=env,
@@ -679,7 +691,7 @@ def run_research_eval(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any
     runs_dir = journey_dir / "runs"
     before_first = discover_run_ids(runs_dir)
     run_logged(
-        ["xrtm", "demo", "--provider", "mock", "--limit", "5", "--runs-dir", str(runs_dir)],
+        ["xrtm", "demo", "--provider", "deterministic", "--limit", "5", "--runs-dir", str(runs_dir)],
         log_path=journey_dir / "demo-1.log",
         cwd=journey_dir,
         env=env,
@@ -687,7 +699,7 @@ def run_research_eval(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any
     first_run_id = new_run_id(before_first, runs_dir)
     before_second = discover_run_ids(runs_dir)
     run_logged(
-        ["xrtm", "demo", "--provider", "mock", "--limit", "5", "--runs-dir", str(runs_dir)],
+        ["xrtm", "demo", "--provider", "deterministic", "--limit", "5", "--runs-dir", str(runs_dir)],
         log_path=journey_dir / "demo-2.log",
         cwd=journey_dir,
         env=env,
@@ -723,7 +735,7 @@ def run_research_eval(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any
             "perf",
             "run",
             "--scenario",
-            "provider-free-smoke",
+            "deterministic-smoke",
             "--iterations",
             "3",
             "--limit",
@@ -766,7 +778,7 @@ def run_benchmark_matrix(env: dict[str, str], artifacts_dir: Path) -> dict[str, 
             "--split",
             "eval",
             "--provider",
-            "mock",
+            "deterministic",
             "--limit",
             "5",
             "--iterations",
@@ -798,13 +810,13 @@ def run_benchmark_matrix(env: dict[str, str], artifacts_dir: Path) -> dict[str, 
             str(benchmark_output_dir),
             "--release-gate-mode",
             "--baseline-label",
-            "mock-control",
+            "deterministic-control",
             "--baseline-provider",
-            "mock",
+            "deterministic",
             "--candidate-label",
-            "mock-candidate",
+            "deterministic-candidate",
             "--candidate-provider",
-            "mock",
+            "deterministic",
         ],
         log_path=journey_dir / "benchmark-compare.log",
         cwd=journey_dir,
@@ -829,13 +841,13 @@ def run_benchmark_matrix(env: dict[str, str], artifacts_dir: Path) -> dict[str, 
             str(benchmark_output_dir),
             "--release-gate-mode",
             "--baseline-label",
-            "mock-control",
+            "deterministic-control",
             "--baseline-provider",
-            "mock",
+            "deterministic",
             "--candidate-label",
-            "mock-candidate",
+            "deterministic-candidate",
             "--candidate-provider",
-            "mock",
+            "deterministic",
         ],
         log_path=journey_dir / "benchmark-stress.log",
         cwd=journey_dir,
@@ -850,7 +862,7 @@ def run_benchmark_matrix(env: dict[str, str], artifacts_dir: Path) -> dict[str, 
             "--runs-dir",
             str(competition_runs_dir),
             "--provider",
-            "mock",
+            "deterministic",
             "--limit",
             "2",
         ],
@@ -956,7 +968,7 @@ def run_workflow_authoring(env: dict[str, str], artifacts_dir: Path) -> dict[str
             "workflow",
             "create",
             "clone",
-            "demo-provider-free",
+            "demo-deterministic",
             clone_name,
             "--workflows-dir",
             str(workflows_dir),
@@ -1039,11 +1051,11 @@ def run_workflow_authoring(env: dict[str, str], artifacts_dir: Path) -> dict[str
                 method="POST",
                 payload={
                     "creation_mode": "template",
-                    "template_id": "provider-free-demo",
+                    "template_id": "deterministic-demo",
                     "draft_workflow_name": template_name,
                     "baseline_run_id": baseline_run_id,
                     "title": "Gate 2 template workflow",
-                    "description": "Template workflow created in provider-free clean-room validation.",
+                    "description": "Template workflow created in deterministic clean-room validation.",
                 },
             )
             updated = fetch_json(
@@ -1060,7 +1072,7 @@ def run_workflow_authoring(env: dict[str, str], artifacts_dir: Path) -> dict[str
                             "tags": ["gate2", "webui"],
                         },
                         "questions": {"limit": 1},
-                        "runtime": {"provider": "mock", "base_url": None, "model": None, "max_tokens": 512},
+                        "runtime": {"provider": "deterministic", "base_url": None, "model": None, "max_tokens": 512},
                         "artifacts": {
                             "write_report": True,
                             "write_blueprint_copy": True,
@@ -1201,14 +1213,14 @@ def run_playground(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
     run_logged(["xrtm", "start", "--runs-dir", str(runs_dir)], log_path=cli_dir / "start.log", cwd=journey_dir, env=env)
     baseline_run_id = new_run_id(before_baseline, runs_dir)
 
-    cli_question = "Will the provider-free CLI playground custom-question flow pass Gate 2?"
+    cli_question = "Will the deterministic CLI playground custom-question flow pass Gate 2?"
     before_cli = discover_run_ids(runs_dir)
     run_logged(
         [
             "xrtm",
             "playground",
             "--workflow",
-            "demo-provider-free",
+            "demo-deterministic",
             "--question",
             cli_question,
             "--workflows-dir",
@@ -1226,10 +1238,10 @@ def run_playground(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
     cli_step_orders = [int(step["order"]) for step in cli_session["inspection_steps"]]
     if cli_session["labeling"]["classification"] != "exploratory":
         raise RuntimeError(f"CLI playground run should stay exploratory: {cli_session['labeling']}")
-    if cli_session["context"]["workflow_name"] != "demo-provider-free":
+    if cli_session["context"]["workflow_name"] != "demo-deterministic":
         raise RuntimeError(f"CLI playground used unexpected workflow context: {cli_session['context']}")
-    if cli_session["run"]["provider"] != "mock":
-        raise RuntimeError(f"CLI playground should stay provider-free: {cli_session['run']}")
+    if cli_session["run"]["provider"] != "deterministic":
+        raise RuntimeError(f"CLI playground should stay deterministic: {cli_session['run']}")
     if cli_session["save_back"]["mode"] != "explicit":
         raise RuntimeError(f"CLI playground save-back should stay explicit: {cli_session['save_back']}")
     if cli_step_orders != sorted(cli_step_orders):
@@ -1262,7 +1274,7 @@ def run_playground(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
     if not (cli_run_dir / "report.html").exists():
         raise RuntimeError(f"CLI playground report missing: {cli_run_dir / 'report.html'}")
 
-    web_question = "Will the provider-free WebUI playground custom-question flow pass Gate 2?"
+    web_question = "Will the deterministic WebUI playground custom-question flow pass Gate 2?"
     saved_workflow_name = "gate2-playground-web-workflow"
     saved_profile_name = "gate2-playground-web-profile"
     port = reserve_local_port()
@@ -1299,10 +1311,10 @@ def run_playground(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
                 method="PATCH",
                 payload={
                     "context_type": "template",
-                    "template_id": "provider-free-demo",
+                    "template_id": "deterministic-demo",
                     "question_prompt": web_question,
                     "question_title": "Gate 2 playground WebUI question",
-                    "resolution_criteria": "Resolves YES if the provider-free playground run completes through the shared WebUI sandbox path.",
+                    "resolution_criteria": "Resolves YES if the deterministic playground run completes through the shared WebUI sandbox path.",
                 },
             )
             launched = fetch_json(
@@ -1378,9 +1390,9 @@ def run_playground(env: dict[str, str], artifacts_dir: Path) -> dict[str, Any]:
         raise RuntimeError(f"Updated playground session should be ready to run: {updated['session']}")
     if last_result["labeling"]["classification"] != "exploratory":
         raise RuntimeError(f"WebUI playground run should stay exploratory: {last_result['labeling']}")
-    if last_result["run"]["provider"] != "mock":
-        raise RuntimeError(f"WebUI playground should stay provider-free: {last_result['run']}")
-    if last_result["context"]["template_id"] != "provider-free-demo":
+    if last_result["run"]["provider"] != "deterministic":
+        raise RuntimeError(f"WebUI playground should stay deterministic: {last_result['run']}")
+    if last_result["context"]["template_id"] != "deterministic-demo":
         raise RuntimeError(f"WebUI playground used unexpected template context: {last_result['context']}")
     if web_step_orders != sorted(web_step_orders):
         raise RuntimeError(f"WebUI inspection steps are not ordered: {web_session['inspection_steps']}")
@@ -1474,15 +1486,16 @@ def run_developer_package(
         env=base_env,
     )
     write_versions(venv_python, journey_dir / "installed-versions.txt", env)
+    example_script = developer_example_script(workspace_root_path)
     run_logged(
-        [str(venv_python), str(workspace_root_path / "forecast" / "examples" / "providers" / "provider_free_analyst" / "run_provider_free_analyst.py")],
-        log_path=journey_dir / "provider-free-analyst.log",
+        [str(venv_python), str(example_script)],
+        log_path=journey_dir / "deterministic-analyst.log",
         cwd=journey_dir,
         env=env,
     )
-    analyst_log = (journey_dir / "provider-free-analyst.log").read_text(encoding="utf-8")
+    analyst_log = (journey_dir / "deterministic-analyst.log").read_text(encoding="utf-8")
     if "Schema validation failed" in analyst_log:
-        raise RuntimeError("Provider-free analyst example surfaced schema validation failures")
+        raise RuntimeError("Deterministic analyst example surfaced schema validation failures")
     summary = {
         "forecast_version": next(
             line for line in (journey_dir / "installed-versions.txt").read_text(encoding="utf-8").splitlines() if line.startswith("forecast, version ")
@@ -1547,7 +1560,7 @@ def run_host(args: argparse.Namespace) -> int:
         args=args,
         workspace_root_path=workspace_root_path,
         repo_name="xrtm",
-        purpose=f"docker-provider-free acceptance ({args.artifact_source})",
+        purpose=f"docker-deterministic acceptance ({args.artifact_source})",
         default_dir_factory=default_artifacts_dir,
     )
     metadata_dir = artifacts_dir / "metadata"

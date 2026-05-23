@@ -1,4 +1,4 @@
-"""Runtime profile resolution and deterministic provider-free smoke execution."""
+"""Runtime profile resolution and deterministic baseline execution."""
 
 from __future__ import annotations
 
@@ -22,14 +22,15 @@ DEFAULT_LOCAL_LLM_MODEL = "Qwen3.5-9B-UD-Q4_K_XL.gguf"
 DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS = 180
 OPENAI_COMPATIBLE_CATEGORY = "openai-compatible-endpoint"
 CODING_AGENT_CLI_CATEGORY = "coding-agent-cli-contract"
-PROVIDER_FREE_VALIDATION_MODE = "provider-free"
+DETERMINISTIC_VALIDATION_MODE = "deterministic"
+DETERMINISTIC_PROVIDER_NAME = "deterministic"
 
 
 class DeterministicProvider(InferenceProvider):
-    """Deterministic smoke/baseline double for provider-free product-shell runs."""
+    """Deterministic smoke/baseline double for local product-shell runs."""
 
     model_id = "xrtm-deterministic-product"
-    base_url = "provider-free://deterministic"
+    base_url = "deterministic://hash-derived"
 
     def __init__(self) -> None:
         self.cache_hits = 0
@@ -61,18 +62,18 @@ class DeterministicProvider(InferenceProvider):
             "node_id": f"{question_id}:llm:0",
             "event": "deterministic_real_corpus_prior",
             "probability": probability,
-            "description": "Stable hash-derived probability for product smoke/baseline validation.",
+            "description": "Stable hash-derived probability for deterministic baseline validation.",
         }
         payload = {
             "probability": probability,
             "confidence_interval": confidence_interval,
-            "reasoning": f"Deterministic provider-free forecast for {question_id}.",
+            "reasoning": f"Deterministic hash-derived forecast for {question_id}.",
             "causal_nodes": [causal_node],
             "causal_edges": [],
             "logical_trace": [
                 causal_node
             ],
-            "structural_trace": ["load_question", "provider_free_forecast", "validate_output"],
+            "structural_trace": ["load_question", "deterministic_forecast", "validate_output"],
         }
         completion_text = json.dumps(payload, separators=(",", ":"))
         response = ModelResponse(
@@ -83,7 +84,7 @@ class DeterministicProvider(InferenceProvider):
                 "completion_tokens": max(1, len(completion_text.split())),
                 "total_tokens": max(2, len(prompt_text.split()) + len(completion_text.split())),
             },
-            metadata={"cache_hit": False, "provider_free": True},
+            metadata={"cache_hit": False, "deterministic": True},
         )
         self._cache[cache_key] = response
         return response
@@ -106,8 +107,16 @@ class DeterministicProvider(InferenceProvider):
         }
 
 
+def normalize_provider_name(provider: str) -> str:
+    normalized = provider.strip()
+    if not normalized:
+        raise ValueError("provider may not be empty")
+    return normalized
+
+
 def build_provider(provider: str, *, base_url: str | None, model: str | None, api_key: str | None) -> InferenceProvider:
-    if provider == "mock":
+    provider = normalize_provider_name(provider)
+    if provider == DETERMINISTIC_PROVIDER_NAME:
         return DeterministicProvider()
     if provider == "local-llm":
         return _build_local_llm_provider(base_url=base_url, model=model, api_key=api_key)
@@ -116,12 +125,12 @@ def build_provider(provider: str, *, base_url: str | None, model: str | None, ap
         f"What happened: Provider '{provider}' is not recognized\n"
         f"Why: The released product shell only wires these runtime options today\n\n"
         f"Available runtime options:\n"
-        f"  • mock       - Provider-free deterministic smoke/baseline mode (no API calls)\n"
-        f"  • local-llm  - Local OpenAI-compatible endpoint profile (e.g., llama.cpp)\n\n"
+        f"  • deterministic - Deterministic hash-derived baseline mode (no API calls)\n"
+        f"  • local-llm     - Local OpenAI-compatible endpoint profile (e.g., llama.cpp)\n\n"
         f"Runtime taxonomy note:\n"
         f"  • OpenAI-compatible endpoints and coding-agent CLI contracts are the two first-class integration categories\n"
-        f"  • provider-free smoke is a testing/baseline mode, not a third runtime category\n\n"
-        f"Example: xrtm demo --provider mock --limit 2"
+        f"  • deterministic mode is a testing/baseline mode, not a third runtime category\n\n"
+        f"Example: xrtm demo --provider deterministic --limit 2"
     )
 
 
@@ -168,6 +177,7 @@ def local_llm_status(*, base_url: str | None = None) -> dict[str, Any]:
 
 
 def provider_snapshot(provider: InferenceProvider, provider_name: str, *, base_url: str | None = None) -> dict[str, Any]:
+    provider_name = normalize_provider_name(provider_name)
     snapshot = {
         "provider": provider_name,
         "model": getattr(provider, "model_id", None),
@@ -188,13 +198,14 @@ def cache_snapshot(provider: InferenceProvider) -> dict[str, Any]:
 
 
 def provider_runtime_metadata(provider_name: str) -> dict[str, Any]:
-    if provider_name == "mock":
+    provider_name = normalize_provider_name(provider_name)
+    if provider_name == DETERMINISTIC_PROVIDER_NAME:
         return {
             "category": None,
             "profile": None,
             "deployment": None,
-            "validation_mode": PROVIDER_FREE_VALIDATION_MODE,
-            "is_provider_free_baseline": True,
+            "validation_mode": DETERMINISTIC_VALIDATION_MODE,
+            "is_deterministic_baseline": True,
         }
     if provider_name == "local-llm":
         return {
@@ -202,14 +213,14 @@ def provider_runtime_metadata(provider_name: str) -> dict[str, Any]:
             "profile": "local-llm",
             "deployment": "local",
             "validation_mode": None,
-            "is_provider_free_baseline": False,
+            "is_deterministic_baseline": False,
         }
     return {
         "category": None,
         "profile": provider_name,
         "deployment": None,
         "validation_mode": None,
-        "is_provider_free_baseline": False,
+        "is_deterministic_baseline": False,
     }
 
 
@@ -242,7 +253,7 @@ def _local_llm_connection_error(*, base_url_value: str, status: dict[str, Any]) 
         f"2. Verify it's running: curl {status['health_url']}\n"
         f"3. Check the base URL is correct: {base_url_value}\n"
         f"4. Set XRTM_LOCAL_LLM_BASE_URL if using a different endpoint\n\n"
-        f"To test without an OpenAI-compatible endpoint, use the provider-free smoke mode: --provider mock"
+        f"To test without an OpenAI-compatible endpoint, use the deterministic baseline mode: --provider deterministic"
     )
 
 
@@ -300,13 +311,15 @@ def _coerce_int(value: str) -> int | None:
 
 __all__ = [
     "CODING_AGENT_CLI_CATEGORY",
+    "DETERMINISTIC_PROVIDER_NAME",
+    "DETERMINISTIC_VALIDATION_MODE",
     "DEFAULT_LOCAL_LLM_BASE_URL",
     "DEFAULT_LOCAL_LLM_MODEL",
     "DeterministicProvider",
     "OPENAI_COMPATIBLE_CATEGORY",
-    "PROVIDER_FREE_VALIDATION_MODE",
     "build_provider",
     "local_llm_status",
+    "normalize_provider_name",
     "provider_runtime_metadata",
     "provider_snapshot",
 ]

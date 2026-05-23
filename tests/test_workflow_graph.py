@@ -25,7 +25,7 @@ def _blueprint(*, graph: GraphSpec) -> WorkflowBlueprint:
         description="Workflow graph compiler test fixture.",
         workflow_kind="test",
         questions=QuestionSourceSpec(limit=1),
-        runtime=RuntimeProfileSpec(provider="mock"),
+        runtime=RuntimeProfileSpec(provider="deterministic"),
         graph=graph,
     )
 

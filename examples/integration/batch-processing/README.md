@@ -27,10 +27,10 @@ For CSV input:
 pip install xrtm pandas
 ```
 
-### 2. Run the example in provider-free mode
+### 2. Run the example in deterministic mode
 
 ```bash
-python run_batch.py --provider mock --input sample_questions.json
+python run_batch.py --provider deterministic --input sample_questions.json
 ```
 
 ### 3. Run with another provider

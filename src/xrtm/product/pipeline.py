@@ -13,7 +13,12 @@ from xrtm.eval.real_e2e import evaluate_resolved_forecasts
 from xrtm.forecast.e2e import run_real_question_e2e
 from xrtm.product.artifacts import ArtifactStore, RunArtifact, to_json_safe
 from xrtm.product.observability import build_run_summary
-from xrtm.product.providers import build_provider, provider_snapshot
+from xrtm.product.providers import (
+    DETERMINISTIC_PROVIDER_NAME,
+    build_provider,
+    normalize_provider_name,
+    provider_snapshot,
+)
 from xrtm.product.reports import render_html_report
 from xrtm.train.real_e2e import (
     build_training_samples_from_resolved_forecasts,
@@ -25,7 +30,7 @@ from xrtm.train.real_e2e import (
 class PipelineOptions:
     """Inputs for a product pipeline run."""
 
-    provider: str = "mock"
+    provider: str = DETERMINISTIC_PROVIDER_NAME
     limit: int = 2
     questions: tuple[Any, ...] | None = None
     corpus_id: str = "xrtm-real-binary-v1"
@@ -37,6 +42,9 @@ class PipelineOptions:
     write_report: bool = True
     command: str = "xrtm run pipeline"
     user: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "provider", normalize_provider_name(self.provider))
 
 
 @dataclass(frozen=True)

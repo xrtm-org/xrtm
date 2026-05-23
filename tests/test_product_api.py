@@ -18,7 +18,7 @@ from xrtm.product import (
 
 
 def test_product_api_exports_blueprint_graph_and_competition_surfaces() -> None:
-    workflow = WorkflowRegistry().load("demo-provider-free")
+    workflow = WorkflowRegistry().load("demo-deterministic")
     validate_product_blueprint(workflow)
     explanation = explain_blueprint(workflow)
     compiled = compile_workflow_blueprint(workflow)
@@ -41,16 +41,16 @@ def test_product_api_exports_blueprint_graph_and_competition_surfaces() -> None:
 
 
 def test_product_api_exports_workbench_compatibility_and_canvas_surfaces(tmp_path: Path) -> None:
-    workflow = WorkflowRegistry().load("demo-provider-free")
+    workflow = WorkflowRegistry().load("demo-deterministic")
     templates = list_workflow_starter_templates()
     canvas = workflow_canvas(workflow)
-    snapshot = workbench_snapshot(Path("missing-runs"), tmp_path / "workflows", workflow_name="demo-provider-free")
+    snapshot = workbench_snapshot(Path("missing-runs"), tmp_path / "workflows", workflow_name="demo-deterministic")
 
-    assert any(template.template_id == "provider-free-demo" for template in templates)
+    assert any(template.template_id == "deterministic-demo" for template in templates)
     assert canvas["schema_version"] == "xrtm.studio.canvas.v1"
     assert canvas["entry"] == workflow.graph.entry
     assert canvas["entry_id"] == f"node:{workflow.graph.entry}"
-    assert snapshot["selected_workflow_name"] == "demo-provider-free"
+    assert snapshot["selected_workflow_name"] == "demo-deterministic"
     assert snapshot["compatibility"]["primary_route"] == "/studio"
     assert snapshot["compatibility"]["legacy_route"] == "/workbench"
     assert snapshot["canvas"]["schema_version"] == "xrtm.studio.canvas.v1"

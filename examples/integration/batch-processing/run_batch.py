@@ -4,7 +4,7 @@ This script demonstrates how to process multiple forecasting questions from
 CSV/JSON files with error handling and progress tracking.
 
 Usage:
-    python run_batch.py --provider mock --input sample_questions.json
+    python run_batch.py --provider deterministic --input sample_questions.json
     python run_batch.py --provider gemini --model gemini-2.0-flash --input data.csv
 """
 
@@ -76,7 +76,7 @@ class BatchProcessor:
 
     async def _create_analyst(self) -> ForecastingAnalyst:
         """Create forecasting analyst with specified provider."""
-        if self.provider_name == "mock":
+        if self.provider_name in {"deterministic", "deterministic"}:
             provider = DeterministicProvider()
         else:
             # For real providers, use create_forecasting_analyst
@@ -211,7 +211,7 @@ def load_questions_from_csv(path: Path) -> list[Question]:
 
 async def main():
     parser = argparse.ArgumentParser(description="Batch process forecasting questions with XRTM")
-    parser.add_argument("--provider", default="mock", help="Provider to use (mock, gemini, openai)")
+    parser.add_argument("--provider", default="deterministic", help="Provider to use (deterministic, gemini, openai)")
     parser.add_argument("--model", help="Model ID for provider")
     parser.add_argument("--input", required=True, help="Input file (JSON or CSV)")
     parser.add_argument("--runs-dir", default="batch-runs", help="Directory for batch runs")

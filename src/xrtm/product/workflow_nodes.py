@@ -12,7 +12,13 @@ from xrtm.data.corpora import load_real_binary_questions
 from xrtm.forecast.e2e.real_questions import ForecastHarnessRecord, run_real_question_e2e
 from xrtm.product.competition import CompetitionPackRegistry, competition_submission_payload
 from xrtm.product.pipeline import _run_forecast_stage, _write_eval_payload, _write_train_payload
-from xrtm.product.providers import build_provider, local_llm_status, provider_snapshot
+from xrtm.product.providers import (
+    DETERMINISTIC_PROVIDER_NAME,
+    build_provider,
+    local_llm_status,
+    normalize_provider_name,
+    provider_snapshot,
+)
 from xrtm.product.reports import render_html_report
 
 
@@ -65,10 +71,10 @@ BUILTIN_WORKFLOW_NODES = (
         summary="Extract question context for downstream non-LLM or agent nodes.",
     ),
     BuiltinWorkflowNodeDefinition(
-        name="provider-free-candidate",
+        name="deterministic-candidate",
         kind="model",
-        implementation="xrtm.product.workflow_nodes.provider_free_candidate_node",
-        summary="Generate deterministic provider-free candidate forecasts without writing the final artifacts.",
+        implementation="xrtm.product.workflow_nodes.deterministic_candidate_node",
+        summary="Generate deterministic candidate forecasts without writing the final artifacts.",
     ),
     BuiltinWorkflowNodeDefinition(
         name="real-runtime-candidate",
@@ -214,10 +220,10 @@ def question_context_node(*, state: Any, **_: Any) -> dict[str, Any]:
     return {"question_count": len(contexts), "question_ids": list(contexts)}
 
 
-def provider_free_candidate_node(*, state: Any, config: dict[str, Any] | None = None, node_name: str, **_: Any) -> dict[str, Any]:
+def deterministic_candidate_node(*, state: Any, config: dict[str, Any] | None = None, node_name: str, **_: Any) -> dict[str, Any]:
     return _candidate_forecast_node(
         state=state,
-        config={"provider": "mock", **(config or {})},
+        config={"provider": DETERMINISTIC_PROVIDER_NAME, **(config or {})},
         node_name=node_name,
     )
 
@@ -292,7 +298,7 @@ def aggregate_candidate_forecasts_node(
     state.context["records"] = tuple(aggregated)
     resolved_provider_name = options.provider
     if "primary_candidate" not in contributor_names:
-        resolved_provider_name = "mock"
+        resolved_provider_name = DETERMINISTIC_PROVIDER_NAME
     state.context["resolved_provider_name"] = resolved_provider_name
     if state.context.get("provider") is None:
         state.context["provider"] = build_provider(
@@ -320,7 +326,7 @@ def runtime_router_node(*, state: Any, config: dict[str, Any] | None = None, **_
     fallback = str(config.get("fallback_route", "fallback"))
     if options is None:
         return {"route": fallback}
-    if options.provider == "mock":
+    if normalize_provider_name(options.provider) == DETERMINISTIC_PROVIDER_NAME:
         return {"route": fallback}
     if options.provider == "local-llm" and config.get("require_healthy", True):
         status = local_llm_status(base_url=options.base_url)
@@ -487,11 +493,12 @@ __all__ = [
     "backtest_node",
     "candidate_forecast_node",
     "competition_submission_node",
+    "deterministic_candidate_node",
     "forecast_node",
     "human_gate_placeholder_node",
     "load_questions_node",
     "list_builtin_workflow_nodes",
-    "provider_free_candidate_node",
+    "deterministic_candidate_node",
     "question_context_node",
     "report_node",
     "runtime_router_node",

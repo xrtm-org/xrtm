@@ -47,8 +47,8 @@ def _write_canonical_run_fixture(
     run_payload = {
         "run_id": run_id,
         "status": "completed",
-        "provider": "mock",
-        "command": "xrtm demo --provider mock --limit 1",
+        "provider": "deterministic",
+        "command": "xrtm demo --provider deterministic --limit 1",
         "created_at": "2026-05-01T10:00:00+00:00",
         "updated_at": "2026-05-01T10:00:30+00:00",
         "user": user,
@@ -131,7 +131,7 @@ def test_playground_runs_seeded_workflow_question_and_writes_sandbox_artifact() 
             [
                 "playground",
                 "--workflow",
-                "demo-provider-free",
+                "demo-deterministic",
                 "--question",
                 "Will the playground stay exploratory?",
                 "--runs-dir",
@@ -143,13 +143,13 @@ def test_playground_runs_seeded_workflow_question_and_writes_sandbox_artifact() 
         assert result.exit_code == 0, output
         run_dir = next(Path("runs").iterdir())
         session_payload = json.loads((run_dir / "sandbox_session.json").read_text(encoding="utf-8"))
-        assert session_payload["context"]["workflow_name"] == "demo-provider-free"
+        assert session_payload["context"]["workflow_name"] == "demo-deterministic"
         assert session_payload["labeling"]["classification"] == "exploratory"
         assert "Exploratory playground session" in output
         assert "Sandbox output is inspectable" in output
         assert "Step inspection" in output
         assert "load_questions" in output
-        assert "Workflow save-back: ready (demo-provider-free)" in output
+        assert "Workflow save-back: ready (demo-deterministic)" in output
 
 
 def test_playground_supports_interactive_rerun_loop_with_template_context() -> None:
@@ -160,7 +160,7 @@ def test_playground_supports_interactive_rerun_loop_with_template_context() -> N
             cli,
             ["playground", "--runs-dir", "runs"],
             input=(
-                "template:provider-free-demo\n"
+                "template:deterministic-demo\n"
                 "Will the first exploratory loop run?\n"
                 "r\n"
                 "Will the rerun keep the same template context?\n"
@@ -176,7 +176,7 @@ def test_playground_supports_interactive_rerun_loop_with_template_context() -> N
             json.loads((run_dir / "sandbox_session.json").read_text(encoding="utf-8"))
             for run_dir in run_dirs
         ]
-        assert all(payload["context"]["template_id"] == "provider-free-demo" for payload in payloads)
+        assert all(payload["context"]["template_id"] == "deterministic-demo" for payload in payloads)
         assert all(payload["labeling"]["classification"] == "exploratory" for payload in payloads)
         assert "Workflow contexts" in output
         assert "Starter template contexts" in output
@@ -187,7 +187,7 @@ def test_playground_supports_interactive_rerun_loop_with_template_context() -> N
 
 def test_playground_command_uses_shared_launch_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     runner = CliRunner()
-    context = cli_main.launch_module.resolve_sandbox_context(workflow_name="demo-provider-free")
+    context = cli_main.launch_module.resolve_sandbox_context(workflow_name="demo-deterministic")
     calls: list[tuple[str, Any]] = []
 
     def fake_run_sandbox_session(**kwargs: Any):
@@ -198,7 +198,7 @@ def test_playground_command_uses_shared_launch_contract(monkeypatch: pytest.Monk
             run={
                 "run_id": "sandbox-cli-shared",
                 "status": "completed",
-                "provider": "mock",
+                "provider": "deterministic",
                 "artifacts": {},
             },
             workflow={"title": "Shared sandbox workflow"},
@@ -216,7 +216,7 @@ def test_playground_command_uses_shared_launch_contract(monkeypatch: pytest.Monk
             ),
             save_back={
                 "mode": "explicit",
-                "workflow": {"status": "ready", "recommended_name": "demo-provider-free"},
+                "workflow": {"status": "ready", "recommended_name": "demo-deterministic"},
                 "profile": {"status": "ready"},
             },
             total_seconds=0.25,
@@ -230,7 +230,7 @@ def test_playground_command_uses_shared_launch_contract(monkeypatch: pytest.Monk
             [
                 "playground",
                 "--workflow",
-                "demo-provider-free",
+                "demo-deterministic",
                 "--question",
                 "Does the CLI use the shared launch contract?",
                 "--runs-dir",
@@ -243,15 +243,15 @@ def test_playground_command_uses_shared_launch_contract(monkeypatch: pytest.Monk
     assert result.exit_code == 0, output
     assert "Shared launch contract note." in output
     assert "Step 7: forecast" in output
-    assert "Workflow save-back: ready (demo-provider-free)" in output
+    assert "Workflow save-back: ready (demo-deterministic)" in output
     assert calls and calls[0][1]["command"] == "xrtm playground"
 
 
-def test_provider_free_demo_writes_canonical_artifacts() -> None:
+def test_deterministic_demo_writes_canonical_artifacts() -> None:
     runner = CliRunner()
 
     with runner.isolated_filesystem():
-        result = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs"])
+        result = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs"])
 
         assert result.exit_code == 0, result.output
         run_dirs = list(Path("runs").iterdir())
@@ -288,7 +288,7 @@ def test_provider_free_demo_writes_canonical_artifacts() -> None:
         }
 
 
-def test_start_guides_newcomers_through_provider_free_first_run() -> None:
+def test_start_guides_newcomers_through_deterministic_first_run() -> None:
     runner = CliRunner()
     local_status = {
         "base_url": "http://127.0.0.1:8000/v1",
@@ -315,11 +315,11 @@ def test_start_guides_newcomers_through_provider_free_first_run() -> None:
         assert "Readiness checks passed." in output
         assert "Running the released install/demo workflow now." in output
         assert "Use xrtm workflow list after this run to browse shipped workflows." in output
-        assert "Succeeded: guided provider-free quickstart completed." in output
+        assert "Succeeded: guided deterministic quickstart completed." in output
         assert "What just succeeded:" in output
         for phrase in ["readiness checks", "deterministic forecasts", "scoring", "backtest", "HTML report write"]:
             assert phrase in output
-        for phrase in ["Proof cue:", "provider-free XRTM path"]:
+        for phrase in ["Proof cue:", "deterministic XRTM path"]:
             assert phrase in output
         assert f"Run id: {run_dir.name}" in output
         assert f"Artifact location: {run_dir}" in output
@@ -336,17 +336,17 @@ def test_start_guides_newcomers_through_provider_free_first_run() -> None:
         assert "Official proof-point workflows" in output
         assert "Install/demo proof" in output
         assert "xrtm workflow list" in output
-        assert "xrtm workflow show demo-provider-free" in output
-        assert "xrtm workflow run demo-provider-free" in output
+        assert "xrtm workflow show demo-deterministic" in output
+        assert "xrtm workflow run demo-deterministic" in output
         assert "Benchmark and performance workflow" in output
         assert "Shipped benchmark workflow" in output
         assert "Monitoring, history, and report workflow" in output
         assert "OpenAI-compatible endpoint advanced workflow" in output
-        for phrase in ["provider-free-smoke", "performance.json", "xrtm runs show", "xrtm artifacts inspect"]:
+        for phrase in ["deterministic-smoke", "performance.json", "xrtm runs show", "xrtm artifacts inspect"]:
             assert phrase in output
         for phrase in ["xrtm profile starter my-local", "xrtm run profile my-local"]:
             assert phrase in output
-        for phrase in ["xrtm monitor start --provider mock --limit 2", "xrtm monitor list --runs-dir runs"]:
+        for phrase in ["xrtm monitor start --provider deterministic --limit 2", "xrtm monitor list --runs-dir runs"]:
             assert phrase in output
         for phrase in [
             "xrtm runs compare <run-id-a> <run-id-b> --runs-dir runs",
@@ -357,14 +357,14 @@ def test_start_guides_newcomers_through_provider_free_first_run() -> None:
             assert phrase in output
         assert "xrtm local-llm status" in output
         assert "docs/python-api-reference.md" in output
-        assert blueprint["name"] == "demo-provider-free"
+        assert blueprint["name"] == "demo-deterministic"
 
 
 def test_demo_prints_run_success_proof_and_next_commands() -> None:
     runner = CliRunner()
 
     with runner.isolated_filesystem():
-        result = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs"])
+        result = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs"])
 
         output = _strip_ansi(result.output)
         assert result.exit_code == 0, output
@@ -388,38 +388,38 @@ def test_demo_prints_run_success_proof_and_next_commands() -> None:
         assert "xrtm tui --runs-dir runs" in output
 
 
-def test_workflow_list_show_and_run_demo_provider_free() -> None:
+def test_workflow_list_show_and_run_demo_deterministic() -> None:
     runner = CliRunner()
 
     with runner.isolated_filesystem():
         listed = runner.invoke(cli, ["workflow", "list"])
-        shown = runner.invoke(cli, ["workflow", "show", "demo-provider-free"])
-        validated = runner.invoke(cli, ["workflow", "validate", "demo-provider-free"])
-        run = runner.invoke(cli, ["workflow", "run", "demo-provider-free", "--runs-dir", "runs"])
+        shown = runner.invoke(cli, ["workflow", "show", "demo-deterministic"])
+        validated = runner.invoke(cli, ["workflow", "validate", "demo-deterministic"])
+        run = runner.invoke(cli, ["workflow", "run", "demo-deterministic", "--runs-dir", "runs"])
 
         assert listed.exit_code == 0, listed.output
-        assert "demo-provider-free" in _strip_ansi(listed.output)
+        assert "demo-deterministic" in _strip_ansi(listed.output)
         assert "flagship-benchmark" in _strip_ansi(listed.output)
 
         shown_output = _strip_ansi(shown.output)
         assert shown.exit_code == 0, shown_output
-        assert "Workflow: demo-provider-free" in shown_output
+        assert "Workflow: demo-deterministic" in shown_output
         assert "Workflow graph nodes" in shown_output
         assert "forecast" in shown_output
 
         assert validated.exit_code == 0, validated.output
-        assert "Workflow valid: demo-provider-free (xrtm.workflow.v1)" in _strip_ansi(validated.output)
+        assert "Workflow valid: demo-deterministic (xrtm.workflow.v1)" in _strip_ansi(validated.output)
 
         run_output = _strip_ansi(run.output)
         assert run.exit_code == 0, run_output
         run_dir = next(Path("runs").iterdir())
-        assert "Workflow: XRTM install and provider-free demo" in run_output
-        assert "Succeeded: xrtm workflow run demo-provider-free completed." in run_output
+        assert "Workflow: XRTM install and deterministic demo" in run_output
+        assert "Succeeded: xrtm workflow run demo-deterministic completed." in run_output
         assert (run_dir / "blueprint.json").exists()
         assert (run_dir / "graph_trace.jsonl").exists()
         blueprint = json.loads((run_dir / "blueprint.json").read_text(encoding="utf-8"))
         trace_lines = (run_dir / "graph_trace.jsonl").read_text(encoding="utf-8").splitlines()
-        assert blueprint["name"] == "demo-provider-free"
+        assert blueprint["name"] == "demo-deterministic"
         assert any('"node": "forecast"' in line for line in trace_lines)
 
 
@@ -435,7 +435,7 @@ def test_workflow_validate_and_explain_use_launch_services(monkeypatch: pytest.M
         calls.append(("explain", name, workflows_dir))
         return {
             "summary": f"{name} summary",
-            "runtime_requirements": ["Provider-free mode works out of the box."],
+            "runtime_requirements": ["Deterministic mode works out of the box."],
             "expected_artifacts": ["run.json"],
             "nodes": [],
         }
@@ -443,27 +443,27 @@ def test_workflow_validate_and_explain_use_launch_services(monkeypatch: pytest.M
     monkeypatch.setattr(cli_main.launch_module, "validate_registered_workflow", fake_validate)
     monkeypatch.setattr(cli_main.launch_module, "explain_registered_workflow", fake_explain)
 
-    validate = runner.invoke(cli, ["workflow", "validate", "demo-provider-free", "--workflows-dir", "workflows"])
-    explain = runner.invoke(cli, ["workflow", "explain", "demo-provider-free", "--workflows-dir", "workflows"])
+    validate = runner.invoke(cli, ["workflow", "validate", "demo-deterministic", "--workflows-dir", "workflows"])
+    explain = runner.invoke(cli, ["workflow", "explain", "demo-deterministic", "--workflows-dir", "workflows"])
 
     assert validate.exit_code == 0, validate.output
     assert explain.exit_code == 0, explain.output
-    assert "Workflow valid: demo-provider-free (xrtm.workflow.v1)" in _strip_ansi(validate.output)
+    assert "Workflow valid: demo-deterministic (xrtm.workflow.v1)" in _strip_ansi(validate.output)
     explain_output = _strip_ansi(explain.output)
-    assert "Workflow explanation: demo-provider-free" in explain_output
+    assert "Workflow explanation: demo-deterministic" in explain_output
     assert "Runtime requirements" in explain_output
     assert calls == [
-        ("validate", "demo-provider-free", Path("workflows")),
-        ("explain", "demo-provider-free", Path("workflows")),
+        ("validate", "demo-deterministic", Path("workflows")),
+        ("explain", "demo-deterministic", Path("workflows")),
     ]
 
 
-def test_flagship_benchmark_workflow_runs_in_provider_free_fallback_mode() -> None:
+def test_flagship_benchmark_workflow_runs_in_deterministic_fallback_mode() -> None:
     runner = CliRunner()
 
     with runner.isolated_filesystem():
         shown = runner.invoke(cli, ["workflow", "show", "flagship-benchmark"])
-        run = runner.invoke(cli, ["workflow", "run", "flagship-benchmark", "--runs-dir", "runs-benchmark", "--provider", "mock"])
+        run = runner.invoke(cli, ["workflow", "run", "flagship-benchmark", "--runs-dir", "runs-benchmark", "--provider", "deterministic"])
 
         shown_output = _strip_ansi(shown.output)
         assert shown.exit_code == 0, shown_output
@@ -480,7 +480,7 @@ def test_flagship_benchmark_workflow_runs_in_provider_free_fallback_mode() -> No
         assert blueprint["name"] == "flagship-benchmark"
         assert "fallback_fanout" in json.dumps(blueprint["graph"])
         assert any('"node": "aggregate_candidates"' in line for line in trace_lines)
-        assert any('"node": "provider_free_control"' in line for line in trace_lines)
+        assert any('"node": "deterministic_control"' in line for line in trace_lines)
         assert any('"node": "time_series_baseline"' in line for line in trace_lines)
 
 
@@ -544,7 +544,7 @@ def test_workflow_authoring_commands_create_and_edit_safe_local_workflows() -> N
                 "workflow",
                 "create",
                 "clone",
-                "demo-provider-free",
+                "demo-deterministic",
                 "authored-clone",
                 "--title",
                 "Authored Clone Workflow",
@@ -802,7 +802,7 @@ def test_workflow_clone_explain_validate_and_compare_customized_runs() -> None:
                 "my-workflow",
                 "aggregate_candidates",
                 "--config-json",
-                json.dumps({"weights": {"provider_free_control": 1.0, "time_series_baseline": 0.0}}),
+                json.dumps({"weights": {"deterministic_control": 1.0, "time_series_baseline": 0.0}}),
                 "--replace-config",
                 "--workflows-dir",
                 "workflows",
@@ -814,7 +814,7 @@ def test_workflow_clone_explain_validate_and_compare_customized_runs() -> None:
         assert first_validate.exit_code == 0, first_validate.output
         first_run = runner.invoke(
             cli,
-            ["workflow", "run", "my-workflow", "--workflows-dir", "workflows", "--runs-dir", "runs", "--provider", "mock"],
+            ["workflow", "run", "my-workflow", "--workflows-dir", "workflows", "--runs-dir", "runs", "--provider", "deterministic"],
         )
         assert first_run.exit_code == 0, first_run.output
 
@@ -828,7 +828,7 @@ def test_workflow_clone_explain_validate_and_compare_customized_runs() -> None:
                 "my-workflow",
                 "aggregate_candidates",
                 "--config-json",
-                json.dumps({"weights": {"provider_free_control": 0.0, "time_series_baseline": 1.0}}),
+                json.dumps({"weights": {"deterministic_control": 0.0, "time_series_baseline": 1.0}}),
                 "--replace-config",
                 "--workflows-dir",
                 "workflows",
@@ -840,7 +840,7 @@ def test_workflow_clone_explain_validate_and_compare_customized_runs() -> None:
         assert second_validate.exit_code == 0, second_validate.output
         second_run = runner.invoke(
             cli,
-            ["workflow", "run", "my-workflow", "--workflows-dir", "workflows", "--runs-dir", "runs", "--provider", "mock"],
+            ["workflow", "run", "my-workflow", "--workflows-dir", "workflows", "--runs-dir", "runs", "--provider", "deterministic"],
         )
         assert second_run.exit_code == 0, second_run.output
 
@@ -883,7 +883,7 @@ def test_competition_dry_run_lists_packs_and_writes_bundle() -> None:
 
         dry_run = runner.invoke(
             cli,
-            ["competition", "dry-run", "metaculus-cup", "--runs-dir", "runs", "--provider", "mock", "--limit", "1"],
+            ["competition", "dry-run", "metaculus-cup", "--runs-dir", "runs", "--provider", "deterministic", "--limit", "1"],
         )
         dry_run_output = _strip_ansi(dry_run.output)
         assert dry_run.exit_code == 0, dry_run_output
@@ -931,7 +931,7 @@ def test_competition_dry_run_validates_local_workflow_shadow_before_execution() 
                 "--runs-dir",
                 "runs",
                 "--provider",
-                "mock",
+                "deterministic",
                 "--limit",
                 "1",
             ],
@@ -966,7 +966,7 @@ def test_profile_starter_scaffolds_repeatable_local_workspace() -> None:
         assert result.exit_code == 0, result.output
         assert Path("starter-runs").is_dir()
         profile_payload = json.loads(Path("profiles/my-local.json").read_text(encoding="utf-8"))
-        assert profile_payload["provider"] == "mock"
+        assert profile_payload["provider"] == "deterministic"
         assert profile_payload["limit"] == STARTER_PROFILE_LIMIT
         assert profile_payload["runs_dir"] == "starter-runs"
         assert profile_payload["user"] == "team-alpha"
@@ -981,7 +981,7 @@ def test_profile_starter_scaffolds_repeatable_local_workspace() -> None:
 @pytest.mark.parametrize(
     "command",
     [
-        ["profile", "create", "local-mock"],
+        ["profile", "create", "local-deterministic"],
         ["profile", "starter", "my-local"],
     ],
 )
@@ -1004,7 +1004,7 @@ def test_user_attribution_appears_in_run_artifact_and_csv_export() -> None:
     runner = CliRunner()
 
     with runner.isolated_filesystem():
-        result = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs", "--user", "alice"])
+        result = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs", "--user", "alice"])
 
         assert result.exit_code == 0, result.output
         run_dirs = list(Path("runs").iterdir())
@@ -1034,7 +1034,7 @@ def test_csv_export_flattens_nested_forecast_fields_and_run_timestamps() -> None
     runner = CliRunner()
 
     with runner.isolated_filesystem():
-        result = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs", "--user", "alice"])
+        result = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs", "--user", "alice"])
 
         assert result.exit_code == 0, result.output
         run_dir = next(Path("runs").iterdir())
@@ -1076,7 +1076,7 @@ def test_user_attribution_is_optional_and_backward_compatible() -> None:
 
     with runner.isolated_filesystem():
         # Run without user attribution
-        result = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs"])
+        result = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs"])
 
         assert result.exit_code == 0, result.output
         run_dirs = list(Path("runs").iterdir())
@@ -1103,7 +1103,7 @@ def test_artifacts_inspect_lists_canonical_inventory_for_first_run_review() -> N
     runner = CliRunner()
 
     with runner.isolated_filesystem():
-        result = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs"])
+        result = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs"])
         assert result.exit_code == 0, result.output
 
         inspect = runner.invoke(cli, ["artifacts", "inspect", "--latest", "--runs-dir", "runs"])
@@ -1128,7 +1128,7 @@ def test_performance_harness_writes_structured_report_and_budget_failures() -> N
                 "perf",
                 "run",
                 "--scenario",
-                "provider-free-smoke",
+                "deterministic-smoke",
                 "--iterations",
                 "2",
                 "--limit",
@@ -1163,8 +1163,8 @@ def test_performance_harness_writes_structured_report_and_budget_failures() -> N
 
         assert result.exit_code == 0, result.output
         assert report["schema_version"] == "xrtm.performance.v1"
-        assert report["scenario"] == "provider-free-smoke"
-        assert report["provider"] == "mock"
+        assert report["scenario"] == "deterministic-smoke"
+        assert report["provider"] == "deterministic"
         assert report["iterations"] == 2
         assert report["limit"] == 1
         assert report["runs_dir"] == "runs-perf"
@@ -1206,7 +1206,7 @@ def test_performance_harness_p95_scale_and_safety_gates() -> None:
                 "perf",
                 "run",
                 "--scenario",
-                "provider-free-scale",
+                "deterministic-scale",
                 "--iterations",
                 "1",
                 "--limit",
@@ -1272,8 +1272,8 @@ def test_performance_harness_p95_scale_and_safety_gates() -> None:
 
         assert scale.exit_code == 0, scale.output
         scale_report = json.loads(Path("scale.json").read_text(encoding="utf-8"))
-        assert scale_report["scenario"] == "provider-free-scale"
-        assert scale_report["provider"] == "mock"
+        assert scale_report["scenario"] == "deterministic-scale"
+        assert scale_report["provider"] == "deterministic"
         assert p95_failure.exit_code != 0
         assert "p95_seconds" in p95_failure.output
         assert "exceeded budget" in p95_failure.output
@@ -1300,7 +1300,7 @@ def test_validation_commands_use_corpus_registry_and_split_selection() -> None:
                 "--split",
                 "held-out",
                 "--provider",
-                "mock",
+                "deterministic",
                 "--limit",
                 "10",
                 "--iterations",
@@ -1378,7 +1378,7 @@ def test_benchmark_commands_delegate_to_validation_stack() -> None:
                 "--split",
                 "held-out",
                 "--provider",
-                "mock",
+                "deterministic",
                 "--limit",
                 "10",
                 "--iterations",
@@ -1536,9 +1536,9 @@ def test_profiles_and_run_history_commands_support_repeatable_workflows() -> Non
             [
                 "profile",
                 "create",
-                "local-mock",
+                "local-deterministic",
                 "--provider",
-                "mock",
+                "deterministic",
                 "--limit",
                 "1",
                 "--runs-dir",
@@ -1550,8 +1550,8 @@ def test_profiles_and_run_history_commands_support_repeatable_workflows() -> Non
             ],
         )
         profile_list = runner.invoke(cli, ["profile", "list", "--profiles-dir", "profiles"])
-        profile_show = runner.invoke(cli, ["profile", "show", "local-mock", "--profiles-dir", "profiles"])
-        run = runner.invoke(cli, ["run", "profile", "local-mock", "--profiles-dir", "profiles"])
+        profile_show = runner.invoke(cli, ["profile", "show", "local-deterministic", "--profiles-dir", "profiles"])
+        run = runner.invoke(cli, ["run", "profile", "local-deterministic", "--profiles-dir", "profiles"])
         run_dir = next(Path("runs").iterdir())
         run_id = run_dir.name
         runs_list = runner.invoke(cli, ["runs", "list", "--runs-dir", "runs"])
@@ -1564,7 +1564,7 @@ def test_profiles_and_run_history_commands_support_repeatable_workflows() -> Non
 
         assert create.exit_code == 0, create.output
         assert profile_list.exit_code == 0, profile_list.output
-        assert "local-mock" in profile_list.output
+        assert "local-deterministic" in profile_list.output
         assert profile_show.exit_code == 0, profile_show.output
         assert "team-alpha" in profile_show.output
         assert run.exit_code == 0, run.output
@@ -1594,11 +1594,11 @@ def test_runs_compare_and_web_filters() -> None:
     runner = CliRunner()
 
     with runner.isolated_filesystem():
-        first = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs", "--user", "alice"])
-        second = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs", "--user", "bob"])
+        first = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs", "--user", "alice"])
+        second = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs", "--user", "bob"])
         run_ids = sorted(path.name for path in Path("runs").iterdir())
         compare = runner.invoke(cli, ["runs", "compare", run_ids[0], run_ids[1], "--runs-dir", "runs"])
-        snapshot = web_snapshot(Path("runs"), provider="mock", query=run_ids[0])
+        snapshot = web_snapshot(Path("runs"), provider="deterministic", query=run_ids[0])
 
         assert first.exit_code == 0, first.output
         assert second.exit_code == 0, second.output
@@ -1609,7 +1609,7 @@ def test_runs_compare_and_web_filters() -> None:
         assert "bob" in compare.output
         assert len(snapshot["runs"]) == 1
         assert snapshot["runs"][0]["run_id"] == run_ids[0]
-        assert snapshot["runs"][0]["workflow"]["name"] == "demo-provider-free"
+        assert snapshot["runs"][0]["workflow"]["name"] == "demo-deterministic"
 
 
 def test_runs_compare_surfaces_shared_question_quality_rows() -> None:
@@ -1733,7 +1733,7 @@ def test_monitor_start_and_run_once_use_artifact_state() -> None:
                 "monitor",
                 "start",
                 "--provider",
-                "mock",
+                "deterministic",
                 "--limit",
                 "1",
                 "--runs-dir",
@@ -1786,8 +1786,8 @@ def test_artifacts_cleanup_applies_keep_policy() -> None:
     runner = CliRunner()
 
     with runner.isolated_filesystem():
-        first = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs"])
-        second = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs"])
+        first = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs"])
+        second = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs"])
         dry_run = runner.invoke(cli, ["artifacts", "cleanup", "--runs-dir", "runs", "--keep", "1"])
         delete = runner.invoke(cli, ["artifacts", "cleanup", "--runs-dir", "runs", "--keep", "1", "--delete"])
 
@@ -1803,7 +1803,7 @@ def test_monitor_missing_output_transitions_watch_to_degraded() -> None:
     runner = CliRunner()
 
     with runner.isolated_filesystem():
-        start = runner.invoke(cli, ["monitor", "start", "--provider", "mock", "--limit", "1", "--runs-dir", "runs"])
+        start = runner.invoke(cli, ["monitor", "start", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs"])
         assert start.exit_code == 0, start.output
         run_dir = next(Path("runs").iterdir())
 
@@ -1845,7 +1845,7 @@ def test_tui_and_web_smoke_over_run_artifacts() -> None:
     runner = CliRunner()
 
     with runner.isolated_filesystem():
-        demo = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs"])
+        demo = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs"])
         assert demo.exit_code == 0, demo.output
 
         tui = runner.invoke(cli, ["tui", "--runs-dir", "runs"])
@@ -1855,21 +1855,21 @@ def test_tui_and_web_smoke_over_run_artifacts() -> None:
 
         assert tui.exit_code == 0, tui.output
         assert "XRTM local product cockpit" in tui_output
-        assert "demo-provider-free" in tui_output
+        assert "demo-deterministic" in tui_output
         assert "No monitor runs" in tui_output
         assert web.exit_code == 0, web.output
         assert "workbench ready" in _strip_ansi(web.output)
         assert "workflow(s)" in _strip_ansi(web.output)
         assert len(snapshot["runs"]) == 1
         assert snapshot["monitors"] == []
-        assert snapshot["runs"][0]["workflow"]["name"] == "demo-provider-free"
+        assert snapshot["runs"][0]["workflow"]["name"] == "demo-deterministic"
 
 
 def test_webui_serves_api_routes() -> None:
     runner = CliRunner()
 
     with runner.isolated_filesystem():
-        demo = runner.invoke(cli, ["demo", "--provider", "mock", "--limit", "1", "--runs-dir", "runs"])
+        demo = runner.invoke(cli, ["demo", "--provider", "deterministic", "--limit", "1", "--runs-dir", "runs"])
         assert demo.exit_code == 0, demo.output
 
         server = create_web_server(runs_dir=Path("runs"), port=0)
@@ -1884,7 +1884,7 @@ def test_webui_serves_api_routes() -> None:
             with urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
                 html = response.read().decode("utf-8")
             assert '"resume_target"' in shell_body
-            assert '"demo-provider-free"' in runs_body
+            assert '"demo-deterministic"' in runs_body
             assert "Hub · Studio · Playground · Observatory · Batch · Versions · Operations · Control · Advanced" in html
             assert "Forecasting workspace" in html
             assert "Shared local shell" not in html

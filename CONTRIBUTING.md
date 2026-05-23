@@ -123,7 +123,7 @@ If the change affects published package behavior, also record the released-artif
 
 For coordinated release work, treat clean-room evidence as part of the release record rather than optional extra credit:
 
-- provider-free: capture the disposable Docker lane from wheelhouse before publish and from PyPI after publish (`./workspace.sh docker-provider-free-acceptance --artifact-source wheelhouse|pypi` from the stack root, or the matching CI release-validation job artifact)
+- deterministic: capture the disposable Docker lane from wheelhouse before publish and from PyPI after publish (`./workspace.sh docker-deterministic-acceptance --artifact-source wheelhouse|pypi` from the stack root, or the matching CI release-validation job artifact)
 - local-LLM: capture the disposable Docker lane when provider/local-model behavior changed and compatible hardware/model access exists; otherwise write down the explicit defer reason in the PR or release note
 
 ## Cross-repo policy

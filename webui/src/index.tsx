@@ -91,8 +91,8 @@ function parsePositiveIntegerInput(value: string): number | null {
 
 function providerLabel(value: string | null | undefined): string {
   if (value === "local-llm") return "Local runtime (optional)";
-  if (value === "mock") return "Provider-free baseline";
-  return value || "Provider-free baseline";
+  if (value === "deterministic") return "Deterministic baseline";
+  return value || "Deterministic baseline";
 }
 
 function runWithoutRowSelection(event: React.MouseEvent<HTMLElement>, action: () => void): void {
@@ -368,7 +368,17 @@ async function requestJson(url: string, init?: RequestInit): Promise<JsonObject>
     ...init,
   });
   const body = await response.text();
-  const payload = body ? JSON.parse(body) : {};
+  const contentType = response.headers.get("Content-Type") || "";
+  let payload: JsonObject = {};
+  if (body) {
+    if (contentType.includes("application/json")) {
+      payload = JSON.parse(body) as JsonObject;
+    } else if (!response.ok) {
+      throw new Error(body);
+    } else {
+      throw new Error(`Expected JSON response from ${url}, received ${contentType || "unknown content type"}`);
+    }
+  }
   if (!response.ok) {
     throw new Error(payload.error || `${response.status} ${response.statusText}`);
   }
@@ -568,14 +578,14 @@ function App(): React.ReactElement {
     localLlmCard?.status === "available"
         ? {
             tone: "healthy",
-            label: "Provider-free baseline ready",
+            label: "Deterministic baseline ready",
             detail: String(localLlmCard.detail || "Optional local runtime is available."),
           }
         : localLlmCard?.status === "unavailable"
           || localLlmCard?.status === "optional"
           ? {
               tone: "healthy",
-              label: "Provider-free baseline ready",
+              label: "Deterministic baseline ready",
               detail: String(localLlmCard.detail || "Optional local runtime is not configured."),
             }
           : {
@@ -920,7 +930,7 @@ function HubPage({ shell, navigate }: { shell: JsonObject | null; navigate: (pat
                         <p className="hub-workflow-name">{workflow.name}</p>
                         <p className="workflow-note hub-card-copy">{workflow.description || "Reusable workflow from the registry."}</p>
                         <div className="hub-workflow-meta">
-                          <span>Runtime {workflow.runtime_provider || "mock"}</span>
+                          <span>Runtime {workflow.runtime_provider || "deterministic"}</span>
                           <span>{formatValue(workflow.question_limit)} questions</span>
                         </div>
                       </div>
@@ -1229,7 +1239,7 @@ function BatchPage({ navigate }: { navigate: (path: string) => void }): React.Re
             </label>
             <label>
               <span>Workflow name fallback</span>
-              <input value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} placeholder="demo-provider-free" />
+              <input value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} placeholder="demo-deterministic" />
             </label>
             <label className="operations-field-span">
               <span>Batch label</span>
@@ -1246,7 +1256,7 @@ function BatchPage({ navigate }: { navigate: (path: string) => void }): React.Re
             detail="Questions are mapped immediately into the local row table, but the preview stays collapsed until you need to inspect it."
           >
             {parsedRowsPreview.length ? (
-              <div className="mock-data-grid">
+              <div className="parsed-data-grid">
                 <span>Row</span>
                 <span>Question</span>
                 <span>Title</span>
@@ -2173,7 +2183,7 @@ function StartPage({
   const workflows = useJsonResource(`${bootstrap.api_root}/workflows`, []);
   const runs = useJsonResource(`${bootstrap.api_root}/runs`, []);
   const [mode, setMode] = useState("start");
-  const [provider, setProvider] = useState("mock");
+  const [provider, setProvider] = useState("deterministic");
   const [limit, setLimit] = useState("2");
   const [user, setUser] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
@@ -2197,12 +2207,12 @@ function StartPage({
   const modeCopy = {
     start: {
       title: "First-success quickstart",
-      body: "Runs the released provider-free baseline with the same local launch contract as the CLI start path.",
+      body: "Runs the released deterministic baseline with the same local launch contract as the CLI start path.",
       detail: "Best for a clean first run and release verification.",
     },
     demo: {
       title: "Bounded demo setup",
-      body: "Keeps the demo local, bounded, and report-ready while preserving provider-free as the default runtime.",
+      body: "Keeps the demo local, bounded, and report-ready while preserving deterministic as the default runtime.",
       detail: "Optional local runtime overrides stay explicit but do not widen the release promise.",
     },
     workflow: {
@@ -2264,7 +2274,7 @@ function StartPage({
       <section className="panel hero-panel">
         <span className="eyebrow">Start</span>
         <h2>Run first success without leaving the WebUI</h2>
-        <p>Use the provider-free quickstart, launch a bounded demo, or run a named workflow with the same product services used by the CLI.</p>
+        <p>Use the deterministic quickstart, launch a bounded demo, or run a named workflow with the same product services used by the CLI.</p>
         <div className="button-row">
           <button className="primary-button" onClick={launchRun} disabled={Boolean(busy) || (mode === "workflow" && !selectedWorkflow)}>
             {busy || (mode === "start" ? "Run quickstart" : mode === "demo" ? "Run demo" : "Run workflow")}
@@ -2329,7 +2339,7 @@ function StartPage({
               <label>
                 <span>Provider</span>
                 <select value={provider} onChange={(event) => setProvider(event.target.value)}>
-                  <option value="mock">Provider-free baseline</option>
+                  <option value="deterministic">Deterministic baseline</option>
                   <option value="local-llm">Local runtime (optional)</option>
                 </select>
               </label>
@@ -2386,7 +2396,7 @@ function StartPage({
           <div className="stats-grid">
             <MetricCard label="Ready checks passing" value={(health.data?.checks || []).filter((item: JsonObject) => item.ok).length} />
             <MetricCard label="Checks total" value={(health.data?.checks || []).length} />
-            <MetricCard label="Provider-free baseline" value={providers.data?.provider_free?.ready ? "Ready" : "Check"} />
+            <MetricCard label="Deterministic baseline" value={providers.data?.deterministic?.ready ? "Ready" : "Check"} />
             <MetricCard label="Local runtime" value={providers.data?.local_runtime?.healthy ? "Available" : "Optional"} />
           </div>
           {health.error ? <Message tone="error" title="Health unavailable" body={health.error} /> : null}
@@ -2417,7 +2427,7 @@ function StartPage({
               <>
                 <article className="info-card">
                   <div className="surface-header">
-                    <strong>Provider-free baseline</strong>
+                    <strong>Deterministic baseline</strong>
                     <StatusPill value="ready" />
                   </div>
                   <p className="helper-text">Ready</p>
@@ -2531,7 +2541,7 @@ function StartPage({
                       </div>
                       <p className="workflow-note">{item.description || "Reusable workflow from the local registry."}</p>
                       <div className="meta-row">
-                        <span>{providerLabel(String(item.runtime_provider || "mock"))}</span>
+                        <span>{providerLabel(String(item.runtime_provider || "deterministic"))}</span>
                         <span>{formatValue(item.question_limit)} questions</span>
                       </div>
                       <div className="button-row">
@@ -2717,7 +2727,7 @@ function WorkflowDetailPage({
             <label>
               <span>Provider</span>
               <select value={provider} onChange={(event) => setProvider(event.target.value)}>
-                <option value="mock">Provider-free baseline</option>
+                <option value="deterministic">Deterministic baseline</option>
                 <option value="local-llm">Local runtime (optional)</option>
               </select>
             </label>
@@ -2777,7 +2787,7 @@ function WorkflowDetailPage({
                   <h4>Run contract</h4>
                   <p className="helper-text">{String(runAction.summary || "Run this named workflow through the same shared launch service as the CLI.")}</p>
                 </div>
-                <StatusPill value={String(runAction.default_provider === "local-llm" ? "local optional" : "provider-free default")} />
+                <StatusPill value={String(runAction.default_provider === "local-llm" ? "local optional" : "deterministic default")} />
               </div>
               {(runAction.trust_cues || []).length ? (
                 <ul className="guidance-list">
@@ -2889,7 +2899,7 @@ function OperationsPage({ navigate, onMutate }: { navigate: (path: string) => vo
   const monitors = useJsonResource(`${bootstrap.api_root}/monitors`, []);
   const runs = useJsonResource(`${bootstrap.api_root}/runs`, []);
   const [profileName, setProfileName] = useState("local-default");
-  const [profileProvider, setProfileProvider] = useState("mock");
+  const [profileProvider, setProfileProvider] = useState("deterministic");
   const [profileLimit, setProfileLimit] = useState("5");
   const [selectedProfile, setSelectedProfile] = useState("");
   const [selectedMonitor, setSelectedMonitor] = useState("");
@@ -3155,7 +3165,7 @@ function OperationsPage({ navigate, onMutate }: { navigate: (path: string) => vo
             <label>
               <span>Provider</span>
               <select value={profileProvider} onChange={(event) => setProfileProvider(event.target.value)}>
-                <option value="mock">Provider-free baseline</option>
+                <option value="deterministic">Deterministic baseline</option>
                 <option value="local-llm">Local runtime (optional)</option>
               </select>
             </label>
@@ -3198,10 +3208,10 @@ function OperationsPage({ navigate, onMutate }: { navigate: (path: string) => vo
                             onClick={() => setSelectedProfile(String(profile.name))}
                           >
                             <span className="table-primary">{profile.name}</span>
-                            <span className="table-secondary">{profile.provider || "provider-free"}</span>
+                            <span className="table-secondary">{profile.provider || "deterministic"}</span>
                           </button>
                         </td>
-                        <td>{profile.provider || "mock"}</td>
+                        <td>{profile.provider || "deterministic"}</td>
                         <td>{formatValue(profile.limit)}</td>
                         <td>{profile.runs_dir || "runs"}</td>
                         <td>
@@ -3318,11 +3328,11 @@ function OperationsPage({ navigate, onMutate }: { navigate: (path: string) => vo
                             onClick={() => setSelectedMonitor(String(monitor.run_id))}
                           >
                             <span className="table-primary">{monitor.run_id}</span>
-                            <span className="table-secondary">{monitor.provider || "provider-free"}</span>
+                            <span className="table-secondary">{monitor.provider || "deterministic"}</span>
                           </button>
                         </td>
                         <td><StatusPill value={String(monitor.status || "ready")} /></td>
-                      <td>{monitor.provider || "mock"}</td>
+                      <td>{monitor.provider || "deterministic"}</td>
                       <td>{formatValue(monitor.cycles)}</td>
                       <td>{(monitor.watches || []).length}</td>
                       <td>
@@ -3580,7 +3590,7 @@ function AdvancedPage(): React.ReactElement {
           <div className="operations-keyline-list">
             <div><span>Primary audience</span><strong>operators who already know the lane</strong></div>
             <div><span>Interaction model</span><strong>inspect first, expand deliberately</strong></div>
-            <div><span>Product promise</span><strong>provider-free parity and verification, not new feature families</strong></div>
+            <div><span>Product promise</span><strong>deterministic parity and verification, not new feature families</strong></div>
           </div>
           <div className="operations-card-grid advanced-card-grid">
             <article className="advanced-note-card">
@@ -3595,7 +3605,7 @@ function AdvancedPage(): React.ReactElement {
             </article>
             <article className="advanced-note-card">
               <span className="eyebrow">Release trust</span>
-              <strong>0.8.7 stays provider-free parity work</strong>
+              <strong>0.8.7 stays deterministic parity work</strong>
               <p className="helper-text">This route clarifies existing lanes while keeping the broader product framing local, calm, and truthful.</p>
             </article>
           </div>
@@ -3875,7 +3885,7 @@ function RunsPage({ route, navigate }: { route: Route; navigate: (path: string) 
         {!resource.loading && !runItems.length ? (
           <EmptyState
             title={resource.data?.empty_state?.title || "No runs match the current filter"}
-            body={resource.data?.empty_state?.body || "Clear filters or start a provider-free workflow to create a run for inspection."}
+            body={resource.data?.empty_state?.body || "Clear filters or start a deterministic workflow to create a run for inspection."}
           />
         ) : null}
       </section>
@@ -4846,7 +4856,7 @@ function PlaygroundPage({
             <p className="helper-text">{contextPreview.description || "The playground keeps context bounded to a workflow or starter template."}</p>
             <dl className="context-list compact-context-list">
               <div><dt>Entry</dt><dd>{contextPreview.entry || "—"}</dd></div>
-              <div><dt>Runtime</dt><dd>{contextPreview.runtime?.provider || "mock"}</dd></div>
+              <div><dt>Runtime</dt><dd>{contextPreview.runtime?.provider || "deterministic"}</dd></div>
               <div><dt>Question limit</dt><dd>{formatValue(contextPreview.questions_limit)}</dd></div>
             </dl>
             <div className="button-row">
@@ -4988,7 +4998,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   const requestedWorkflow = params.get("workflow");
   const requestedTemplate = params.get("template") || params.get("template_id");
   const requestedMode = params.get("mode");
-  const selectedWorkflow = requestedWorkflow || shell?.overview?.latest_run?.workflow?.name || "demo-provider-free";
+  const selectedWorkflow = requestedWorkflow || shell?.overview?.latest_run?.workflow?.name || "demo-deterministic";
   const isStudio = route.path === "/studio";
   const surfaceLabel = isStudio ? "Studio" : "Workbench";
   const surfaceBase = isStudio ? "/studio" : "/workbench";
@@ -5860,7 +5870,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                     <div className="two-field-grid">
                       <label>
                         <span>Runtime provider</span>
-                        <select value={coreForm.runtime_provider || "mock"} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_provider: event.target.value }))}>
+                        <select value={coreForm.runtime_provider || "deterministic"} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_provider: event.target.value }))}>
                           {((authoringCatalog.data?.runtime_provider_options || []) as string[]).map((item) => <option key={item} value={item}>{item}</option>)}
                         </select>
                       </label>
@@ -6628,7 +6638,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 <dl className="context-list">
                   <div><dt>Workflow kind</dt><dd>{activeWorkflow.workflow_kind || activeWorkflow.kind || "workflow"}</dd></div>
                   <div><dt>Questions</dt><dd>{activeWorkflow.question_limit || workflow.data?.blueprint?.questions?.limit || "—"}</dd></div>
-                  <div><dt>Runtime</dt><dd>{activeWorkflow.runtime_provider || workflow.data?.blueprint?.runtime?.provider || "mock"}</dd></div>
+                  <div><dt>Runtime</dt><dd>{activeWorkflow.runtime_provider || workflow.data?.blueprint?.runtime?.provider || "deterministic"}</dd></div>
                   <div><dt>Action</dt><dd>{creationMode === "clone" ? "Clone this workflow into a local authored draft." : creationMode === "template" ? "Create a new workflow from the selected starter template." : "Create a fresh safe starter workflow and begin authoring."}</dd></div>
                 </dl>
               ) : (
@@ -6697,7 +6707,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
                 </label>
                 <label>
                   <span>Runtime provider</span>
-                  <select value={coreForm.runtime_provider || "mock"} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_provider: event.target.value }))}>
+                  <select value={coreForm.runtime_provider || "deterministic"} onChange={(event) => setCoreForm((current) => ({ ...current, runtime_provider: event.target.value }))}>
                     {((authoringCatalog.data?.runtime_provider_options || []) as string[]).map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
@@ -7599,7 +7609,7 @@ function RunLaunchResultCard({ result, navigate }: { result: JsonObject; navigat
       <div className="inline-action-card">
         <div>
           <strong>{result.run_id}</strong>
-          <p className="helper-text">{result.command || "Run created"} · {result.provider || "provider-free"} · {result.status || "running"}</p>
+          <p className="helper-text">{result.command || "Run created"} · {result.provider || "deterministic"} · {result.status || "running"}</p>
         </div>
         <div className="button-row">
           <button className="primary-button" onClick={() => navigate(result.href)}>Inspect run</button>

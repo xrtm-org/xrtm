@@ -31,7 +31,7 @@ def _write_canonical_run_fixture(runs_dir: Path, run_id: str, question_ids: list
         json.dumps(
             {
                 "run_id": run_id,
-                "provider": "mock",
+                "provider": "deterministic",
                 "created_at": "2026-05-01T10:00:00+00:00",
                 "user": "alice",
             }
@@ -87,7 +87,7 @@ def test_batch_processing_uses_unique_batch_dirs_for_same_second_runs(tmp_path: 
 
     monkeypatch.setattr(batch_module, "datetime", FrozenDateTime)
 
-    processor = batch_module.BatchProcessor(provider="mock", runs_dir=tmp_path / "batch-runs")
+    processor = batch_module.BatchProcessor(provider="deterministic", runs_dir=tmp_path / "batch-runs")
     questions = [batch_module.Question(id="q1", question="Will this batch example avoid same-second clobbering?")]
 
     asyncio.run(processor.process_batch(questions))
@@ -109,7 +109,7 @@ def test_fastapi_service_generates_unique_forecast_ids_for_duplicate_requests(
     from fastapi.testclient import TestClient
 
     payload = {
-        "question": "Will duplicate mock requests receive distinct forecast identifiers by 2027?",
+        "question": "Will duplicate deterministic requests receive distinct forecast identifiers by 2027?",
         "resolution_date": "2027-12-31",
     }
 
@@ -152,7 +152,7 @@ def test_scheduled_monitor_uses_unique_run_dirs_for_same_second_runs(
     )
 
     pipeline = monitor_module.MonitorPipeline(
-        provider="mock",
+        provider="deterministic",
         questions_file=questions_file,
         runs_dir=tmp_path / "monitor-runs",
     )

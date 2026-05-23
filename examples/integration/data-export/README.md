@@ -20,7 +20,7 @@ That CSV flag is now part of the published `xrtm==0.8.0` surface. Use this examp
 Use exports honestly:
 
 - first decide in the product shell whether a run is worth keeping
-- unchanged mock-provider comparisons mean you are still looking at the control, not a visible improvement
+- unchanged deterministic-provider comparisons mean you are still looking at the control, not a visible improvement
 - export becomes most valuable after a meaningful provider/model/runtime change earns a better compare result and you want notebook, SQL, or spreadsheet follow-up
 
 ## Quick Start
@@ -28,7 +28,7 @@ Use exports honestly:
 ### 1. Create a sample run
 
 ```bash
-xrtm demo --provider mock --limit 2 --runs-dir runs
+xrtm demo --provider deterministic --limit 2 --runs-dir runs
 ```
 
 ### 2. Export one run to CSV

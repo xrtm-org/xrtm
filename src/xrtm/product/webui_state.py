@@ -444,11 +444,11 @@ class WebUIStateStore:
                 "summary": "File-backed runs, local workflows, and resumable SQLite state in one muted local shell.",
                 "system_status": {
                     "tone": "healthy",
-                    "label": "Provider-free baseline ready",
+                    "label": "Deterministic baseline ready",
                     "detail": (
                         f"Optional local runtime available: {local_runtime_detail}"
                         if local_llm_snapshot.get("healthy")
-                        else "Provider-free baseline is ready. Optional local runtime is not configured."
+                        else "Deterministic baseline is ready. Optional local runtime is not configured."
                     ),
                 },
                 "trust_cues": [
@@ -524,7 +524,7 @@ class WebUIStateStore:
                 "empty_state": {
                     "title": "Start from a flagship workflow",
                     "summary": (
-                        "The shell is ready. Start a provider-free first run, inspect the result, "
+                        "The shell is ready. Start a deterministic first run, inspect the result, "
                         "then clone a built-in workflow into a safe local draft when you are ready to iterate."
                     ),
                     "primary_cta": {"label": "Open Start", "href": "/start"},
@@ -1356,7 +1356,7 @@ class WebUIStateStore:
             "execution_policy": {
                 "no_webui_only_arbitrary_code": True,
                 "provider_categories": ["openai-compatible-endpoint", "coding-agent-cli-contract"],
-                "provider_free_role": "deterministic smoke/baseline mode",
+                "deterministic_role": "deterministic smoke/baseline mode",
                 "shared_services": {
                     "authoring": "xrtm.product.workflow_authoring.WorkflowAuthoringService",
                     "validation": "xrtm.product.launch.validate_authored_workflow",
@@ -1801,7 +1801,7 @@ class WebUIStateStore:
             "analytics": _observatory_analytics(items=items, runs_dir=runs_dir),
             "empty_state": {
                 "title": "No Observatory runs match the current filter",
-                "body": "Clear filters or start a provider-free workflow to create a run for inspection.",
+                "body": "Clear filters or start a deterministic workflow to create a run for inspection.",
             },
         }
 
@@ -1908,7 +1908,7 @@ class WebUIStateStore:
                     "default_limit": blueprint.questions.limit,
                     "baseline_options": baseline_options,
                     "trust_cues": [
-                        "Provider-free mode remains the default released path for 0.8.7.",
+                        "Deterministic mode remains the default released path for 0.8.7.",
                         "Local runtime overrides stay optional and local-only.",
                         "Every run still lands in Observatory with report, export, and compare evidence.",
                     ],
@@ -2008,7 +2008,7 @@ class WebUIStateStore:
                     "method": "POST",
                     "href": "/api/drafts",
                     "payload": {
-                        "source_workflow_name": workflow.get("name") or "demo-provider-free",
+                        "source_workflow_name": workflow.get("name") or "demo-deterministic",
                         "baseline_run_id": run_id,
                     },
                 },
@@ -3586,29 +3586,36 @@ def _playground_optional_string(value: Any, *, allow_blank: bool = False) -> str
 
 
 def _preferred_hub_workflow(workflows: list[dict[str, Any]]) -> str:
-    preferred = next((str(workflow["name"]) for workflow in workflows if workflow.get("name") == "demo-provider-free"), None)
+    preferred = next(
+        (str(workflow["name"]) for workflow in workflows if workflow.get("name") in {"demo-deterministic", "demo-deterministic"}),
+        None,
+    )
     if preferred is not None:
         return preferred
     if workflows:
-        return str(workflows[0].get("name") or "demo-provider-free")
-    return "demo-provider-free"
+        return str(workflows[0].get("name") or "demo-deterministic")
+    return "demo-deterministic"
 
 
 def _preferred_hub_template(templates: list[dict[str, Any]]) -> str:
     preferred = next(
-        (str(template["template_id"]) for template in templates if template.get("template_id") == "provider-free-demo"),
+        (
+            str(template["template_id"])
+            for template in templates
+            if template.get("template_id") in {"deterministic-demo", "deterministic-demo"}
+        ),
         None,
     )
     if preferred is not None:
         return preferred
     if templates:
-        return str(templates[0].get("template_id") or "provider-free-demo")
-    return "provider-free-demo"
+        return str(templates[0].get("template_id") or "deterministic-demo")
+    return "deterministic-demo"
 
 
 def _preferred_playground_workflow(registry: WorkflowRegistry) -> str:
     workflows = registry.list_workflows()
-    preferred = next((workflow.name for workflow in workflows if workflow.name == "demo-provider-free"), None)
+    preferred = next((workflow.name for workflow in workflows if workflow.name in {"demo-deterministic", "demo-deterministic"}), None)
     if preferred is not None:
         return preferred
     if workflows:
@@ -3618,7 +3625,10 @@ def _preferred_playground_workflow(registry: WorkflowRegistry) -> str:
 
 def _preferred_playground_template() -> str:
     templates = list_workflow_starter_templates()
-    preferred = next((template.template_id for template in templates if template.template_id == "provider-free-demo"), None)
+    preferred = next(
+        (template.template_id for template in templates if template.template_id in {"deterministic-demo", "deterministic-demo"}),
+        None,
+    )
     if preferred is not None:
         return preferred
     if templates:

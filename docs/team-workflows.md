@@ -28,7 +28,7 @@ This guide documents realistic multi-user and desk-style workflows for XRTM, bas
 > read-only step inspection, and explicit save-back to workflow/profile only.
 > Keep those runs labeled exploratory and separate from benchmark scorecards or
 > release evidence by default. The released runtime wording for that lane stays
-> provider-free unless wider validation is published separately.
+> deterministic unless wider validation is published separately.
 
 ---
 
@@ -75,9 +75,9 @@ Create a profile for each team member to ensure consistent settings:
 
 ```bash
 # Analyst profiles with naming convention
-xrtm profile create analyst-jane --provider mock --limit 10 --runs-dir runs
-xrtm profile create analyst-bob --provider mock --limit 10 --runs-dir runs
-xrtm profile create analyst-maria --provider mock --limit 10 --runs-dir runs
+xrtm profile create analyst-jane --provider deterministic --limit 10 --runs-dir runs
+xrtm profile create analyst-bob --provider deterministic --limit 10 --runs-dir runs
+xrtm profile create analyst-maria --provider deterministic --limit 10 --runs-dir runs
 ```
 
 **Convention:** Use consistent profile naming like `analyst-<name>` so you can identify who ran what.
@@ -332,7 +332,7 @@ Since XRTM doesn't have built-in user management, teams use these conventions:
 
 Example:
 ```bash
-xrtm profile create analyst-jane --provider mock --limit 10
+xrtm profile create analyst-jane --provider deterministic --limit 10
 xrtm profile create analyst-bob --provider openai --limit 20
 ```
 
@@ -516,7 +516,7 @@ Then query with `jq` or import into database for compliance reporting.
 sudo mount -t nfs server:/xrtm/runs /mnt/xrtm-runs
 
 # Configure XRTM to use shared directory
-xrtm profile create analyst-jane --provider mock --runs-dir /mnt/xrtm-runs
+xrtm profile create analyst-jane --provider deterministic --runs-dir /mnt/xrtm-runs
 ```
 
 ### Pattern 2: Centralized Database
@@ -664,7 +664,7 @@ echo $((current - 1)) > $QUOTA_FILE
 Use XRTM's built-in monitor for key forecasts:
 
 ```bash
-xrtm monitor start --provider mock --limit 5 --runs-dir runs
+xrtm monitor start --provider deterministic --limit 5 --runs-dir runs
 xrtm monitor daemon runs/20260501T101710Z-d8967e54 --cycles 10 --interval-seconds 3600
 ```
 
