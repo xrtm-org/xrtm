@@ -368,7 +368,17 @@ async function requestJson(url: string, init?: RequestInit): Promise<JsonObject>
     ...init,
   });
   const body = await response.text();
-  const payload = body ? JSON.parse(body) : {};
+  const contentType = response.headers.get("Content-Type") || "";
+  let payload: JsonObject = {};
+  if (body) {
+    if (contentType.includes("application/json")) {
+      payload = JSON.parse(body) as JsonObject;
+    } else if (!response.ok) {
+      throw new Error(body);
+    } else {
+      throw new Error(`Expected JSON response from ${url}, received ${contentType || "unknown content type"}`);
+    }
+  }
   if (!response.ok) {
     throw new Error(payload.error || `${response.status} ${response.statusText}`);
   }

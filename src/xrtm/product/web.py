@@ -285,11 +285,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
             if _is_app_route(path):
                 self._send_html(render_app_shell_html(initial_path=path, query_string=parsed.query))
                 return
-            self._send_text("Not found", status=HTTPStatus.NOT_FOUND)
+            self._send_route_error(path, "Not found", status=HTTPStatus.NOT_FOUND)
         except FileNotFoundError as exc:
-            self._send_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            self._send_route_error(path, str(exc), status=HTTPStatus.NOT_FOUND)
         except ValueError as exc:
-            self._send_text(str(exc), status=HTTPStatus.BAD_REQUEST)
+            self._send_route_error(path, str(exc), status=HTTPStatus.BAD_REQUEST)
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
         parsed = urlparse(self.path)
@@ -669,7 +669,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             if path in {"/workbench/clone", "/workbench/edit", "/workbench/validate", "/workbench/run"}:
                 self._handle_legacy_form_post(path)
                 return
-            self._send_text("Not found", status=HTTPStatus.NOT_FOUND)
+            self._send_route_error(path, "Not found", status=HTTPStatus.NOT_FOUND)
         except (WorkbenchInputError, FileExistsError, FileNotFoundError, ValueError) as exc:
             self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         except Exception as exc:  # pragma: no cover - defensive server boundary
@@ -736,7 +736,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     raise WorkbenchInputError("batch action must be 'cancel'")
                 self._send_json(self.state_store.cancel_batch_run(batch_id=batch_match.group(1)))
                 return
-            self._send_text("Not found", status=HTTPStatus.NOT_FOUND)
+            self._send_route_error(path, "Not found", status=HTTPStatus.NOT_FOUND)
         except (WorkbenchInputError, FileNotFoundError, ValueError) as exc:
             self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
@@ -748,7 +748,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             if webhook_match:
                 self._send_json(self.state_store.delete_webhook_endpoint(webhook_match.group(1)))
                 return
-            self._send_text("Not found", status=HTTPStatus.NOT_FOUND)
+            self._send_route_error(path, "Not found", status=HTTPStatus.NOT_FOUND)
         except (WorkbenchInputError, FileNotFoundError, ValueError) as exc:
             self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
@@ -888,6 +888,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
+
+    def _send_route_error(self, path: str, message: str, *, status: HTTPStatus) -> None:
+        if path.startswith("/api/"):
+            self._send_json({"error": message}, status=status)
+            return
+        self._send_text(message, status=status)
 
     def _send_bytes(
         self,

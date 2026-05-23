@@ -444,7 +444,7 @@ jobs:
           PY
 
   deterministic-cleanroom:
-    name: Provider-free clean-room (${{ github.event.inputs.cleanroom_artifact_source }})
+    name: Deterministic clean-room (${{ github.event.inputs.cleanroom_artifact_source }})
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.cleanroom_artifact_source != 'skip'
     runs-on: ubuntu-latest
 
@@ -511,7 +511,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo "### Provider-free clean-room validation refs"
+            echo "### Deterministic clean-room validation refs"
             echo
             echo "| Repo | Requested ref | Resolved commit |"
             echo "| --- | --- | --- |"
@@ -561,7 +561,7 @@ jobs:
         run: |
           summary_path="$ARTIFACT_DIR/summary.json"
           if [ ! -f "$summary_path" ]; then
-            echo "Provider-free clean-room summary missing: \`$summary_path\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "Deterministic clean-room summary missing: \`$summary_path\`" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           SUMMARY_PATH="$summary_path" python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
@@ -573,7 +573,7 @@ jobs:
           payload = json.loads(summary_path.read_text(encoding="utf-8"))
           release = payload["xrtm_release"]
           operator_run_ids = release["operator"]["run_ids"]
-          print("### Provider-free clean-room evidence")
+          print("### Deterministic clean-room evidence")
           print()
           print(f"- summary path: `{summary_path}`")
           print(f"- artifact source: `{payload['artifact_source']}`")

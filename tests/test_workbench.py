@@ -1454,6 +1454,34 @@ def test_webui_playground_saveback_routes_persist_workflow_then_profile(tmp_path
         thread.join(timeout=5)
 
 
+def test_webui_api_get_errors_return_json_payloads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workflows_dir = tmp_path / "workflows"
+    server = create_web_server(runs_dir=tmp_path / "runs", workflows_dir=workflows_dir, port=0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        _, port = server.server_address
+        base_url = f"http://127.0.0.1:{port}"
+
+        handler = server.RequestHandlerClass.keywords["state_store"]
+        monkeypatch.setattr(
+            handler,
+            "workflow_detail_snapshot",
+            lambda **_kwargs: (_ for _ in ()).throw(ValueError("unsupported workflow runtime provider: broken-runtime")),
+        )
+
+        with pytest.raises(HTTPError) as excinfo:
+            _request_json(f"{base_url}/api/workflows/demo-deterministic")
+        assert excinfo.value.code == 400
+        assert "application/json" in excinfo.value.headers.get("Content-Type", "")
+        payload = json.loads(excinfo.value.read().decode("utf-8"))
+        assert payload["error"] == "unsupported workflow runtime provider: broken-runtime"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_webui_playground_save_profile_route_preserves_shared_error_semantics(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     session = launch_module.run_sandbox_session(
