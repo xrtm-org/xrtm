@@ -29,7 +29,7 @@ def _write_contract(
         "scopes": {"xrtm": {"files": ["README.md"]}},
         "runtime_validation": {
             "xrtm": {
-                "baseline_mode": "provider-free",
+                "baseline_mode": "deterministic",
                 "first_class_categories": categories,
                 "openai_compatible_profiles": {
                     "local": ["local-llm"],
@@ -43,7 +43,7 @@ def _write_contract(
     return contract
 
 
-def test_validate_scope_accepts_provider_free_baseline_with_local_profile_only(tmp_path) -> None:
+def test_validate_scope_accepts_deterministic_baseline_with_local_profile_only(tmp_path) -> None:
     module = _load_module()
     (tmp_path / "README.md").write_text("`xrtm doctor`\n", encoding="utf-8")
 
@@ -56,7 +56,7 @@ def test_validate_scope_accepts_provider_free_baseline_with_local_profile_only(t
     assert failures == []
 
 
-def test_validate_scope_rejects_provider_free_as_first_class_category(tmp_path) -> None:
+def test_validate_scope_rejects_deterministic_as_first_class_category(tmp_path) -> None:
     module = _load_module()
     (tmp_path / "README.md").write_text("`xrtm doctor`\n", encoding="utf-8")
 
@@ -65,7 +65,7 @@ def test_validate_scope_rejects_provider_free_as_first_class_category(tmp_path) 
         _write_contract(
             cloud_api_support_claimed=False,
             commercial_profiles=[],
-            categories=["openai-compatible-endpoint", "provider-free"],
+            categories=["openai-compatible-endpoint", "deterministic"],
         ),
         "xrtm",
     )

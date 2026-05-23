@@ -19,7 +19,12 @@ from xrtm.product.observability import (
     validate_monitor_state,
 )
 from xrtm.product.pipeline import package_versions
-from xrtm.product.providers import build_provider, provider_snapshot
+from xrtm.product.providers import (
+    DETERMINISTIC_PROVIDER_NAME,
+    build_provider,
+    normalize_provider_name,
+    provider_snapshot,
+)
 from xrtm.product.read_models import is_monitor_record, list_monitor_records
 
 
@@ -191,7 +196,9 @@ def _load_monitor_runtime(
     run_payload = store.read_run(run_dir)
     monitor = _read_monitor(run_dir)
     _ensure_monitor_can_run(monitor)
-    provider_name = provider or monitor.get("provider") or run_payload.get("provider") or "mock"
+    provider_name = normalize_provider_name(
+        str(provider or monitor.get("provider") or run_payload.get("provider") or DETERMINISTIC_PROVIDER_NAME)
+    )
     return _MonitorRuntime(
         store=store,
         run=_run_from_payload(run_dir, run_payload),
@@ -322,7 +329,7 @@ def _run_from_payload(run_dir: Path, payload: dict[str, Any]) -> RunArtifact:
         run_dir=run_dir,
         status=str(payload.get("status", "monitoring")),
         command=str(payload.get("command", "xrtm monitor")),
-        provider=str(payload.get("provider", "mock")),
+        provider=normalize_provider_name(str(payload.get("provider", DETERMINISTIC_PROVIDER_NAME))),
         created_at=str(payload.get("created_at", utc_now())),
         updated_at=str(payload.get("updated_at", utc_now())),
         package_versions=dict(payload.get("package_versions", {})),

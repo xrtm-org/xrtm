@@ -58,7 +58,7 @@ Use `WorkflowRegistry.load()` for a specific blueprint and `WorkflowRegistry.lis
 ```python
 from xrtm.product import WorkflowRegistry, validate_product_blueprint
 
-workflow = WorkflowRegistry().load("demo-provider-free")
+workflow = WorkflowRegistry().load("demo-deterministic")
 validate_product_blueprint(workflow)
 ```
 
@@ -71,7 +71,7 @@ from pathlib import Path
 
 from xrtm.product import WorkflowRegistry, run_workflow_blueprint
 
-workflow = WorkflowRegistry().load("demo-provider-free")
+workflow = WorkflowRegistry().load("demo-deterministic")
 result = run_workflow_blueprint(
     workflow,
     command="python-api-demo",
@@ -105,7 +105,7 @@ from xrtm.product.launch import run_registered_workflow, run_start_quickstart
 
 quickstart = run_start_quickstart(limit=1, runs_dir=Path("runs"))
 candidate = run_registered_workflow(
-    "demo-provider-free",
+    "demo-deterministic",
     workflows_dir=Path(".xrtm/workflows"),
     runs_dir=Path("runs"),
     limit=1,
@@ -137,7 +137,7 @@ workflow = WorkflowBlueprint(
     description="Minimal custom workflow built from product nodes.",
     workflow_kind="demo",
     questions=QuestionSourceSpec(limit=2),
-    runtime=RuntimeProfileSpec(provider="mock"),
+    runtime=RuntimeProfileSpec(provider="deterministic"),
     graph=GraphSpec(
         entry="load_questions",
         nodes={

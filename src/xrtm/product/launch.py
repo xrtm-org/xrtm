@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from xrtm.product.doctor import doctor_snapshot
 from xrtm.product.pipeline import PipelineResult, run_pipeline
 from xrtm.product.profiles import DEFAULT_PROFILES_DIR, ProfileStore
+from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, normalize_provider_name
 from xrtm.product.sandbox import (
     SandboxContext,
     SandboxQuestionInput,
@@ -36,7 +37,7 @@ DEFAULT_MAX_TOKENS = 768
 
 
 def run_start_quickstart(*, limit: int = DEFAULT_DEMO_LIMIT, runs_dir: Path = Path("runs"), user: str | None = None) -> PipelineResult:
-    """Run the released provider-free quickstart workflow after readiness checks pass."""
+    """Run the released deterministic quickstart workflow after readiness checks pass."""
 
     readiness = doctor_snapshot(runs_dir=runs_dir)
     if not readiness["ready"]:
@@ -44,20 +45,20 @@ def run_start_quickstart(*, limit: int = DEFAULT_DEMO_LIMIT, runs_dir: Path = Pa
         detail = "; ".join(blocking) if blocking else "doctor readiness checks failed"
         raise ValueError(f"xrtm start prerequisites not satisfied: {detail}")
     return run_demo_workflow(
-        provider="mock",
+        provider=DETERMINISTIC_PROVIDER_NAME,
         limit=limit,
         runs_dir=runs_dir,
         user=user,
         command="xrtm start",
-        name="demo-provider-free",
+        name="demo-deterministic",
         title="XRTM Quickstart",
-        description="Guided newcomer quickstart over the provider-free product shell baseline.",
+        description="Guided newcomer quickstart over the deterministic product shell baseline.",
     )
 
 
 def run_demo_workflow(
     *,
-    provider: str = "mock",
+    provider: str = DETERMINISTIC_PROVIDER_NAME,
     limit: int = DEFAULT_DEMO_LIMIT,
     runs_dir: Path = Path("runs"),
     base_url: str | None = None,
@@ -74,8 +75,9 @@ def run_demo_workflow(
 ) -> PipelineResult:
     """Run the shared demo workflow service used by CLI and WebUI."""
 
+    provider = normalize_provider_name(provider)
     blueprint = build_demo_workflow_blueprint(
-        name=name or ("demo-provider-free" if provider == "mock" else "demo-local-llm"),
+        name=name or ("demo-deterministic" if provider == DETERMINISTIC_PROVIDER_NAME else "demo-local-llm"),
         title=title,
         description=description,
         provider=provider,

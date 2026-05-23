@@ -23,8 +23,8 @@ from xrtm.product.pipeline import PipelineResult
 from xrtm.product.profiles import DEFAULT_PROFILES_DIR, ProfileStore, WorkflowProfile, starter_profile
 from xrtm.product.providers import (
     CODING_AGENT_CLI_CATEGORY,
+    DETERMINISTIC_VALIDATION_MODE,
     OPENAI_COMPATIBLE_CATEGORY,
-    PROVIDER_FREE_VALIDATION_MODE,
     local_llm_status,
     provider_runtime_metadata,
 )
@@ -314,7 +314,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     )
                     return
                 baseline_run_id = _optional_json_value(payload, "baseline_run_id")
-                provider = _optional_json_value(payload, "provider") or "mock"
+                provider = _optional_json_value(payload, "provider") or "deterministic"
                 result = launch_module.run_demo_workflow(
                     provider=provider,
                     limit=_optional_json_int(payload, "limit", default=launch_module.DEFAULT_DEMO_LIMIT),
@@ -326,7 +326,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     write_report=_optional_json_bool(payload, "write_report", default=True),
                     user=_optional_json_value(payload, "user"),
                     command="xrtm demo",
-                    name="demo-provider-free" if provider == "mock" else "demo-local-llm",
+                    name="demo-deterministic" if provider == "deterministic" else "demo-local-llm",
                     title="XRTM Demo",
                     description="Bounded product demo over the released real-binary corpus.",
                 )
@@ -512,7 +512,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     profile = WorkflowProfile(
                         name=name,
                         workflow_name=_optional_json_value(payload, "workflow_name"),
-                        provider=_optional_json_value(payload, "provider") or "mock",
+                        provider=_optional_json_value(payload, "provider") or "deterministic",
                         limit=_optional_json_int(payload, "limit", default=launch_module.DEFAULT_DEMO_LIMIT),
                         runs_dir=str(_optional_json_path(payload, "runs_dir") or self.runs_dir),
                         base_url=_optional_json_value(payload, "base_url"),
@@ -529,7 +529,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 run = start_monitor(
                     runs_dir=self.runs_dir,
                     limit=_optional_json_int(payload, "limit", default=launch_module.DEFAULT_DEMO_LIMIT),
-                    provider=_optional_json_value(payload, "provider") or "mock",
+                    provider=_optional_json_value(payload, "provider") or "deterministic",
                     base_url=_optional_json_value(payload, "base_url"),
                     model=_optional_json_value(payload, "model"),
                     api_key=_optional_json_value(payload, "api_key"),
@@ -1194,21 +1194,21 @@ def _provider_status_snapshot() -> dict[str, Any]:
         "surface": {
             "name": "Provider status",
             "summary": (
-                "Keep the released provider-free baseline explicit while showing optional local runtime checks "
+                "Keep the released deterministic baseline explicit while showing optional local runtime checks "
                 "without widening the local product promise."
             ),
         },
         "first_class_categories": [OPENAI_COMPATIBLE_CATEGORY, CODING_AGENT_CLI_CATEGORY],
-        "provider_free": {
-            "label": "Provider-free baseline",
+        "deterministic": {
+            "label": "Deterministic baseline",
             "status": "ready",
             "summary": "Released local baseline for first success, bounded demos, and verification runs.",
-            "runtime": provider_runtime_metadata("mock"),
-            "validation_mode": PROVIDER_FREE_VALIDATION_MODE,
+            "runtime": provider_runtime_metadata("deterministic"),
+            "validation_mode": DETERMINISTIC_VALIDATION_MODE,
             "ready": True,
             "trust_cues": [
                 "No API keys required",
-                "Deterministic smoke validation",
+                "Hash-derived deterministic forecasts",
                 "Shared CLI/WebUI launch contract",
             ],
         },
@@ -1225,8 +1225,8 @@ def _provider_status_snapshot() -> dict[str, Any]:
         "local_llm": local_runtime,
         "cards": [
             {
-                "key": "provider-free",
-                "label": "Provider-free baseline",
+                "key": "deterministic",
+                "label": "Deterministic baseline",
                 "value": "Ready",
                 "detail": "Released local baseline for start, demo, and workflow verification.",
                 "status": "ready",

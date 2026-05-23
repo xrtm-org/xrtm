@@ -34,7 +34,7 @@ on:
         default: main
         type: string
       cleanroom_artifact_source:
-        description: "Run provider-free clean-room release validation (skip, wheelhouse, or pypi)"
+        description: "Run deterministic clean-room release validation (skip, wheelhouse, or pypi)"
         required: false
         default: skip
         type: choice
@@ -443,7 +443,7 @@ jobs:
           assert 'initial_path": "/studio"' in html or 'initial_path":"/studio"' in html
           PY
 
-  provider-free-cleanroom:
+  deterministic-cleanroom:
     name: Provider-free clean-room (${{ github.event.inputs.cleanroom_artifact_source }})
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.cleanroom_artifact_source != 'skip'
     runs-on: ubuntu-latest
@@ -541,13 +541,13 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Run provider-free clean-room acceptance
+      - name: Run deterministic clean-room acceptance
         shell: bash
         env:
           ARTIFACT_SOURCE: ${{ github.event.inputs.cleanroom_artifact_source }}
-          ARTIFACT_DIR: acceptance-studies/docker-provider-free/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          ARTIFACT_DIR: acceptance-studies/docker-deterministic/ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          python scripts/docker_provider_free_acceptance.py host \
+          python scripts/docker_deterministic_acceptance.py host \
             --workspace-root . \
             --xrtm-repo-root . \
             --artifact-source "$ARTIFACT_SOURCE" \
@@ -557,7 +557,7 @@ jobs:
         if: always()
         shell: bash
         env:
-          ARTIFACT_DIR: acceptance-studies/docker-provider-free/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          ARTIFACT_DIR: acceptance-studies/docker-deterministic/ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           summary_path="$ARTIFACT_DIR/summary.json"
           if [ ! -f "$summary_path" ]; then
@@ -589,8 +589,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: provider-free-cleanroom-${{ github.run_id }}-${{ github.run_attempt }}
-          path: acceptance-studies/docker-provider-free/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          name: deterministic-cleanroom-${{ github.run_id }}-${{ github.run_attempt }}
+          path: acceptance-studies/docker-deterministic/ci-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: warn
 
   local-llm-cleanroom:

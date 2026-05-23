@@ -69,7 +69,7 @@ from xrtm.product.profiles import (
     WorkflowProfile,
     starter_profile,
 )
-from xrtm.product.providers import local_llm_status
+from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, local_llm_status, normalize_provider_name
 from xrtm.product.reports import render_html_report
 from xrtm.product.tui import render_tui_once, run_tui
 from xrtm.product.web import create_web_server, web_snapshot
@@ -97,12 +97,34 @@ except ImportError as exc:
     _VALIDATION_IMPORT_ERROR = exc
 
 console = Console()
-_WORKFLOW_PROVIDER_CHOICES = ("mock", "local-llm")
+_WORKFLOW_PROVIDER_CHOICES = (DETERMINISTIC_PROVIDER_NAME, "local-llm")
 _WORKFLOW_KIND_CHOICES = ("workflow", "benchmark")
 _WORKFLOW_TEMPLATES = list_workflow_starter_templates()
 _WORKFLOW_TEMPLATE_CHOICES = tuple(template.template_id for template in _WORKFLOW_TEMPLATES)
 _BUILTIN_WORKFLOW_NODES = {definition.name: definition for definition in list_builtin_workflow_nodes()}
 _BUILTIN_WORKFLOW_NODE_CHOICES = tuple(_BUILTIN_WORKFLOW_NODES)
+
+
+class _ProviderParamType(click.ParamType):
+    name = "provider"
+
+    def convert(self, value: Any, param: click.Parameter | None, ctx: click.Context | None) -> str:
+        if not isinstance(value, str):
+            self.fail("provider must be a string", param, ctx)
+        try:
+            normalized = normalize_provider_name(value)
+        except ValueError as exc:
+            self.fail(str(exc), param, ctx)
+        if normalized not in _WORKFLOW_PROVIDER_CHOICES:
+            self.fail(
+                f"unsupported provider '{value}'. Use one of: {', '.join(_WORKFLOW_PROVIDER_CHOICES)}",
+                param,
+                ctx,
+            )
+        return normalized
+
+
+_PROVIDER_OPTION_TYPE = _ProviderParamType()
 
 
 def _require_validation_stack() -> None:
@@ -567,8 +589,8 @@ def _prompt_line(label: str, *, default: str | None = None) -> str | None:
 
 def _playground_default_selector(*, registry: WorkflowRegistry) -> str:
     workflows = registry.list_workflows()
-    if any(workflow.name == "demo-provider-free" for workflow in workflows):
-        return "workflow:demo-provider-free"
+    if any(workflow.name in {"demo-deterministic", "demo-deterministic"} for workflow in workflows):
+        return "workflow:demo-deterministic"
     if workflows:
         return f"workflow:{workflows[0].name}"
     if _WORKFLOW_TEMPLATES:
@@ -874,7 +896,7 @@ def start(limit: int, runs_dir: Path, user: str | None) -> None:
 
 
 @cli.command()
-@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--provider", type=_PROVIDER_OPTION_TYPE, default=DETERMINISTIC_PROVIDER_NAME, show_default=True)
 @click.option("--limit", type=int, default=2, show_default=True, help="Number of real corpus questions to run.")
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
 @click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for --provider local-llm.")
@@ -908,7 +930,7 @@ def demo(
             write_report=not no_report,
             user=user,
             command="xrtm demo",
-            name="demo-provider-free" if provider == "mock" else "demo-local-llm",
+            name="demo-deterministic" if provider == DETERMINISTIC_PROVIDER_NAME else "demo-local-llm",
             title="XRTM Demo",
             description="Bounded product demo over the released real-binary corpus.",
         )
@@ -965,7 +987,7 @@ def workflow_create_scratch(
     workflows_dir: Path,
     overwrite: bool,
 ) -> None:
-    """Create a provider-free starter workflow from scratch."""
+    """Create a deterministic starter workflow from scratch."""
 
     service = _workflow_authoring_service(workflows_dir)
     try:
@@ -984,7 +1006,7 @@ def workflow_create_scratch(
 
 
 @workflow_create_group.command("template")
-@click.argument("template_id", type=click.Choice(_WORKFLOW_TEMPLATE_CHOICES))
+@click.argument("template_id", type=str)
 @click.argument("name")
 @click.option("--title", default=None, help="Optional display title override for the starter template.")
 @click.option("--description", default=None, help="Optional description override for the starter template.")
@@ -1666,7 +1688,7 @@ def workflow_explain(name: str, workflows_dir: Path) -> None:
 )
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
 @click.option("--limit", type=int, default=None, help="Override the workflow's default question limit.")
-@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default=None, help="Override the workflow runtime provider.")
+@click.option("--provider", type=_PROVIDER_OPTION_TYPE, default=None, help="Override the workflow runtime provider.")
 @click.option("--base-url", default=None, help="Override the workflow's OpenAI-compatible endpoint URL.")
 @click.option("--model", default=None, help="Override the workflow model id.")
 @click.option("--api-key", default=None, help="Override the workflow API key.")
@@ -1750,7 +1772,7 @@ def competition_list() -> None:
 )
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
 @click.option("--limit", type=int, default=None, help="Override the workflow's default question limit.")
-@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default=None, help="Override the workflow runtime provider.")
+@click.option("--provider", type=_PROVIDER_OPTION_TYPE, default=None, help="Override the workflow runtime provider.")
 @click.option("--base-url", default=None, help="Override the workflow's OpenAI-compatible endpoint URL.")
 @click.option("--model", default=None, help="Override the workflow model id.")
 @click.option("--api-key", default=None, help="Override the workflow API key.")
@@ -1815,7 +1837,7 @@ def profile_group() -> None:
 @profile_group.command("create")
 @click.argument("name")
 @click.option("--profiles-dir", type=click.Path(file_okay=False, path_type=Path), default=DEFAULT_PROFILES_DIR, show_default=True)
-@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--provider", type=_PROVIDER_OPTION_TYPE, default=DETERMINISTIC_PROVIDER_NAME, show_default=True)
 @click.option("--limit", type=int, default=2, show_default=True, help="Number of real corpus questions to run.")
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
 @click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for --provider local-llm.")
@@ -1936,7 +1958,7 @@ def run() -> None:
 
 
 @run.command("pipeline")
-@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--provider", type=_PROVIDER_OPTION_TYPE, default=DETERMINISTIC_PROVIDER_NAME, show_default=True)
 @click.option("--limit", type=int, default=2, show_default=True, help="Number of real corpus questions to run.")
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
 @click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for --provider local-llm.")
@@ -2186,8 +2208,8 @@ def perf_group() -> None:
 @perf_group.command("run")
 @click.option(
     "--scenario",
-    type=click.Choice(["provider-free-smoke", "provider-free-scale", "local-llm-smoke"]),
-    default="provider-free-smoke",
+    type=click.Choice(["deterministic-smoke", "deterministic-scale", "local-llm-smoke"]),
+    default="deterministic-smoke",
     show_default=True,
 )
 @click.option("--iterations", type=int, default=3, show_default=True)
@@ -2259,7 +2281,7 @@ def validate_group() -> None:
 @validate_group.command("run")
 @click.option("--corpus-id", default="xrtm-real-binary-v1", show_default=True, help="Corpus ID from registry.")
 @click.option("--split", type=click.Choice(["full", "train", "eval", "held-out", "dev"]), default=None, help="Corpus split to use.")
-@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--provider", type=_PROVIDER_OPTION_TYPE, default=DETERMINISTIC_PROVIDER_NAME, show_default=True)
 @click.option("--limit", type=int, default=10, show_default=True, help="Questions per iteration.")
 @click.option("--iterations", type=int, default=1, show_default=True, help="Number of validation iterations.")
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs-validation"), show_default=True)
@@ -2349,7 +2371,7 @@ def benchmark_group() -> None:
 @benchmark_group.command("run")
 @click.option("--corpus-id", default="xrtm-real-binary-v1", show_default=True, help="Corpus ID from registry.")
 @click.option("--split", type=click.Choice(["full", "train", "eval", "held-out", "dev"]), default=None, help="Corpus split to use.")
-@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--provider", type=_PROVIDER_OPTION_TYPE, default=DETERMINISTIC_PROVIDER_NAME, show_default=True)
 @click.option("--limit", type=int, default=10, show_default=True, help="Questions per iteration.")
 @click.option("--iterations", type=int, default=1, show_default=True, help="Number of benchmark iterations.")
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs-benchmark"), show_default=True)
@@ -2441,13 +2463,13 @@ def benchmark_cache_corpus(
 @click.option("--allow-unsafe-local-llm", is_flag=True, help="Allow large local-llm runs (USE WITH CAUTION).")
 @click.option("--no-artifact", is_flag=True, help="Skip writing the compare artifact.")
 @click.option("--baseline-label", default="baseline", show_default=True, help="Human-readable baseline arm label.")
-@click.option("--baseline-provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--baseline-provider", type=_PROVIDER_OPTION_TYPE, default=DETERMINISTIC_PROVIDER_NAME, show_default=True)
 @click.option("--baseline-base-url", default=None, help="Baseline local-LLM endpoint.")
 @click.option("--baseline-model", default=None, help="Baseline model id.")
 @click.option("--baseline-api-key", default=None, help="Baseline API key.")
 @click.option("--baseline-max-tokens", type=int, default=768, show_default=True)
 @click.option("--candidate-label", default="candidate", show_default=True, help="Human-readable candidate arm label.")
-@click.option("--candidate-provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--candidate-provider", type=_PROVIDER_OPTION_TYPE, default=DETERMINISTIC_PROVIDER_NAME, show_default=True)
 @click.option("--candidate-base-url", default=None, help="Candidate local-LLM endpoint.")
 @click.option("--candidate-model", default=None, help="Candidate model id.")
 @click.option("--candidate-api-key", default=None, help="Candidate API key.")
@@ -2522,13 +2544,13 @@ def benchmark_compare(
 @click.option("--allow-unsafe-local-llm", is_flag=True, help="Allow large local-llm runs (USE WITH CAUTION).")
 @click.option("--no-artifact", is_flag=True, help="Skip writing the stress artifact.")
 @click.option("--baseline-label", default="baseline", show_default=True, help="Human-readable baseline arm label.")
-@click.option("--baseline-provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--baseline-provider", type=_PROVIDER_OPTION_TYPE, default=DETERMINISTIC_PROVIDER_NAME, show_default=True)
 @click.option("--baseline-base-url", default=None, help="Baseline local-LLM endpoint.")
 @click.option("--baseline-model", default=None, help="Baseline model id.")
 @click.option("--baseline-api-key", default=None, help="Baseline API key.")
 @click.option("--baseline-max-tokens", type=int, default=768, show_default=True)
 @click.option("--candidate-label", default="candidate", show_default=True, help="Human-readable candidate arm label.")
-@click.option("--candidate-provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--candidate-provider", type=_PROVIDER_OPTION_TYPE, default=DETERMINISTIC_PROVIDER_NAME, show_default=True)
 @click.option("--candidate-base-url", default=None, help="Candidate local-LLM endpoint.")
 @click.option("--candidate-model", default=None, help="Candidate model id.")
 @click.option("--candidate-api-key", default=None, help="Candidate API key.")
@@ -2599,7 +2621,7 @@ def monitor_group() -> None:
 
 
 @monitor_group.command("start")
-@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default="mock", show_default=True)
+@click.option("--provider", type=_PROVIDER_OPTION_TYPE, default=DETERMINISTIC_PROVIDER_NAME, show_default=True)
 @click.option("--limit", type=int, default=2, show_default=True, help="Number of corpus questions to monitor.")
 @click.option("--runs-dir", type=click.Path(file_okay=False, path_type=Path), default=Path("runs"), show_default=True)
 @click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for --provider local-llm.")
@@ -2657,7 +2679,7 @@ def monitor_list(runs_dir: Path) -> None:
                 "\n".join(
                     [
                         "No monitor runs found in this workspace.",
-                        f"Start one with: xrtm monitor start --provider mock --limit 2 {runs_dir_arg}",
+                        f"Start one with: xrtm monitor start --provider deterministic --limit 2 {runs_dir_arg}",
                         f"Review regular forecast runs with: xrtm runs list {runs_dir_arg}",
                     ]
                 ),
@@ -2734,7 +2756,7 @@ def monitor_show(run_dir: Path) -> None:
 
 @monitor_group.command("run-once")
 @click.argument("run_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default=None)
+@click.option("--provider", type=_PROVIDER_OPTION_TYPE, default=None)
 @click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for --provider local-llm.")
 @click.option("--model", default=None, help="Local model id served by the endpoint.")
 @click.option("--api-key", default=None, help="API key for the local endpoint; defaults to test/env.")
@@ -2767,7 +2789,7 @@ def monitor_run_once(
 @click.argument("run_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--cycles", type=int, default=1, show_default=True, help="Bounded number of monitor cycles to run.")
 @click.option("--interval-seconds", type=float, default=60.0, show_default=True, help="Seconds between cycles.")
-@click.option("--provider", type=click.Choice(["mock", "local-llm"]), default=None)
+@click.option("--provider", type=_PROVIDER_OPTION_TYPE, default=None)
 @click.option("--base-url", default=None, help="OpenAI-compatible local endpoint for --provider local-llm.")
 @click.option("--model", default=None, help="Local model id served by the endpoint.")
 @click.option("--api-key", default=None, help="API key for the local endpoint; defaults to test/env.")

@@ -1,7 +1,7 @@
 {
   "schema_version": "xrtm.workflow.v1",
-  "name": "demo-provider-free",
-  "title": "XRTM install and provider-free demo",
+  "name": "demo-deterministic",
+  "title": "XRTM install and deterministic demo",
   "description": "Zero-setup workflow for installation proof, clean-room smoke, and deterministic baseline runs.",
   "workflow_kind": "demo",
   "questions": {
@@ -10,7 +10,7 @@
     "limit": 2
   },
   "runtime": {
-    "provider": "mock",
+    "provider": "deterministic",
     "max_tokens": 768
   },
   "graph": {
@@ -24,8 +24,8 @@
       "forecast": {
         "kind": "model",
         "implementation": "xrtm.product.workflow_nodes.forecast_node",
-        "runtime": "provider-free-demo",
-        "description": "Run the deterministic provider-free forecasting compatibility path."
+        "runtime": "deterministic-demo",
+        "description": "Run the deterministic forecasting compatibility path."
       },
       "score": {
         "kind": "scorer",
@@ -73,7 +73,7 @@
   },
   "tags": [
     "released",
-    "provider-free",
+    "deterministic",
     "demo"
   ]
 }

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from xrtm.product.pipeline import PipelineOptions
+from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, normalize_provider_name
 from xrtm.product.workflows import validate_workflow_name
 
 PROFILE_SCHEMA_VERSION = "xrtm.profile.v1"
@@ -23,7 +24,7 @@ class WorkflowProfile:
 
     name: str
     workflow_name: str | None = None
-    provider: str = "mock"
+    provider: str = DETERMINISTIC_PROVIDER_NAME
     limit: int = 2
     runs_dir: str = "runs"
     base_url: str | None = None
@@ -37,8 +38,10 @@ class WorkflowProfile:
         validate_profile_name(self.name)
         if self.workflow_name is not None:
             validate_workflow_name(self.workflow_name)
-        if self.provider not in {"mock", "local-llm"}:
-            raise ValueError(f"unsupported provider: {self.provider}")
+        normalized_provider = normalize_provider_name(self.provider)
+        object.__setattr__(self, "provider", normalized_provider)
+        if normalized_provider not in {DETERMINISTIC_PROVIDER_NAME, "local-llm"}:
+            raise ValueError(f"unsupported provider: {normalized_provider}")
         if self.limit < 1:
             raise ValueError("limit must be at least 1")
         if self.max_tokens < 1:
@@ -77,7 +80,7 @@ class WorkflowProfile:
         return cls(
             name=str(payload["name"]),
             workflow_name=payload.get("workflow_name"),
-            provider=str(payload.get("provider", "mock")),
+            provider=normalize_provider_name(str(payload.get("provider", DETERMINISTIC_PROVIDER_NAME))),
             limit=int(payload.get("limit", 2)),
             runs_dir=str(payload.get("runs_dir", "runs")),
             base_url=payload.get("base_url"),
@@ -134,7 +137,7 @@ def starter_profile(name: str, *, runs_dir: Path = Path("runs"), user: str | Non
 
     return WorkflowProfile(
         name=name,
-        provider="mock",
+        provider=DETERMINISTIC_PROVIDER_NAME,
         limit=STARTER_PROFILE_LIMIT,
         runs_dir=str(runs_dir),
         user=user,

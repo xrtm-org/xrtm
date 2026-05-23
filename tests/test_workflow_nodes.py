@@ -11,8 +11,8 @@ from xrtm.product.pipeline import PipelineOptions
 from xrtm.product.workflow_nodes import (
     aggregate_candidate_forecasts_node,
     competition_submission_node,
+    deterministic_candidate_node,
     list_builtin_workflow_nodes,
-    provider_free_candidate_node,
     runtime_router_node,
     time_series_baseline_node,
 )
@@ -24,8 +24,8 @@ def test_builtin_workflow_node_catalog_covers_heterogeneous_categories() -> None
     assert {"tool", "model", "scorer", "aggregator", "router", "human-gate"} <= kinds
 
 
-def test_provider_free_candidate_node_generates_candidate_records(tmp_path: Path) -> None:
-    options = PipelineOptions(provider="mock", limit=1, runs_dir=tmp_path / "runs", command="test-provider-free-candidate")
+def test_deterministic_candidate_node_generates_candidate_records(tmp_path: Path) -> None:
+    options = PipelineOptions(provider="deterministic", limit=1, runs_dir=tmp_path / "runs", command="test-deterministic-candidate")
     store = ArtifactStore(options.runs_dir)
     run = store.create_run(command=options.command, provider=options.provider, package_versions={"xrtm": "test"})
     state = SimpleNamespace(
@@ -36,17 +36,17 @@ def test_provider_free_candidate_node_generates_candidate_records(tmp_path: Path
         }
     )
 
-    summary = provider_free_candidate_node(state=state, node_name="provider_free")
+    summary = deterministic_candidate_node(state=state, node_name="deterministic")
 
     assert summary["candidate_count"] == 1
-    records = state.context["candidate_records"]["provider_free"]
+    records = state.context["candidate_records"]["deterministic"]
     assert len(records) == 1
     assert 0 <= records[0].output.probability <= 1
 
 
 def test_time_series_baseline_and_aggregate_candidate_forecasts(tmp_path: Path) -> None:
     questions = load_real_binary_questions(limit=1)
-    options = PipelineOptions(provider="mock", limit=1, runs_dir=tmp_path / "runs", command="test-aggregate")
+    options = PipelineOptions(provider="deterministic", limit=1, runs_dir=tmp_path / "runs", command="test-aggregate")
     store = ArtifactStore(options.runs_dir)
     run = store.create_run(command=options.command, provider=options.provider, package_versions={"xrtm": "test"})
     state = SimpleNamespace(
@@ -90,19 +90,19 @@ def test_time_series_baseline_and_aggregate_candidate_forecasts(tmp_path: Path) 
 
 
 def test_runtime_router_prefers_fallback_for_mock_provider() -> None:
-    state = SimpleNamespace(context={"options": PipelineOptions(provider="mock", command="test-router")})
+    state = SimpleNamespace(context={"options": PipelineOptions(provider="deterministic", command="test-router")})
 
     route = runtime_router_node(
         state=state,
-        config={"preferred_route": "real-runtime", "fallback_route": "provider-free"},
+        config={"preferred_route": "real-runtime", "fallback_route": "deterministic"},
     )
 
-    assert route == {"route": "provider-free"}
+    assert route == {"route": "deterministic"}
 
 
 def test_competition_submission_node_writes_redacted_bundle(tmp_path: Path) -> None:
     questions = load_real_binary_questions(limit=1)
-    options = PipelineOptions(provider="mock", limit=1, runs_dir=tmp_path / "runs", command="test-competition")
+    options = PipelineOptions(provider="deterministic", limit=1, runs_dir=tmp_path / "runs", command="test-competition")
     store = ArtifactStore(options.runs_dir)
     run = store.create_run(command=options.command, provider=options.provider, package_versions={"xrtm": "test"})
     state = SimpleNamespace(

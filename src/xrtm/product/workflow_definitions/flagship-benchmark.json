@@ -10,7 +10,7 @@
     "limit": 5
   },
   "runtime": {
-    "provider": "mock",
+    "provider": "deterministic",
     "max_tokens": 768
   },
   "graph": {
@@ -29,7 +29,7 @@
       "runtime_router": {
         "kind": "router",
         "implementation": "xrtm.product.workflow_nodes.runtime_router_node",
-        "description": "Choose the real-runtime or provider-free benchmark branch.",
+        "description": "Choose the real-runtime or deterministic benchmark branch.",
         "config": {
           "preferred_route": "real",
           "fallback_route": "fallback",
@@ -45,11 +45,11 @@
           "provider": "local-llm"
         }
       },
-      "provider_free_control": {
+      "deterministic_control": {
         "kind": "model",
-        "implementation": "xrtm.product.workflow_nodes.provider_free_candidate_node",
-        "runtime": "provider-free-demo",
-        "description": "Run the deterministic provider-free benchmark control."
+        "implementation": "xrtm.product.workflow_nodes.deterministic_candidate_node",
+        "runtime": "deterministic-demo",
+        "description": "Run the deterministic benchmark control."
       },
       "time_series_baseline": {
         "kind": "model",
@@ -65,7 +65,7 @@
           "strategy": "weighted-mean",
           "weights": {
             "primary_candidate": 0.6,
-            "provider_free_control": 0.25,
+            "deterministic_control": 0.25,
             "time_series_baseline": 0.15
           }
         }
@@ -120,13 +120,13 @@
       "real_fanout": {
         "nodes": [
           "primary_candidate",
-          "provider_free_control",
+          "deterministic_control",
           "time_series_baseline"
         ]
       },
       "fallback_fanout": {
         "nodes": [
-          "provider_free_control",
+          "deterministic_control",
           "time_series_baseline"
         ]
       }

@@ -46,7 +46,7 @@ REQUIRED_MONITOR_COMMANDS = (
     "run-once",
 )
 REQUIRED_WORKFLOWS = (
-    "demo-provider-free",
+    "demo-deterministic",
     "flagship-benchmark",
 )
 
@@ -122,8 +122,8 @@ def validate_cli_surface(xrtm_bin: Path, *, workspace_dir: Path) -> None:
     workflow_list_output = run_command([str(xrtm_bin), "workflow", "list"])
     require_contains(workflow_list_output, REQUIRED_WORKFLOWS, context="xrtm workflow list")
 
-    workflow_show_output = run_command([str(xrtm_bin), "workflow", "show", "demo-provider-free"])
-    require_contains(workflow_show_output, ("demo-provider-free", "Runtime provider"), context="xrtm workflow show")
+    workflow_show_output = run_command([str(xrtm_bin), "workflow", "show", "demo-deterministic"])
+    require_contains(workflow_show_output, ("demo-deterministic", "Runtime provider"), context="xrtm workflow show")
 
     workspace_dir.mkdir(parents=True, exist_ok=True)
     runs_dir = workspace_dir / "runs"
@@ -163,7 +163,7 @@ def validate_cli_surface(xrtm_bin: Path, *, workspace_dir: Path) -> None:
             "--title",
             "Installed surface smoke workflow",
             "--description",
-            "Provider-free workflow authored by installed wheel smoke.",
+            "Deterministic workflow authored by installed wheel smoke.",
             "--question-limit",
             "1",
             "--max-tokens",
@@ -241,7 +241,7 @@ def validate_cli_surface(xrtm_bin: Path, *, workspace_dir: Path) -> None:
         [str(xrtm_bin), "profile", "show", profile_name, "--profiles-dir", "profiles"],
         cwd=workspace_dir,
     )
-    require_contains(profile_show_output, ("mock",), context="xrtm profile show")
+    require_contains(profile_show_output, ("deterministic",), context="xrtm profile show")
 
     before_profile_run = discover_run_dirs(runs_dir)
     run_command(
@@ -267,7 +267,7 @@ def validate_cli_surface(xrtm_bin: Path, *, workspace_dir: Path) -> None:
             "monitor",
             "start",
             "--provider",
-            "mock",
+            "deterministic",
             "--limit",
             "1",
             "--runs-dir",

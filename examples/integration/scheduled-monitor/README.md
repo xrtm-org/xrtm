@@ -5,7 +5,7 @@ Run recurring forecasts on a simple schedule and keep a lightweight SQLite trend
 ## What this example does
 
 - loads a fixed question set from `questions.json`
-- runs forecasts in provider-free mode or with another configured provider
+- runs forecasts in deterministic mode or with another configured provider
 - stores historical confidence values in `trends.db`
 - writes one Markdown report per run
 - updates a `latest` symlink for quick inspection
@@ -29,7 +29,7 @@ pip install xrtm schedule
 ### 2. Run once
 
 ```bash
-python monitor.py --provider mock --questions-file questions.json --run-once
+python monitor.py --provider deterministic --questions-file questions.json --run-once
 ```
 
 ### 3. Run on a schedule
@@ -42,7 +42,7 @@ Supported schedule strings in the current script:
 Example:
 
 ```bash
-python monitor.py --provider mock --questions-file questions.json --schedule "every day at 09:00"
+python monitor.py --provider deterministic --questions-file questions.json --schedule "every day at 09:00"
 ```
 
 ## Output structure

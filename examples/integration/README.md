@@ -4,7 +4,7 @@ This directory contains **integration patterns** built on top of shipped XRTM AP
 
 These examples are **not additional built-in product features**. They show how to compose today's package into your own scripts, services, and automation.
 
-**Quick chooser:** start with `xrtm` for the released, provider-free product workflow; start with `xrtm-forecast` and these examples when you are embedding forecasting directly in your own code.
+**Quick chooser:** start with `xrtm` for the released, deterministic product workflow; start with `xrtm-forecast` and these examples when you are embedding forecasting directly in your own code.
 
 ## Start with the product if your job is...
 
@@ -16,9 +16,9 @@ These examples are **not additional built-in product features**. They show how t
 
 | Your job | Start here | Shipped XRTM surface to know about | What the example actually demonstrates |
 | --- | --- | --- | --- |
-| I need my **first local run** and want to inspect real artifacts | [Getting Started Guide](../../docs/getting-started.md) | released `xrtm demo --provider mock --limit 1 --runs-dir runs`, explicit run-id inspect/report commands, canonical `runs/<run-id>/` artifacts | This is a product workflow, not an integration example |
+| I need my **first local run** and want to inspect real artifacts | [Getting Started Guide](../../docs/getting-started.md) | released `xrtm demo --provider deterministic --limit 1 --runs-dir runs`, explicit run-id inspect/report commands, canonical `runs/<run-id>/` artifacts | This is a product workflow, not an integration example |
 | I want to **review two runs, export the winner, and do deeper analysis** | [Data Export](./data-export/) | `xrtm runs compare`, `xrtm runs export`, canonical artifact directories | Downstream ETL and notebook/SQLite analysis after the product compare gate identifies a run worth keeping |
-| I want to **reuse XRTM inside a script or batch job** with my own question list | [Batch Processing](./batch-processing/) | Forecast APIs, mock-provider smoke path | Reading CSV/JSON input and writing lightweight batch artifacts |
+| I want to **reuse XRTM inside a script or batch job** with my own question list | [Batch Processing](./batch-processing/) | Forecast APIs, deterministic-provider smoke path | Reading CSV/JSON input and writing lightweight batch artifacts |
 | I need to **embed forecasting behind an HTTP API** for another application | [FastAPI Service](./fastapi-service/) | Python package APIs used inside your own service | A sample FastAPI wrapper with request validation and in-memory history |
 | I want to **schedule recurring forecasts or custom notifications** | [Scheduled Monitor](./scheduled-monitor/) | Built-in `xrtm monitor ...` workflow in the [Operator Runbook](../../docs/operator-runbook.md) | A lightweight Python scheduling/reporting pattern with SQLite trend history |
 | I need to **export canonical run artifacts** into analytics or BI tooling | [Data Export](./data-export/) | Canonical run directories and `xrtm runs export` in the [Operator Runbook](../../docs/operator-runbook.md) | Custom ETL around shipped artifacts, including CSV/JSON/SQLite/Parquet outputs |
@@ -68,19 +68,19 @@ Use this when canonical XRTM runs already exist and you need to reshape them for
 
 - Working code
 - A focused README with setup instructions
-- A provider-free path when practical
+- A deterministic path when practical
 - Notes about where the example differs from shipped product workflows
 
 Example smoke path:
 
 ```bash
 cd batch-processing/
-python run_batch.py --provider mock --input sample_questions.json
+python run_batch.py --provider deterministic --input sample_questions.json
 ```
 
 ## Provider support
 
-All examples are intended to be understandable and testable with the **mock provider** where the individual example supports it.
+All examples are intended to be understandable and testable with the **deterministic provider** where the individual example supports it.
 
 Some examples also accept other provider/model combinations supported by your installed `xrtm-forecast` stack, such as local OpenAI-compatible endpoints or hosted providers configured through model IDs. Provider configuration itself is documented in the [Operator Runbook](../../docs/operator-runbook.md).
 
@@ -98,4 +98,4 @@ To add a new integration example:
 3. State clearly whether it wraps a shipped product surface or demonstrates a custom pattern
 4. Provide working code with setup instructions
 5. Add the example to the job matrix above
-6. Verify a provider-free or otherwise documented smoke path
+6. Verify a deterministic or otherwise documented smoke path

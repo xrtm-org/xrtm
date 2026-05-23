@@ -23,7 +23,7 @@ from xrtm.product.workflows import WorkflowRegistry
 def test_sandbox_session_runs_workflow_context_and_persists_read_only_inspection(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
-    context = resolve_sandbox_context(workflow_name="demo-provider-free", registry=registry)
+    context = resolve_sandbox_context(workflow_name="demo-deterministic", registry=registry)
 
     session = run_sandbox_session(
         context=context,
@@ -37,16 +37,16 @@ def test_sandbox_session_runs_workflow_context_and_persists_read_only_inspection
         write_report=False,
     )
 
-    assert session.context.workflow_name == "demo-provider-free"
+    assert session.context.workflow_name == "demo-deterministic"
     assert session.labeling["classification"] == "exploratory"
     assert session.labeling["benchmark_evidence"] is False
     assert session.save_back["profile"]["status"] == "ready"
-    assert session.save_back["profile"]["workflow_name"] == "demo-provider-free"
+    assert session.save_back["profile"]["workflow_name"] == "demo-deterministic"
     assert (session.run_dir / "sandbox_session.json").exists()
 
     payload = json.loads((session.run_dir / "sandbox_session.json").read_text(encoding="utf-8"))
     assert payload["schema_version"] == SANDBOX_SESSION_SCHEMA_VERSION
-    assert payload["context"]["workflow_name"] == "demo-provider-free"
+    assert payload["context"]["workflow_name"] == "demo-deterministic"
     assert payload["labeling"]["inspection_mode"] == SANDBOX_INSPECTION_MODE
     assert payload["labeling"]["save_back_mode"] == SANDBOX_SAVE_BACK_MODE
     assert payload["save_back"]["mode"] == SANDBOX_SAVE_BACK_MODE
@@ -66,7 +66,7 @@ def test_sandbox_session_runs_workflow_context_and_persists_read_only_inspection
     assert detail["sandbox"]["labeling"]["classification"] == "exploratory"
     records = list_run_records(runs_dir)
     assert records[0]["sandbox"]["classification"] == "exploratory"
-    assert records[0]["sandbox"]["workflow_name"] == "demo-provider-free"
+    assert records[0]["sandbox"]["workflow_name"] == "demo-deterministic"
 
 
 def test_read_sandbox_session_normalizes_order_and_contract_metadata() -> None:
@@ -94,14 +94,14 @@ def test_read_sandbox_session_normalizes_order_and_contract_metadata() -> None:
 
 def test_sandbox_template_context_prepares_explicit_save_back_state(tmp_path: Path) -> None:
     session = run_sandbox_session(
-        template_id="provider-free-demo",
+        template_id="deterministic-demo",
         question="Will the template-backed sandbox session run successfully?",
         runs_dir=tmp_path / "runs",
         write_report=False,
     )
 
     assert session.context.context_type == "template"
-    assert session.context.template_id == "provider-free-demo"
+    assert session.context.template_id == "deterministic-demo"
     assert session.save_back["workflow"]["status"] == "ready"
     assert session.save_back["workflow"]["requires_explicit_name"] is True
     assert session.save_back["profile"]["status"] == "requires_workflow_save"
@@ -112,7 +112,7 @@ def test_sandbox_save_workflow_unblocks_profile_save_for_template_sessions(tmp_p
     workflows_dir = tmp_path / ".xrtm" / "workflows"
     profiles_dir = tmp_path / ".xrtm" / "profiles"
     session = run_sandbox_session(
-        template_id="provider-free-demo",
+        template_id="deterministic-demo",
         question="Will the template-backed sandbox session save successfully?",
         runs_dir=tmp_path / "runs",
         write_report=False,
@@ -148,7 +148,7 @@ def test_sandbox_save_profile_requires_saved_workflow_when_session_blueprint_cha
     profiles_dir = tmp_path / ".xrtm" / "profiles"
     registry = WorkflowRegistry(local_roots=(workflows_dir,))
     session = run_sandbox_session(
-        workflow_name="demo-provider-free",
+        workflow_name="demo-deterministic",
         registry=registry,
         question="Will the workflow-backed session reject unsaved graph changes?",
         runs_dir=tmp_path / "runs",
@@ -173,12 +173,12 @@ def test_sandbox_save_profile_persists_runtime_preferences_and_workflow_referenc
     profiles_dir = tmp_path / ".xrtm" / "profiles"
     registry = WorkflowRegistry(local_roots=(workflows_dir,))
     session = run_sandbox_session(
-        workflow_name="demo-provider-free",
+        workflow_name="demo-deterministic",
         registry=registry,
         question="Will the workflow-backed session save a reusable profile?",
         runs_dir=tmp_path / "runs",
         write_report=False,
-        provider="mock",
+        provider="deterministic",
         max_tokens=256,
         user="sandbox-user",
     )
@@ -191,13 +191,13 @@ def test_sandbox_save_profile_persists_runtime_preferences_and_workflow_referenc
     )
     profile_payload = json.loads(Path(saved_profile["path"]).read_text(encoding="utf-8"))
     assert profile_payload["name"] == "workflow-backed-profile"
-    assert profile_payload["workflow_name"] == "demo-provider-free"
-    assert profile_payload["provider"] == "mock"
+    assert profile_payload["workflow_name"] == "demo-deterministic"
+    assert profile_payload["provider"] == "deterministic"
     assert profile_payload["max_tokens"] == 256
     assert profile_payload["user"] == "sandbox-user"
     rerun = launch_module.run_saved_profile("workflow-backed-profile", profiles_dir=profiles_dir)
     rerun_blueprint = json.loads((rerun.run.run_dir / "blueprint.json").read_text(encoding="utf-8"))
-    assert rerun_blueprint["name"] == "demo-provider-free"
+    assert rerun_blueprint["name"] == "demo-deterministic"
 
     refreshed = json.loads((session.run_dir / "sandbox_session.json").read_text(encoding="utf-8"))
     assert refreshed["save_back"]["profile"]["saved_profile_name"] == "workflow-backed-profile"
@@ -207,7 +207,7 @@ def test_sandbox_rejects_batches_larger_than_five(tmp_path: Path) -> None:
     registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
     with pytest.raises(ValueError, match=f"at most {MAX_SANDBOX_QUESTIONS}"):
         run_sandbox_session(
-            workflow_name="demo-provider-free",
+            workflow_name="demo-deterministic",
             registry=registry,
             questions=[f"Question {index}?" for index in range(MAX_SANDBOX_QUESTIONS + 1)],
             runs_dir=tmp_path / "runs",

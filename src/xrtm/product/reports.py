@@ -72,7 +72,7 @@ def render_html_report(run_dir: Path) -> Path:
   <h2>Provider</h2>
   <pre>{_escape(json.dumps(provider_payload, indent=2, sort_keys=True))}</pre>
   <h2>Troubleshooting hints</h2>
-  <p>If provider-free mode passes but local LLM mode fails, check endpoint health, model context length, token budget, and GPU memory before debugging XRTM product code.</p>
+  <p>If deterministic mode passes but local LLM mode fails, check endpoint health, model context length, token budget, and GPU memory before debugging XRTM product code.</p>
 </body>
 </html>
 """

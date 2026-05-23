@@ -76,7 +76,7 @@ def test_validation_run_basic() -> None:
     """Test basic validation run with minimal configuration."""
     options = ValidationOptions(
         corpus_id="xrtm-real-binary-v1",
-        provider="mock",
+        provider="deterministic",
         limit=2,
         iterations=1,
         output_dir=Path(".cache/validation-tests"),
@@ -103,7 +103,7 @@ def test_validation_run_multiple_iterations() -> None:
     """Test validation with multiple iterations."""
     options = ValidationOptions(
         corpus_id="xrtm-real-binary-v1",
-        provider="mock",
+        provider="deterministic",
         limit=1,
         iterations=3,
         output_dir=Path(".cache/validation-tests"),
@@ -131,7 +131,7 @@ def test_validation_report_includes_compare_ready_metrics() -> None:
     report = run_validation(
         ValidationOptions(
             corpus_id="xrtm-real-binary-v1",
-            provider="mock",
+            provider="deterministic",
             limit=1,
             iterations=2,
             output_dir=Path(".cache/validation-tests"),
@@ -157,7 +157,7 @@ def test_validation_run_uses_selected_split_question_count() -> None:
     options = ValidationOptions(
         corpus_id="xrtm-real-binary-v1",
         split="held-out",
-        provider="mock",
+        provider="deterministic",
         limit=10,
         iterations=1,
         output_dir=Path(".cache/validation-tests"),
@@ -177,7 +177,7 @@ def test_validation_release_gate_mode_with_tier1() -> None:
     """Test release-gate mode accepts Tier 1 corpus."""
     options = ValidationOptions(
         corpus_id="xrtm-real-binary-v1",
-        provider="mock",
+        provider="deterministic",
         limit=1,
         iterations=1,
         output_dir=Path(".cache/validation-tests"),
@@ -228,7 +228,7 @@ def test_validation_artifact_generation() -> None:
     """Test validation artifact generation."""
     options = ValidationOptions(
         corpus_id="xrtm-real-binary-v1",
-        provider="mock",
+        provider="deterministic",
         limit=1,
         iterations=1,
         output_dir=Path(".cache/validation-tests"),
@@ -264,7 +264,7 @@ def test_validation_artifact_generation_avoids_same_second_collisions(
     output_dir = tmp_path / "validation-artifacts"
     options = ValidationOptions(
         corpus_id="xrtm-real-binary-v1",
-        provider="mock",
+        provider="deterministic",
         limit=1,
         iterations=1,
         output_dir=output_dir,
@@ -305,7 +305,7 @@ def test_validation_report_marks_forecast_preview(monkeypatch, tmp_path: Path) -
         report = run_validation(
             ValidationOptions(
                 corpus_id="forecast-v1",
-                provider="mock",
+                provider="deterministic",
                 limit=2,
                 iterations=1,
                 output_dir=tmp_path / "validation-output",
@@ -362,8 +362,8 @@ def test_benchmark_compare_reuses_one_frozen_selection_and_writes_artifact(tmp_p
             limit=5,
             runs_dir=tmp_path / "runs-benchmark",
             output_dir=tmp_path / "benchmark-artifacts",
-            baseline=BenchmarkArmOptions(label="baseline", provider="mock"),
-            candidate=BenchmarkArmOptions(label="candidate", provider="mock"),
+            baseline=BenchmarkArmOptions(label="baseline", provider="deterministic"),
+            candidate=BenchmarkArmOptions(label="candidate", provider="deterministic"),
         )
     )
 
@@ -391,8 +391,8 @@ def test_benchmark_stress_suite_repeats_arms_and_records_system_metrics(tmp_path
             runs_dir=tmp_path / "runs-benchmark",
             output_dir=tmp_path / "benchmark-artifacts",
             arms=(
-                BenchmarkArmOptions(label="baseline", provider="mock"),
-                BenchmarkArmOptions(label="candidate", provider="mock"),
+                BenchmarkArmOptions(label="baseline", provider="deterministic"),
+                BenchmarkArmOptions(label="candidate", provider="deterministic"),
             ),
         )
     )

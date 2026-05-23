@@ -16,11 +16,11 @@ def test_workflow_authoring_lists_templates_and_persists_workflows(tmp_path: Pat
     service = WorkflowAuthoringService(registry)
 
     templates = service.list_starter_templates()
-    assert [template.template_id for template in templates] == ["provider-free-demo", "ensemble-starter"]
+    assert [template.template_id for template in templates] == ["deterministic-demo", "ensemble-starter"]
 
     scratch = service.create_workflow_from_scratch("scratch-authoring")
     assert scratch.graph.entry == "load_questions"
-    assert scratch.runtime.provider == "mock"
+    assert scratch.runtime.provider == "deterministic"
     scratch_path = service.persist_workflow(scratch)
     assert scratch_path == workflows_dir / "scratch-authoring.json"
     assert registry.validate("scratch-authoring").title == scratch.title
@@ -32,7 +32,7 @@ def test_workflow_authoring_lists_templates_and_persists_workflows(tmp_path: Pat
     saved = json.loads(template_path.read_text(encoding="utf-8"))
     assert saved["name"] == "ensemble-authoring"
 
-    cloned = service.clone_workflow("demo-provider-free", target_name="cloned-demo")
+    cloned = service.clone_workflow("demo-deterministic", target_name="cloned-demo")
     clone_path = service.persist_workflow(cloned)
     assert clone_path == workflows_dir / "cloned-demo.json"
     assert registry.validate("cloned-demo").name == "cloned-demo"

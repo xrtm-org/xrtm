@@ -39,21 +39,21 @@ def print_quickstart_summary(console: Console, result: PipelineResult, *, runs_d
         result,
         runs_dir=runs_dir,
         success_title="Quickstart complete",
-        success_label="guided provider-free quickstart completed",
+        success_label="guided deterministic quickstart completed",
         what_succeeded="readiness checks, deterministic forecasts, scoring, backtest, and HTML report write",
-        proof_line="Proof cue: the default provider-free XRTM path worked end-to-end on this machine.",
+        proof_line="Proof cue: the default deterministic XRTM path worked end-to-end on this machine.",
         prefer_latest_paths=True,
     )
 
     runs_dir_arg = runs_dir_command_arg(runs_dir)
     proof_point_lines = [
         "1. Install/demo proof: xrtm start (already proved above).",
-        "   Named demo workflow: xrtm workflow run demo-provider-free",
+        "   Named demo workflow: xrtm workflow run demo-deterministic",
         "   Browse workflows: xrtm workflow list",
-        "   Inspect the demo workflow: xrtm workflow show demo-provider-free",
+        "   Inspect the demo workflow: xrtm workflow show demo-deterministic",
         (
             "2. Benchmark and performance workflow: "
-            "xrtm perf run --scenario provider-free-smoke --iterations 3 --limit 1 "
+            "xrtm perf run --scenario deterministic-smoke --iterations 3 --limit 1 "
             "--runs-dir runs-perf --output performance.json"
         ),
         f"   Review the run above: xrtm runs show latest {runs_dir_arg}",
@@ -62,7 +62,7 @@ def print_quickstart_summary(console: Console, result: PipelineResult, *, runs_d
         "   Run it when a real endpoint is ready: xrtm workflow run flagship-benchmark --runs-dir runs-benchmark",
         f"4. Monitoring, history, and report workflow: xrtm profile starter my-local {runs_dir_arg}",
         "   Then: xrtm run profile my-local",
-        f"   Monitor/history: xrtm monitor start --provider mock --limit 2 {runs_dir_arg} && xrtm monitor list {runs_dir_arg}",
+        f"   Monitor/history: xrtm monitor start --provider deterministic --limit 2 {runs_dir_arg} && xrtm monitor list {runs_dir_arg}",
         (
             "   Compare/export: "
             f"xrtm runs compare <run-id-a> <run-id-b> {runs_dir_arg} && "

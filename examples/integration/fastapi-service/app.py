@@ -26,7 +26,7 @@ from xrtm.product.providers import DeterministicProvider
 
 # --- Configuration ---
 
-PROVIDER = os.getenv("XRTM_PROVIDER", "mock")
+PROVIDER = os.getenv("XRTM_PROVIDER", "deterministic")
 MODEL = os.getenv("XRTM_MODEL")
 RUNS_DIR = Path(os.getenv("XRTM_RUNS_DIR", "service-runs"))
 HOST = os.getenv("XRTM_API_HOST", "127.0.0.1")
@@ -112,7 +112,7 @@ async def lifespan(app: FastAPI):
     # Startup: Initialize analyst
     print(f"Initializing XRTM with provider: {PROVIDER}")
 
-    if PROVIDER == "mock":
+    if PROVIDER == "deterministic":
         provider = DeterministicProvider()
         app.state.analyst = ForecastingAnalyst(model=provider, name="APIAnalyst")
     else:

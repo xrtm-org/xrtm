@@ -19,7 +19,7 @@ _PACKAGE_VERSIONS = {
 }
 
 
-def test_doctor_reports_provider_free_readiness_and_next_steps() -> None:
+def test_doctor_reports_deterministic_readiness_and_next_steps() -> None:
     runner = CliRunner()
     local_status = {
         "base_url": "http://127.0.0.1:8000/v1",
@@ -41,8 +41,8 @@ def test_doctor_reports_provider_free_readiness_and_next_steps() -> None:
     assert result.exit_code == 0, output
     assert "XRTM Doctor" in output
     assert "xrtm-forecast" in output
-    assert "Provider-Free Smoke/Baseline Checks" in output
-    assert "Default provider-free smoke/baseline first run: READY" in output
+    assert "Deterministic Baseline Checks" in output
+    assert "Default deterministic first run: READY" in output
     assert "Released next command: xrtm start --runs-dir runs" in output
     assert "xrtm doctor verifies package health" in output
     assert "runs/ will be created" in output
@@ -50,7 +50,7 @@ def test_doctor_reports_provider_free_readiness_and_next_steps() -> None:
     assert "xrtm artifacts inspect --latest --runs-dir runs" in output
     assert "xrtm report html --latest --runs-dir runs" in output
     assert "xrtm workflow list" in output
-    assert "xrtm workflow show demo-provider-free" in output
+    assert "xrtm workflow show demo-deterministic" in output
     assert "xrtm profile starter my-local" in output
     assert "local OpenAI-compatible endpoint profile" in output
     assert "Coding-agent CLI contracts are a separate integration category" in output
@@ -79,7 +79,7 @@ def test_doctor_keeps_local_llm_health_secondary_to_default_readiness() -> None:
 
     output = _strip_ansi(result.output)
     assert result.exit_code == 0, output
-    assert "Default provider-free smoke/baseline first run: READY" in output
+    assert "Default deterministic first run: READY" in output
     assert "Health check error: service unavailable" in output
     assert "Use xrtm providers doctor or xrtm local-llm status" in output
 
@@ -105,7 +105,7 @@ def test_doctor_fails_when_default_runs_dir_is_blocked() -> None:
 
     output = _strip_ansi(result.output)
     assert result.exit_code == 1, output
-    assert "Default provider-free smoke/baseline first run: NOT READY" in output
+    assert "Default deterministic first run: NOT READY" in output
     assert "runs exists but is not a directory." in output
     assert "Default runs dir: Remove or rename runs" in output
     assert "When doctor shows READY" in output

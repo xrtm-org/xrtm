@@ -70,7 +70,7 @@ def _write_fake_xrtm(
                 run_id = f"20260501T000000Z-{{state['counter']:04d}}"
                 run_dir = runs_dir / run_id
                 run_dir.mkdir()
-                run_payload = {{"run_id": run_id, "status": "monitoring" if monitor else "completed", "provider": "mock", "command": command}}
+                run_payload = {{"run_id": run_id, "status": "monitoring" if monitor else "completed", "provider": "deterministic", "command": command}}
                 (run_dir / "run.json").write_text(json.dumps(run_payload), encoding="utf-8")
                 (run_dir / "run_summary.json").write_text(
                     json.dumps({{"forecast_count": 1, "warning_count": 0, "error_count": 0}}),
@@ -104,7 +104,7 @@ def _write_fake_xrtm(
             if args == ["workflow", "list"]:
                 print(WORKFLOW_LIST_OUTPUT)
                 raise SystemExit(0)
-            if args == ["workflow", "show", "demo-provider-free"]:
+            if args == ["workflow", "show", "demo-deterministic"]:
                 print(WORKFLOW_SHOW_OUTPUT)
                 raise SystemExit(0)
             if args and args[0] == "doctor":
@@ -149,7 +149,7 @@ def _write_fake_xrtm(
                 profiles_dir = Path(option_value("--profiles-dir"))
                 profiles_dir.mkdir(parents=True, exist_ok=True)
                 profile_path = profiles_dir / f"{{name}}.json"
-                profile_path.write_text(json.dumps({{"name": name, "provider": "mock"}}), encoding="utf-8")
+                profile_path.write_text(json.dumps({{"name": name, "provider": "deterministic"}}), encoding="utf-8")
                 print(f"Starter profile: {{profile_path}}")
                 raise SystemExit(0)
             if args[:2] == ["profile", "list"]:
@@ -223,13 +223,13 @@ def _write_fake_xrtm(
     return script_path
 
 
-def test_validate_cli_surface_exercises_provider_free_spine(tmp_path: Path) -> None:
+def test_validate_cli_surface_exercises_deterministic_spine(tmp_path: Path) -> None:
     module = _load_module()
     fake_xrtm = _write_fake_xrtm(
         tmp_path,
         help_output="doctor start playground artifacts profile runs monitor report tui web workflow",
-        workflow_list_output="demo-provider-free flagship-benchmark",
-        workflow_show_output="demo-provider-free Runtime provider",
+        workflow_list_output="demo-deterministic flagship-benchmark",
+        workflow_show_output="demo-deterministic Runtime provider",
     )
 
     workspace_dir = tmp_path / "workspace"
@@ -248,8 +248,8 @@ def test_validate_cli_surface_rejects_missing_workflow_command(tmp_path: Path) -
     fake_xrtm = _write_fake_xrtm(
         tmp_path,
         help_output="doctor start playground artifacts profile runs monitor report tui web",
-        workflow_list_output="demo-provider-free flagship-benchmark",
-        workflow_show_output="demo-provider-free Runtime provider",
+        workflow_list_output="demo-deterministic flagship-benchmark",
+        workflow_show_output="demo-deterministic Runtime provider",
     )
 
     with pytest.raises(RuntimeError, match="xrtm --help is missing required entries: workflow"):
@@ -261,8 +261,8 @@ def test_validate_cli_surface_rejects_missing_playground_command(tmp_path: Path)
     fake_xrtm = _write_fake_xrtm(
         tmp_path,
         help_output="doctor start artifacts profile runs monitor report tui web workflow",
-        workflow_list_output="demo-provider-free flagship-benchmark",
-        workflow_show_output="demo-provider-free Runtime provider",
+        workflow_list_output="demo-deterministic flagship-benchmark",
+        workflow_show_output="demo-deterministic Runtime provider",
     )
 
     with pytest.raises(RuntimeError, match="xrtm --help is missing required entries: playground"):
@@ -275,8 +275,8 @@ def test_validate_cli_surface_rejects_missing_workflow_authoring_command(tmp_pat
         tmp_path,
         help_output="doctor start playground artifacts profile runs monitor report tui web workflow",
         workflow_help_output="clone list show validate explain run",
-        workflow_list_output="demo-provider-free flagship-benchmark",
-        workflow_show_output="demo-provider-free Runtime provider",
+        workflow_list_output="demo-deterministic flagship-benchmark",
+        workflow_show_output="demo-deterministic Runtime provider",
     )
 
     with pytest.raises(RuntimeError, match="xrtm workflow --help is missing required entries: create, edit"):
@@ -289,8 +289,8 @@ def test_validate_cli_surface_rejects_missing_profile_command(tmp_path: Path) ->
         tmp_path,
         help_output="doctor start playground artifacts profile runs monitor report tui web workflow",
         profile_help_output="create list show",
-        workflow_list_output="demo-provider-free flagship-benchmark",
-        workflow_show_output="demo-provider-free Runtime provider",
+        workflow_list_output="demo-deterministic flagship-benchmark",
+        workflow_show_output="demo-deterministic Runtime provider",
     )
 
     with pytest.raises(RuntimeError, match="xrtm profile --help is missing required entries: starter"):
@@ -303,8 +303,8 @@ def test_validate_cli_surface_rejects_missing_monitor_command(tmp_path: Path) ->
         tmp_path,
         help_output="doctor start playground artifacts profile runs monitor report tui web workflow",
         monitor_help_output="start list show",
-        workflow_list_output="demo-provider-free flagship-benchmark",
-        workflow_show_output="demo-provider-free Runtime provider",
+        workflow_list_output="demo-deterministic flagship-benchmark",
+        workflow_show_output="demo-deterministic Runtime provider",
     )
 
     with pytest.raises(RuntimeError, match="xrtm monitor --help is missing required entries: run-once"):
@@ -316,8 +316,8 @@ def test_validate_cli_surface_rejects_missing_builtin_workflow(tmp_path: Path) -
     fake_xrtm = _write_fake_xrtm(
         tmp_path,
         help_output="doctor start playground artifacts profile runs monitor report tui web workflow",
-        workflow_list_output="demo-provider-free",
-        workflow_show_output="demo-provider-free Runtime provider",
+        workflow_list_output="demo-deterministic",
+        workflow_show_output="demo-deterministic Runtime provider",
     )
 
     with pytest.raises(RuntimeError, match="xrtm workflow list is missing required entries: flagship-benchmark"):

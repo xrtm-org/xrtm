@@ -45,6 +45,7 @@ from xrtm.eval.core.eval.benchmark_artifacts import (
     ScoreInterval,
 )
 from xrtm.product.pipeline import PipelineOptions, run_pipeline
+from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, normalize_provider_name
 from xrtm.train.simulation.benchmark_artifacts import (
     BenchmarkRunResultBundle,
     BenchmarkRunSpec,
@@ -93,7 +94,7 @@ class ValidationOptions:
     command: str = "xrtm validate"
     split: Optional[str] = None
     tier_filter: Optional[str] = None
-    provider: str = "mock"
+    provider: str = DETERMINISTIC_PROVIDER_NAME
     limit: int = 10
     iterations: int = 1
     runs_dir: Path = Path("runs-validation")
@@ -108,6 +109,7 @@ class ValidationOptions:
     split_config: Optional[SplitConfig] = None
 
     def __post_init__(self):
+        object.__setattr__(self, "provider", normalize_provider_name(self.provider))
         if self.limit < 1:
             raise ValueError(
                 f"Invalid limit: {self.limit}\n\n"
@@ -131,7 +133,7 @@ class ValidationOptions:
                     f"Next steps:\n"
                     f"1. Reduce --limit to {LOCAL_LLM_DEFAULT_MAX_LIMIT} or less, OR\n"
                     f"2. Add --allow-unsafe-local-llm flag to override (use with caution), OR\n"
-                    f"3. Use --provider mock for faster testing without API calls\n\n"
+                    f"3. Use --provider deterministic for faster testing without API calls\n\n"
                     f"Example: xrtm validate run --provider local-llm --limit {LOCAL_LLM_DEFAULT_MAX_LIMIT}"
                 )
 
@@ -162,11 +164,14 @@ class BenchmarkArmOptions:
     """Configuration for one arm in a baseline-vs-candidate benchmark compare."""
 
     label: str
-    provider: str = "mock"
+    provider: str = DETERMINISTIC_PROVIDER_NAME
     base_url: str | None = None
     model: str | None = None
     api_key: str | None = None
     max_tokens: int = 768
+
+    def __post_init__(self):
+        object.__setattr__(self, "provider", normalize_provider_name(self.provider))
 
 
 @dataclass(frozen=True)

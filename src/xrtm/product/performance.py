@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from xrtm.product.pipeline import PipelineOptions, run_pipeline
+from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME
 
 PERFORMANCE_SCHEMA_VERSION = "xrtm.performance.v1"
 MAX_ITERATIONS = 100
@@ -16,11 +17,11 @@ MAX_LIMIT = 1000
 
 # Performance budgets for CI/regression detection (seconds)
 DEFAULT_BUDGETS = {
-    "provider-free-smoke": {
+    "deterministic-smoke": {
         "max_mean_seconds": 0.050,  # 50ms mean per iteration (10 forecasts)
         "max_p95_seconds": 0.100,   # 100ms p95
     },
-    "provider-free-scale": {
+    "deterministic-scale": {
         "max_mean_seconds": 0.500,  # 500ms mean per iteration (100 forecasts)
         "max_p95_seconds": 1.000,   # 1s p95
     },
@@ -36,7 +37,7 @@ class PerformanceBudgetError(RuntimeError):
 class PerformanceOptions:
     """Inputs for one bounded performance benchmark."""
 
-    scenario: str = "provider-free-smoke"
+    scenario: str = "deterministic-smoke"
     iterations: int = 3
     limit: int = 1
     runs_dir: Path = Path("runs-perf")
@@ -108,7 +109,7 @@ def run_performance_benchmark(options: PerformanceOptions) -> dict[str, Any]:
 
 
 def _validate_options(options: PerformanceOptions) -> None:
-    if options.scenario not in {"provider-free-smoke", "provider-free-scale", "local-llm-smoke"}:
+    if options.scenario not in {"deterministic-smoke", "deterministic-scale", "local-llm-smoke"}:
         raise ValueError(f"unsupported performance scenario: {options.scenario}")
     if options.iterations < 1:
         raise ValueError("iterations must be at least 1")
@@ -138,7 +139,7 @@ def _validate_local_relative_path(path: Path, *, field: str) -> None:
 def _provider_for_scenario(scenario: str) -> str:
     if scenario == "local-llm-smoke":
         return "local-llm"
-    return "mock"
+    return DETERMINISTIC_PROVIDER_NAME
 
 
 def _build_report(

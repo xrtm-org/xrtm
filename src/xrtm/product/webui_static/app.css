@@ -1809,7 +1809,7 @@ a:focus-visible {
   background: rgba(5, 18, 30, 0.5);
 }
 
-.mock-data-grid {
+.parsed-data-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) auto;
   gap: 0;
@@ -1818,7 +1818,7 @@ a:focus-visible {
   border-radius: 1rem;
 }
 
-.mock-data-grid > * {
+.parsed-data-grid > * {
   min-width: 0;
   padding: 0.75rem;
   border-bottom: 1px solid rgba(128, 219, 219, 0.14);
@@ -1827,7 +1827,7 @@ a:focus-visible {
   word-break: break-word;
 }
 
-.mock-data-grid > span:nth-child(-n + 3) {
+.parsed-data-grid > span:nth-child(-n + 3) {
   color: #9ed5d8;
   font-size: 0.76rem;
   font-weight: 700;
@@ -3448,7 +3448,7 @@ a:focus-visible {
     max-height: min(70vh, 34rem);
     overflow: auto;
   }
-  .mock-data-grid {
+  .parsed-data-grid {
     grid-template-columns: 1fr;
   }
   .observatory-filter-row,
@@ -3586,7 +3586,7 @@ body {
 :root[data-theme="dark"] .operations-detail-strip > div,
 :root[data-theme="dark"] .operations-route .table-wrap,
 :root[data-theme="dark"] .operations-route .code-card,
-:root[data-theme="dark"] .operations-route .mock-data-grid > *,
+:root[data-theme="dark"] .operations-route .parsed-data-grid > *,
 :root[data-theme="dark"] .operations-route .progress-stack > div,
 :root[data-theme="dark"] .studio-workspace .studio-ide-panel > .section-heading,
 :root[data-theme="dark"] .studio-workspace .studio-toolbar,
@@ -3679,13 +3679,13 @@ body {
 }
 
 :root[data-theme="dark"] .operations-route .code-card,
-:root[data-theme="dark"] .operations-route .mock-data-grid > *,
+:root[data-theme="dark"] .operations-route .parsed-data-grid > *,
 :root[data-theme="dark"] .operations-route .progress-stack > div {
   background: linear-gradient(180deg, rgba(29, 37, 44, 0.96), rgba(22, 28, 33, 0.98));
   border-color: rgba(166, 156, 142, 0.14);
 }
 
-:root[data-theme="dark"] .operations-route .mock-data-grid > span:nth-child(-n + 3) {
+:root[data-theme="dark"] .operations-route .parsed-data-grid > span:nth-child(-n + 3) {
   background: rgba(17, 22, 27, 0.82);
   color: var(--hero-soft);
 }
@@ -3770,7 +3770,7 @@ body {
 .score-history-labels span,
 .node-trace-list span,
 .trace-chip,
-.mock-data-grid > span:nth-child(-n + 3),
+.parsed-data-grid > span:nth-child(-n + 3),
 .progress-stack > div span:last-child {
   color: var(--muted);
 }
@@ -4033,7 +4033,7 @@ a:focus-visible {
 .node-trace-list li,
 .edge-row,
 .playground-step-button,
-.mock-data-grid > *,
+.parsed-data-grid > *,
 .progress-stack > div,
 .code-card {
   background: rgba(20, 27, 33, 0.78);
@@ -4041,7 +4041,7 @@ a:focus-visible {
   color: var(--text);
 }
 
-.mock-data-grid > span:nth-child(-n + 3) {
+.parsed-data-grid > span:nth-child(-n + 3) {
   background: rgba(17, 22, 27, 0.82);
 }
 
@@ -4535,18 +4535,18 @@ a:focus-visible {
   max-height: 16rem;
 }
 
-.operations-route .mock-data-grid {
+.operations-route .parsed-data-grid {
   border-color: rgba(166, 156, 142, 0.18);
 }
 
-.operations-route .mock-data-grid > *,
+.operations-route .parsed-data-grid > *,
 .operations-route .progress-stack > div {
   background: linear-gradient(180deg, rgba(249, 245, 239, 0.96), rgba(239, 233, 224, 0.98));
   border-color: rgba(166, 156, 142, 0.16);
   color: var(--text);
 }
 
-.operations-route .mock-data-grid > span:nth-child(-n + 3) {
+.operations-route .parsed-data-grid > span:nth-child(-n + 3) {
   background: rgba(240, 233, 223, 0.94);
   color: #67707a;
 }
@@ -5087,7 +5087,7 @@ a:focus-visible {
 :root[data-theme="light"] .node-trace-list li,
 :root[data-theme="light"] .edge-row,
 :root[data-theme="light"] .playground-step-button,
-:root[data-theme="light"] .mock-data-grid > *,
+:root[data-theme="light"] .parsed-data-grid > *,
 :root[data-theme="light"] .progress-stack > div,
 :root[data-theme="light"] .code-card {
   background: rgba(248, 244, 237, 0.86);
@@ -5095,7 +5095,7 @@ a:focus-visible {
   color: var(--text);
 }
 
-:root[data-theme="light"] .mock-data-grid > span:nth-child(-n + 3) {
+:root[data-theme="light"] .parsed-data-grid > span:nth-child(-n + 3) {
   background: rgba(241, 235, 226, 0.92);
 }
 
@@ -5199,14 +5199,14 @@ a:focus-visible {
 }
 
 :root[data-theme="light"] .operations-route .code-card,
-:root[data-theme="light"] .operations-route .mock-data-grid > *,
+:root[data-theme="light"] .operations-route .parsed-data-grid > *,
 :root[data-theme="light"] .operations-route .progress-stack > div {
   background: linear-gradient(180deg, rgba(249, 245, 239, 0.96), rgba(239, 233, 224, 0.98));
   border-color: rgba(166, 156, 142, 0.16);
   color: var(--text);
 }
 
-:root[data-theme="light"] .operations-route .mock-data-grid > span:nth-child(-n + 3) {
+:root[data-theme="light"] .operations-route .parsed-data-grid > span:nth-child(-n + 3) {
   background: rgba(240, 233, 223, 0.94);
   color: #67707a;
 }

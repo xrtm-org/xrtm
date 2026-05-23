@@ -10,17 +10,20 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
+from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, normalize_provider_name
+
 WORKFLOW_SCHEMA_VERSION = "xrtm.workflow.v1"
 DEFAULT_LOCAL_WORKFLOWS_DIR = Path(".xrtm/workflows")
 _WORKFLOW_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
-_SUPPORTED_PROVIDERS = {"mock", "local-llm"}
+_SUPPORTED_PROVIDERS = {DETERMINISTIC_PROVIDER_NAME, "local-llm"}
 _SUPPORTED_QUESTION_SOURCES = {"real-binary-corpus"}
+_WORKFLOW_ALIASES = {"demo-deterministic": "demo-deterministic"}
 ALLOWED_PRODUCT_NODE_KINDS = frozenset({"tool", "model", "scorer", "aggregator", "router", "human-gate", "agent"})
 AGGREGATE_CANDIDATES_IMPLEMENTATION = "xrtm.product.workflow_nodes.aggregate_candidate_forecasts_node"
 CANDIDATE_IMPLEMENTATIONS = frozenset(
     {
         "xrtm.product.workflow_nodes.candidate_forecast_node",
-        "xrtm.product.workflow_nodes.provider_free_candidate_node",
+        "xrtm.product.workflow_nodes.deterministic_candidate_node",
         "xrtm.product.workflow_nodes.time_series_baseline_node",
     }
 )
@@ -106,15 +109,17 @@ class QuestionSourceSpec:
 
 @dataclass(frozen=True)
 class RuntimeProfileSpec:
-    provider: str = "mock"
+    provider: str = DETERMINISTIC_PROVIDER_NAME
     base_url: str | None = None
     model: str | None = None
     api_key: str | None = None
     max_tokens: int = 768
 
     def __post_init__(self) -> None:
-        if self.provider not in _SUPPORTED_PROVIDERS:
-            raise ValueError(f"unsupported workflow runtime provider: {self.provider}")
+        normalized_provider = normalize_provider_name(self.provider)
+        object.__setattr__(self, "provider", normalized_provider)
+        if normalized_provider not in _SUPPORTED_PROVIDERS:
+            raise ValueError(f"unsupported workflow runtime provider: {normalized_provider}")
         if self.max_tokens < 1:
             raise ValueError("runtime max_tokens must be at least 1")
 
@@ -122,7 +127,7 @@ class RuntimeProfileSpec:
     def from_payload(cls, payload: dict[str, Any]) -> "RuntimeProfileSpec":
         data = _mapping(payload, context="runtime")
         return cls(
-            provider=_string(data, "provider", context="runtime", default="mock"),
+            provider=normalize_provider_name(_string(data, "provider", context="runtime", default=DETERMINISTIC_PROVIDER_NAME)),
             base_url=_optional_string(data, "base_url"),
             model=_optional_string(data, "model"),
             api_key=_optional_string(data, "api_key"),
@@ -458,6 +463,7 @@ class WorkflowRegistry:
 
     def load(self, name: str) -> WorkflowBlueprint:
         validate_workflow_name(name)
+        name = _WORKFLOW_ALIASES.get(name, name)
         local_match = self._load_local(name)
         if local_match is not None:
             return local_match
@@ -728,8 +734,8 @@ def explain_blueprint(blueprint: WorkflowBlueprint) -> dict[str, Any]:
         runtime_requirements.append(
             "Real-runtime mode needs a healthy local OpenAI-compatible endpoint and `--provider local-llm`."
         )
-    if blueprint.runtime.provider == "mock":
-        runtime_requirements.append("Provider-free mode works out of the box with no API keys or local model server.")
+    if blueprint.runtime.provider == DETERMINISTIC_PROVIDER_NAME:
+        runtime_requirements.append("Deterministic mode works out of the box with no API keys or local model server.")
     if any(node.kind == "human-gate" for node in blueprint.graph.nodes.values()):
         runtime_requirements.append("Human-gate nodes require a human provider when the gated branch executes.")
     if blueprint.workflow_kind == "benchmark":

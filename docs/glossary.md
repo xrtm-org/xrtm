@@ -8,7 +8,7 @@ Keep the public vocabulary small:
 | Profile | A saved set of runtime and user settings for running a workflow. |
 | Run | One execution of a workflow, producing artifacts and reports. |
 | Benchmark | An offline scored evaluation set or suite. |
-| Runtime | The backend used by a workflow, such as an OpenAI-compatible endpoint, a coding-agent CLI contract, or the provider-free demo/baseline mode. |
+| Runtime | The backend used by a workflow, such as an OpenAI-compatible endpoint, a coding-agent CLI contract, or the deterministic demo/baseline mode. |
 | Report | The human-readable review surface for a run. |
 
 Advanced terms stay behind the product terms:

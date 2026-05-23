@@ -21,7 +21,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from docker_provider_free_acceptance import (  # noqa: E402
+from docker_deterministic_acceptance import (  # noqa: E402
     DEFAULT_MANAGED_SANDBOX_CLEANUP_POLICY,
     DEFAULT_MANAGED_SANDBOX_TTL_HOURS,
     add_managed_sandbox_metadata,
@@ -704,9 +704,9 @@ def run_local_llm_release_smoke(
                 "--release-gate-mode",
                 "--allow-unsafe-local-llm",
                 "--baseline-label",
-                "mock-control",
+                "deterministic-control",
                 "--baseline-provider",
-                "mock",
+                "deterministic",
                 "--candidate-label",
                 "local-qwen",
                 "--candidate-provider",
@@ -748,9 +748,9 @@ def run_local_llm_release_smoke(
                 "--release-gate-mode",
                 "--allow-unsafe-local-llm",
                 "--baseline-label",
-                "mock-control",
+                "deterministic-control",
                 "--baseline-provider",
-                "mock",
+                "deterministic",
                 "--candidate-label",
                 "local-qwen",
                 "--candidate-provider",

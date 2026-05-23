@@ -60,14 +60,14 @@ def build_workflow_from_scratch(
         name=name,
         title=title or _default_title(name),
         description=description
-        or "Minimal safe provider-free starter workflow created from scratch for guided authoring flows.",
-        provider="mock",
+        or "Minimal safe deterministic starter workflow created from scratch for guided authoring flows.",
+        provider="deterministic",
         limit=question_limit,
         max_tokens=max_tokens,
         workflow_kind=workflow_kind,
     )
     payload = blueprint.to_json_dict()
-    payload["tags"] = ["starter", "scratch", "provider-free"]
+    payload["tags"] = ["starter", "scratch", "deterministic"]
     return _blueprint_from_payload(payload)
 
 
@@ -403,19 +403,19 @@ def _default_title(name: str) -> str:
     return " ".join(part.capitalize() for part in parts) or "Workflow"
 
 
-def _build_provider_free_template(*, name: str, title: str | None, description: str | None) -> WorkflowBlueprint:
+def _build_deterministic_template(*, name: str, title: str | None, description: str | None) -> WorkflowBlueprint:
     blueprint = build_demo_workflow_blueprint(
         name=name,
-        title=title or "Provider-free workflow starter",
+        title=title or "Deterministic workflow starter",
         description=description
-        or "Curated single-path starter blueprint mirroring the released provider-free compatibility runner.",
-        provider="mock",
+        or "Curated single-path starter blueprint mirroring the released deterministic compatibility runner.",
+        provider="deterministic",
         limit=2,
         max_tokens=768,
         workflow_kind="workflow",
     )
     payload = blueprint.to_json_dict()
-    payload["tags"] = ["starter", "template", "provider-free", "single-path"]
+    payload["tags"] = ["starter", "template", "deterministic", "single-path"]
     return WorkflowBlueprint.from_payload(payload)
 
 
@@ -424,10 +424,10 @@ def _build_ensemble_template(*, name: str, title: str | None, description: str |
         name=name,
         title=title or "Deterministic ensemble workflow starter",
         description=description
-        or "Curated safe ensemble starter with a provider-free candidate, baseline branch, and aggregate weights.",
+        or "Curated safe ensemble starter with a deterministic candidate, baseline branch, and aggregate weights.",
         workflow_kind="workflow",
         questions=QuestionSourceSpec(limit=2),
-        runtime=RuntimeProfileSpec(provider="mock"),
+        runtime=RuntimeProfileSpec(provider="deterministic"),
         graph=GraphSpec(
             entry="load_questions",
             nodes={
@@ -441,11 +441,11 @@ def _build_ensemble_template(*, name: str, title: str | None, description: str |
                     implementation="xrtm.product.workflow_nodes.question_context_node",
                     description="Extract question context for downstream authoring-safe nodes.",
                 ),
-                "provider_free_control": NodeSpec(
+                "deterministic_control": NodeSpec(
                     kind="model",
-                    implementation="xrtm.product.workflow_nodes.provider_free_candidate_node",
-                    runtime="provider-free-demo",
-                    description="Generate deterministic provider-free candidate forecasts.",
+                    implementation="xrtm.product.workflow_nodes.deterministic_candidate_node",
+                    runtime="deterministic-demo",
+                    description="Generate deterministic candidate forecasts.",
                 ),
                 "time_series_baseline": NodeSpec(
                     kind="model",
@@ -460,7 +460,7 @@ def _build_ensemble_template(*, name: str, title: str | None, description: str |
                     config={
                         "strategy": "weighted-mean",
                         "weights": {
-                            "provider_free_control": 0.65,
+                            "deterministic_control": 0.65,
                             "time_series_baseline": 0.35,
                         },
                     },
@@ -484,16 +484,18 @@ def _build_ensemble_template(*, name: str, title: str | None, description: str |
                 EdgeSpec(from_node="score", to_node="backtest"),
             ),
             parallel_groups={
-                "candidate_fanout": ParallelGroupSpec(nodes=("provider_free_control", "time_series_baseline"))
+                "candidate_fanout": ParallelGroupSpec(nodes=("deterministic_control", "time_series_baseline"))
             },
         ),
         artifacts=ArtifactPolicy(write_report=False, write_blueprint_copy=True, write_graph_trace=True),
         scoring=ScoringPolicy(write_eval=True, write_train_backtest=True),
-        tags=("starter", "template", "ensemble", "provider-free"),
+        tags=("starter", "template", "ensemble", "deterministic"),
     )
 
 
 def _template_definition(template_id: str) -> _WorkflowStarterTemplateDefinition:
+    if template_id == "deterministic-demo":
+        template_id = "deterministic-demo"
     for definition in _STARTER_TEMPLATES:
         if definition.template.template_id == template_id:
             return definition
@@ -503,19 +505,19 @@ def _template_definition(template_id: str) -> _WorkflowStarterTemplateDefinition
 _STARTER_TEMPLATES = (
     _WorkflowStarterTemplateDefinition(
         template=WorkflowStarterTemplate(
-            template_id="provider-free-demo",
-            title="Provider-free workflow starter",
-            description="Single-path deterministic starter that mirrors the released provider-free compatibility runner.",
-            tags=("starter", "template", "provider-free", "single-path"),
+            template_id="deterministic-demo",
+            title="Deterministic workflow starter",
+            description="Single-path deterministic starter that mirrors the released deterministic compatibility runner.",
+            tags=("starter", "template", "deterministic", "single-path"),
         ),
-        builder=_build_provider_free_template,
+        builder=_build_deterministic_template,
     ),
     _WorkflowStarterTemplateDefinition(
         template=WorkflowStarterTemplate(
             template_id="ensemble-starter",
             title="Deterministic ensemble starter",
-            description="Parallel provider-free and baseline branches with safe aggregate weights for authoring flows.",
-            tags=("starter", "template", "ensemble", "provider-free"),
+            description="Parallel deterministic and baseline branches with safe aggregate weights for authoring flows.",
+            tags=("starter", "template", "ensemble", "deterministic"),
         ),
         builder=_build_ensemble_template,
     ),

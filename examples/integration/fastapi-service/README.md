@@ -34,7 +34,7 @@ pip install xrtm fastapi uvicorn
 python app.py
 ```
 
-This starts a FastAPI server on `http://localhost:8000` using the mock provider (no API keys).
+This starts a FastAPI server on `http://localhost:8000` using the deterministic provider (no API keys).
 
 ### 3. View API Documentation
 
@@ -59,7 +59,7 @@ Response:
   "confidence": 0.42,
   "reasoning": "Based on historical volatility...",
   "timestamp": "2026-05-01T12:30:00Z",
-  "provider": "mock"
+  "provider": "deterministic"
 }
 ```
 
@@ -91,7 +91,7 @@ Create a new forecast.
   "confidence": 0.38,
   "reasoning": "Economic indicators suggest...",
   "timestamp": "2026-05-01T12:30:00Z",
-  "provider": "mock",
+  "provider": "deterministic",
   "metadata": {
     "user": "analyst@example.com",
     "category": "economics"
@@ -111,7 +111,7 @@ Retrieve a specific forecast by ID.
   "confidence": 0.38,
   "reasoning": "Economic indicators suggest...",
   "timestamp": "2026-05-01T12:30:00Z",
-  "provider": "mock"
+  "provider": "deterministic"
 }
 ```
 
@@ -141,7 +141,7 @@ Health check endpoint.
 ```json
 {
   "status": "healthy",
-  "provider": "mock",
+  "provider": "deterministic",
   "version": "0.8.0"
 }
 ```
@@ -152,7 +152,7 @@ Health check endpoint.
 
 ```bash
 # Provider configuration
-export XRTM_PROVIDER=mock           # or gemini, openai, local-llm
+export XRTM_PROVIDER=deterministic           # or gemini, openai, local-llm
 export XRTM_MODEL=gemini-2.0-flash  # model for cloud providers
 export GEMINI_API_KEY=your-key      # API key for cloud providers
 
