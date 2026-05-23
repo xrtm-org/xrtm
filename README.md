@@ -12,7 +12,7 @@ released local product tasks.
 If you arrived from xrtm.org, PyPI, or this repository, use the authoritative
 first-success guide: [docs/getting-started.md](docs/getting-started.md).
 
-That guide walks the released `xrtm==0.8.7` journey in one place:
+That guide walks the released `xrtm==0.8.8` journey in one place:
 
 1. install XRTM
 2. choose a CLI-led or WebUI-led first-success path
@@ -30,13 +30,12 @@ That guide walks the released `xrtm==0.8.7` journey in one place:
 9. inspect run evidence in Observatory at `/observatory`
 10. choose your next path
 
-The `0.8.7` release is a deterministic parity-and-verification release. It
+The `0.8.8` release is a deterministic stabilization-and-hardening release. It
 keeps the bounded local Hub → Studio → Playground → Observatory product spine,
-graduates the remaining deterministic Hub/Start/workflow-detail/Observatory
-parity surfaces, and does not claim a calibration dashboard, API/webhook
-control plane, arbitrary code/plugin graph editing, full persistent
-collaborative canvas layout, or a commercial runtime path without separate
-validation.
+hardens release-critical WebUI/API and clean-room validation paths, and does
+not claim a calibration dashboard, API/webhook control plane, arbitrary
+code/plugin graph editing, full persistent collaborative canvas layout, or a
+commercial runtime path without separate validation.
 
 Current source tip also includes a fuller **future-release candidate** product
 train: Batch Runner, immutable Version snapshots, local API Control, signed
@@ -61,7 +60,7 @@ place.
 - [Python API Reference](docs/python-api-reference.md)
 - [Integration Examples](examples/integration/)
 - [Interface Parity Matrix](docs/interface-parity.md) for the current CLI/WebUI capability map and next parity targets
-- [0.8.x Feature Track](docs/next-release-feature-track.md) for the released 0.8.7 deterministic parity spine and future bounded surfaces
+- [0.8.x Feature Track](docs/next-release-feature-track.md) for the released 0.8.8 deterministic stabilization spine and future bounded surfaces
 - [Stack Versioning Policy](https://github.com/xrtm-org/governance/blob/main/policies/stack-versioning-policy.md) for `xrtm` as the product-anchor release and cross-repo version ownership
 - Full documentation: [xrtm.org](https://xrtm.org)
 

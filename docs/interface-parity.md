@@ -4,13 +4,13 @@ This page is the implementation-level source of truth for CLI/WebUI parity in
 `xrtm`. It follows the governance
 [Interface Parity and Claim Ownership Policy](https://github.com/xrtm-org/governance/blob/main/policies/interface-parity-and-claim-ownership-policy.md).
 
-Current baseline: published `xrtm==0.8.7`.
+Current baseline: published `xrtm==0.8.8`.
 
-The `0.8.7` release graduates the remaining deterministic WebUI partials on
-Hub/Start/Observatory/workflow detail while keeping Batch, Versions, API
+The `0.8.8` release keeps and hardens the released deterministic WebUI surface
+across Hub/Start/Observatory/workflow detail while keeping Batch, Versions, API
 Control, webhook, and other future-release lanes outside the release promise.
 
-The `0.8.7` release is the deterministic parity-and-verification baseline.
+The `0.8.8` release is the deterministic stabilization-and-hardening baseline.
 It promotes the unified Hub → Studio → Playground → Observatory spine, may
 claim Hub at `/` and `/hub`, Studio at `/studio`, graph-linked Playground trace
 review, Observatory at `/observatory`, workflow detail/run/validate/explain
@@ -78,18 +78,18 @@ as source-visible or future-release until package/docs/gates graduate together.
 | --- | --- | --- | --- | --- | --- | --- |
 | `xrtm doctor` | Newcomer readiness | `parity-ready` | released | `xrtm.product.doctor.run_doctor`, `doctor_snapshot` | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 complete |
 | `xrtm start` | First-success run | `parity-ready` | released | `xrtm.product.launch.run_start_quickstart` | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 complete |
-| `xrtm demo` | Demo run setup | `parity-ready` | `released (0.8.7)` | `xrtm.product.launch.run_demo_workflow` | `xrtm` docs | Gate 1 + WebUI-only Gate 2 |
+| `xrtm demo` | Demo run setup | `parity-ready` | `released (0.8.8)` | `xrtm.product.launch.run_demo_workflow` | `xrtm` docs | Gate 1 + WebUI-only Gate 2 |
 | `xrtm playground` | Run the bounded exploratory sandbox loop | `parity-ready` | released | `xrtm.product.launch.run_sandbox_session`, `save_sandbox_workflow`, `save_sandbox_profile`, WebUI playground state services | `xrtm` docs, then `xrtm.org` | Release Gate 1 + Gate 2 deterministic baseline complete; any real-runtime or cloud/API playground claim still needs matching clean-room proof before promotion |
-| `xrtm workflow list` | Workflow discovery | `parity-ready` | `released (0.8.7)` | `WorkflowRegistry.list_workflows` | `xrtm` docs | Gate 1 |
-| `xrtm workflow show` | Workflow inspection | `parity-ready` | `released (0.8.7)` | `xrtm.product.launch.load_registered_workflow`, `WorkflowRegistry.load` | `xrtm` docs | Gate 1 |
-| `xrtm workflow validate` | Workflow validation | `parity-ready` | `released (0.8.7)` | `xrtm.product.launch.validate_registered_workflow`, `WorkflowRegistry.validate` | `xrtm` docs | Gate 1 + WebUI route/API smoke |
+| `xrtm workflow list` | Workflow discovery | `parity-ready` | `released (0.8.8)` | `WorkflowRegistry.list_workflows` | `xrtm` docs | Gate 1 |
+| `xrtm workflow show` | Workflow inspection | `parity-ready` | `released (0.8.8)` | `xrtm.product.launch.load_registered_workflow`, `WorkflowRegistry.load` | `xrtm` docs | Gate 1 |
+| `xrtm workflow validate` | Workflow validation | `parity-ready` | `released (0.8.8)` | `xrtm.product.launch.validate_registered_workflow`, `WorkflowRegistry.validate` | `xrtm` docs | Gate 1 + WebUI route/API smoke |
 | `xrtm workflow create scratch` | Start a new local workflow | `partial` | P0 | `WorkflowAuthoringService.create_workflow_from_scratch`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
 | `xrtm workflow create template` | Start from a starter template | `partial` | P0 | `WorkflowAuthoringService.create_workflow_from_template`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
 | `xrtm workflow clone` / `xrtm workflow create clone` | Clone a workflow into a local authoring draft | `partial` | P0 | `WorkflowAuthoringService.clone_workflow`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
 | `xrtm workflow edit metadata/questions/runtime/artifacts/scoring` | Update shared core workflow fields | `partial` | P0 | `WorkflowAuthoringService.update_*`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
 | `xrtm workflow edit node/edge/entry` | Safe graph authoring inside the released node library | `partial` | P0 | `WorkflowAuthoringService.add_node/update_node/remove_node/add_edge/remove_edge/set_entry`, workbench draft services | `xrtm` docs | Gate 1 + CLI/WebUI authoring smoke |
-| `xrtm workflow explain` | Workflow explanation | `parity-ready` | `released (0.8.7)` | `xrtm.product.launch.explain_registered_workflow`, `WorkflowRegistry.explain` | `xrtm` docs | Gate 1 |
-| `xrtm workflow run` | Run selected workflow | `parity-ready` | `released (0.8.7)` | `xrtm.product.launch.run_registered_workflow` | `xrtm` docs | Gate 1 + WebUI-only Gate 2 |
+| `xrtm workflow explain` | Workflow explanation | `parity-ready` | `released (0.8.8)` | `xrtm.product.launch.explain_registered_workflow`, `WorkflowRegistry.explain` | `xrtm` docs | Gate 1 |
+| `xrtm workflow run` | Run selected workflow | `parity-ready` | `released (0.8.8)` | `xrtm.product.launch.run_registered_workflow` | `xrtm` docs | Gate 1 + WebUI-only Gate 2 |
 | `xrtm profile starter` | Starter profile creation | `parity-ready` | released | `starter_profile`, `ProfileStore.create` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
 | `xrtm profile create` | Profile creation | `parity-ready` | released | `ProfileStore.create` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
 | `xrtm profile list` | Profile discovery | `parity-ready` | released | `ProfileStore.list_profiles` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
@@ -102,10 +102,10 @@ as source-visible or future-release until package/docs/gates graduate together.
 | `xrtm runs search` | Run search | `parity-ready` | released | `list_runs`, WebUI read models | `xrtm` docs | Existing released evidence |
 | `xrtm runs show` | Run detail | `parity-ready` | released | `resolve_run_dir`, `run_detail`, WebUI read models | `xrtm` docs | Existing released evidence |
 | `xrtm runs compare` | Run comparison | `parity-ready` | released | `compare_runs`, WebUI compare snapshots | `xrtm` docs | Existing released evidence |
-| `xrtm runs export` | Evidence export | `parity-ready` | `released (0.8.7)` | `xrtm.product.history.export_run` | `xrtm` docs, then `xrtm.org` | Gate 1 + WebUI-only Gate 2 |
+| `xrtm runs export` | Evidence export | `parity-ready` | `released (0.8.8)` | `xrtm.product.history.export_run` | `xrtm` docs, then `xrtm.org` | Gate 1 + WebUI-only Gate 2 |
 | `xrtm providers doctor` | Provider diagnostics | `partial` | P0 | `xrtm.product.providers.local_llm_status` | `xrtm` docs | Gate 1 + provider smoke if claimed |
 | `xrtm local-llm status` | Local model status | `partial` | P0 | `xrtm.product.providers.local_llm_status` | `xrtm` docs | Gate 1 + local-LLM evidence if promoted |
-| `xrtm report html` | Generate/open HTML report | `parity-ready` | `released (0.8.7)` | `xrtm.product.reports.render_html_report` | `xrtm` docs, then `xrtm.org` | Gate 1 + WebUI-only Gate 2 |
+| `xrtm report html` | Generate/open HTML report | `parity-ready` | `released (0.8.8)` | `xrtm.product.reports.render_html_report` | `xrtm` docs, then `xrtm.org` | Gate 1 + WebUI-only Gate 2 |
 | `xrtm monitor start` | Start monitor | `parity-ready` | released | `xrtm.product.monitoring.start_monitor` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
 | `xrtm monitor list` | List monitors | `parity-ready` | released | `list_monitors` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
 | `xrtm monitor show` | Inspect monitor | `parity-ready` | released | `load_monitor` | `xrtm` operator docs | Release Gate 1 + Gate 2 complete |
@@ -130,7 +130,7 @@ as source-visible or future-release until package/docs/gates graduate together.
 
 ## Released parity proof
 
-The published `0.8.7` release proof should cover:
+The published `0.8.8` release proof should cover:
 
 1. open WebUI from a fresh install
 2. run readiness/doctor from the browser

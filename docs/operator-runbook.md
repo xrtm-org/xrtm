@@ -66,7 +66,7 @@ arbitrary graph, JSON, implementation, plugin, or code editor.
 The terminal exposes the same shared backend through `xrtm workflow create ...`
 and `xrtm workflow edit ...` when you prefer text-led authoring.
 
-In `0.8.7`, the same released shell keeps `/playground` for a bounded
+In `0.8.8`, the same released shell keeps `/playground` for a bounded
 graph-linked exploratory sandbox on the deterministic parity baseline: one
 custom question first, optional tiny follow-up batches capped at 5,
 graph/canvas preview, ordered node trace, executed-node highlighting, honest
@@ -76,7 +76,7 @@ benchmark or release evidence by default, and keep the released runtime wording
 deterministic unless wider validation is published separately.
 
 ```bash
-xrtm playground --workflow demo-deterministic --question "Will the released 0.8.7 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
+xrtm playground --workflow demo-deterministic --question "Will the released 0.8.8 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
 ```
 
 Use the terminal TUI when you only need read-only review:

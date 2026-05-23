@@ -1125,7 +1125,7 @@ def test_webui_p0_api_routes_use_product_services(tmp_path: Path) -> None:
         assert workflow_detail["actions"]["explain"]["cli_command"] == "xrtm workflow explain demo-deterministic"
         assert workflow_detail["actions"]["validate"]["cli_command"] == "xrtm workflow validate demo-deterministic"
         assert workflow_detail["compatibility"]["legacy_route"] == "/workbench?workflow=demo-deterministic"
-        assert workflow_detail["actions"]["run"]["trust_cues"][0] == "Deterministic mode remains the default released path for 0.8.7."
+        assert workflow_detail["actions"]["run"]["trust_cues"][0] == "Deterministic mode remains the default released path for 0.8.8."
         assert workflow_detail["explanation"]["nodes"]
 
         validation = _request_json(f"{base_url}/api/workflows/demo-deterministic/validate", method="POST")

@@ -3489,7 +3489,7 @@ function AdvancedPage(): React.ReactElement {
     { label: "Visible lanes", value: cards.length, detail: "kept in view" },
     { label: "Default posture", value: "guided", detail: "not first-success" },
     { label: "Safety labels", value: "explicit", detail: "readiness stays honest" },
-    { label: "Release frame", value: "0.8.7", detail: "parity + verification" },
+    { label: "Release frame", value: "0.8.8", detail: "stabilization + hardening" },
   ];
   const advancedFocusItems = [
     {
@@ -3590,7 +3590,7 @@ function AdvancedPage(): React.ReactElement {
           <div className="operations-keyline-list">
             <div><span>Primary audience</span><strong>operators who already know the lane</strong></div>
             <div><span>Interaction model</span><strong>inspect first, expand deliberately</strong></div>
-            <div><span>Product promise</span><strong>deterministic parity and verification, not new feature families</strong></div>
+            <div><span>Product promise</span><strong>deterministic stabilization and hardening, not new feature families</strong></div>
           </div>
           <div className="operations-card-grid advanced-card-grid">
             <article className="advanced-note-card">
@@ -3605,7 +3605,7 @@ function AdvancedPage(): React.ReactElement {
             </article>
             <article className="advanced-note-card">
               <span className="eyebrow">Release trust</span>
-              <strong>0.8.7 stays deterministic parity work</strong>
+              <strong>0.8.8 stays deterministic stabilization work</strong>
               <p className="helper-text">This route clarifies existing lanes while keeping the broader product framing local, calm, and truthful.</p>
             </article>
           </div>
