@@ -208,6 +208,18 @@ def default_specs(root: Path, xrtm_repo_root_path: Path | None = None) -> tuple[
     )
 
 
+def developer_example_script(workspace_root_path: Path) -> Path:
+    candidates = [
+        workspace_root_path / "forecast" / "examples" / "providers" / "deterministic_analyst" / "run_deterministic_analyst.py",
+        workspace_root_path / "forecast" / "examples" / "providers" / "provider_free_analyst" / "run_provider_free_analyst.py",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    searched = ", ".join(str(path) for path in candidates)
+    raise FileNotFoundError(f"Deterministic analyst example not found; searched: {searched}")
+
+
 def command_text(command: Iterable[str]) -> str:
     return " ".join(shlex.quote(part) for part in command)
 
@@ -1474,15 +1486,16 @@ def run_developer_package(
         env=base_env,
     )
     write_versions(venv_python, journey_dir / "installed-versions.txt", env)
+    example_script = developer_example_script(workspace_root_path)
     run_logged(
-        [str(venv_python), str(workspace_root_path / "forecast" / "examples" / "providers" / "deterministic_analyst" / "run_deterministic_analyst.py")],
+        [str(venv_python), str(example_script)],
         log_path=journey_dir / "deterministic-analyst.log",
         cwd=journey_dir,
         env=env,
     )
     analyst_log = (journey_dir / "deterministic-analyst.log").read_text(encoding="utf-8")
     if "Schema validation failed" in analyst_log:
-        raise RuntimeError("Provider-free analyst example surfaced schema validation failures")
+        raise RuntimeError("Deterministic analyst example surfaced schema validation failures")
     summary = {
         "forecast_version": next(
             line for line in (journey_dir / "installed-versions.txt").read_text(encoding="utf-8").splitlines() if line.startswith("forecast, version ")

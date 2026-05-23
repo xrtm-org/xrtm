@@ -54,6 +54,28 @@ def test_default_specs_support_repo_root_equal_to_workspace_root(tmp_path) -> No
     assert forecast_spec == "xrtm-forecast==0.6.6"
 
 
+def test_developer_example_script_prefers_deterministic_path(tmp_path: Path) -> None:
+    module = _load_module()
+    deterministic_path = (
+        tmp_path / "forecast" / "examples" / "providers" / "deterministic_analyst" / "run_deterministic_analyst.py"
+    )
+    deterministic_path.parent.mkdir(parents=True)
+    deterministic_path.write_text("print('ok')\n", encoding="utf-8")
+
+    assert module.developer_example_script(tmp_path) == deterministic_path
+
+
+def test_developer_example_script_falls_back_to_provider_free_path(tmp_path: Path) -> None:
+    module = _load_module()
+    provider_free_path = (
+        tmp_path / "forecast" / "examples" / "providers" / "provider_free_analyst" / "run_provider_free_analyst.py"
+    )
+    provider_free_path.parent.mkdir(parents=True)
+    provider_free_path.write_text("print('ok')\n", encoding="utf-8")
+
+    assert module.developer_example_script(tmp_path) == provider_free_path
+
+
 def test_repo_source_dir_prefers_repo_root_when_workspace_has_no_xrtm_checkout(tmp_path: Path) -> None:
     module = _load_module()
     workspace_root = tmp_path / "workspace"
