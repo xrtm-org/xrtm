@@ -24,6 +24,12 @@ OPENAI_COMPATIBLE_CATEGORY = "openai-compatible-endpoint"
 CODING_AGENT_CLI_CATEGORY = "coding-agent-cli-contract"
 DETERMINISTIC_VALIDATION_MODE = "deterministic"
 DETERMINISTIC_PROVIDER_NAME = "deterministic"
+_PROVIDER_NAME_ALIASES = {
+    "mock": DETERMINISTIC_PROVIDER_NAME,
+    "provider-free": DETERMINISTIC_PROVIDER_NAME,
+    DETERMINISTIC_PROVIDER_NAME: DETERMINISTIC_PROVIDER_NAME,
+    "local-llm": "local-llm",
+}
 
 
 class DeterministicProvider(InferenceProvider):
@@ -111,7 +117,7 @@ def normalize_provider_name(provider: str) -> str:
     normalized = provider.strip()
     if not normalized:
         raise ValueError("provider may not be empty")
-    return normalized
+    return _PROVIDER_NAME_ALIASES.get(normalized.lower(), normalized)
 
 
 def build_provider(provider: str, *, base_url: str | None, model: str | None, api_key: str | None) -> InferenceProvider:

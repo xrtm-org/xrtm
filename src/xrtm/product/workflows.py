@@ -310,6 +310,8 @@ class GraphSpec:
         edges = tuple(EdgeSpec.from_payload(item) for item in raw_edges)
         entry = data.get("entry")
         if entry is None:
+            if not nodes:
+                raise ValueError("graph.nodes must define at least one node")
             entry = next(iter(nodes))
         if not isinstance(entry, str) or not entry:
             raise ValueError("graph.entry must be a non-empty string")
@@ -538,7 +540,10 @@ class WorkflowRegistry:
             if not root.exists():
                 continue
             for path in sorted(root.glob("*.json")):
-                blueprint = WorkflowBlueprint.from_payload(json.loads(path.read_text(encoding="utf-8")))
+                try:
+                    blueprint = WorkflowBlueprint.from_payload(json.loads(path.read_text(encoding="utf-8")))
+                except (json.JSONDecodeError, ValueError):
+                    continue
                 summaries.append(_summary_for_blueprint(blueprint, source="local", path=str(path)))
         return summaries
 

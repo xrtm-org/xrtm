@@ -5,8 +5,13 @@ on:
     types: [published]
 
 jobs:
+  gate1:
+    name: Gate 1 release checks
+    uses: ./.github/workflows/ci.yml
+
   pypi-publish:
     name: Upload release to PyPI
+    needs: gate1
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -14,8 +19,22 @@ jobs:
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
     steps:
+      - name: Summarize release gate posture
+        shell: bash
+        run: |
+          {
+            echo "### Release publish gate posture"
+            echo
+            echo "- Gate 1 is enforced here by reusing \`.github/workflows/ci.yml\` on the release commit before PyPI publish."
+            echo "- Gate 2 remains required for xrtm releases via the existing CI \`workflow_dispatch\` clean-room jobs: run \`cleanroom_artifact_source=wheelhouse\` before release readiness and rerun with \`pypi\` after publish for published-artifact evidence."
+            echo
+            echo "This workflow publishes only after Gate 1 succeeds; it does not replace the required clean-room release evidence."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5

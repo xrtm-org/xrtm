@@ -80,9 +80,12 @@ def workbench_snapshot(
         selected_run_detail = read_run_detail(selected_run_dir)
 
     workflow_summaries = registry.list_workflows()
-    selected_workflow_name = workflow_name or _workflow_name_from_run(selected_run_detail) or _first_workflow_name(workflow_summaries)
+    selected_workflow_name, workflow_error = _resolve_selected_workflow_name(
+        workflow_summaries,
+        requested_workflow_name=workflow_name,
+        run_detail=selected_run_detail,
+    )
     selected_workflow: WorkflowBlueprint | None = None
-    workflow_error: str | None = None
     if selected_workflow_name is not None:
         try:
             selected_workflow = registry.load(selected_workflow_name)
@@ -673,8 +676,37 @@ def _workflow_name_from_run(run_detail: dict[str, Any] | None) -> str | None:
     return None
 
 
+def _resolve_selected_workflow_name(
+    workflow_summaries: list[Any],
+    *,
+    requested_workflow_name: str | None,
+    run_detail: dict[str, Any] | None,
+) -> tuple[str | None, str | None]:
+    available_names = {summary.name for summary in workflow_summaries if isinstance(getattr(summary, "name", None), str)}
+    workflow_error: str | None = None
+
+    requested_name = (requested_workflow_name or "").strip() or None
+    if requested_name:
+        if requested_name in available_names:
+            return requested_name, None
+        workflow_error = f"workflow does not exist: {requested_name}"
+
+    run_workflow_name = _workflow_name_from_run(run_detail)
+    if run_workflow_name and run_workflow_name in available_names:
+        return run_workflow_name, workflow_error
+
+    return _preferred_workflow_name(workflow_summaries), workflow_error
+
+
 def _first_workflow_name(workflow_summaries: list[Any]) -> str | None:
     return workflow_summaries[0].name if workflow_summaries else None
+
+
+def _preferred_workflow_name(workflow_summaries: list[Any]) -> str | None:
+    for summary in workflow_summaries:
+        if summary.name == "demo-deterministic":
+            return summary.name
+    return _first_workflow_name(workflow_summaries)
 
 
 def _workflow_source(workflow_summaries: list[Any], workflow_name: str | None) -> dict[str, Any] | None:

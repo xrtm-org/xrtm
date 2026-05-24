@@ -13,7 +13,7 @@ from pathlib import Path
 from threading import Lock, Thread
 from typing import Any, Mapping
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from xrtm import __version__
@@ -433,7 +433,7 @@ class WebUIStateStore:
                 "Studio is the primary authoring surface. The legacy /workbench route remains available for "
                 "compatible draft and form-driven flows over the same local services."
             ),
-            "primary_cta": {"label": "Open Studio", "href": f"/studio?workflow={preferred_workflow_name}"},
+            "primary_cta": {"label": "Open Studio", "href": _studio_workflow_href(preferred_workflow_name)},
             "secondary_cta": {"label": "Open Workbench", "href": "/workbench"},
         }
         return {
@@ -552,7 +552,7 @@ class WebUIStateStore:
                         ),
                         "primary_cta": {
                             "label": "Open Playground",
-                            "href": f"/playground?context=template&template={preferred_template_id}",
+                            "href": _playground_template_href(preferred_template_id),
                         },
                         "secondary_cta": {"label": "Run first-success quickstart", "href": "/start"},
                         "status": "local-first",
@@ -567,7 +567,7 @@ class WebUIStateStore:
                         ),
                         "primary_cta": {
                             "label": "Open Studio",
-                            "href": f"/studio?workflow={preferred_workflow_name}",
+                            "href": _studio_workflow_href(preferred_workflow_name),
                         },
                         "secondary_cta": {"label": "Open legacy workbench", "href": "/workbench"},
                         "status": "draft-ready",
@@ -604,16 +604,16 @@ class WebUIStateStore:
                 "templates": [
                     {
                         **template,
-                        "playground_href": f"/playground?context=template&template={template['template_id']}",
-                        "studio_href": f"/studio?mode=template&template={template['template_id']}",
+                        "playground_href": _playground_template_href(str(template.get("template_id") or "")),
+                        "studio_href": _studio_template_href(str(template.get("template_id") or "")),
                     }
                     for template in starter_templates
                 ],
                 "workflows": [
                     {
                         **workflow,
-                        "playground_href": f"/playground?context=workflow&workflow={workflow['name']}",
-                        "studio_href": f"/studio?workflow={workflow['name']}",
+                        "playground_href": _playground_workflow_href(str(workflow.get("name") or "")),
+                        "studio_href": _studio_workflow_href(str(workflow.get("name") or "")),
                     }
                     for workflow in workflows[:6]
                 ],
@@ -625,12 +625,12 @@ class WebUIStateStore:
                     },
                     {
                         "label": "Open Playground with a template",
-                        "href": f"/playground?context=template&template={preferred_template_id}",
+                        "href": _playground_template_href(preferred_template_id),
                         "description": "Fastest path to a local exploratory forecast without account setup.",
                     },
                     {
                         "label": "Open Studio to inspect/edit",
-                        "href": f"/studio?workflow={preferred_workflow_name}",
+                        "href": _studio_workflow_href(preferred_workflow_name),
                         "description": "Inspect workflow shape and create a safe local draft when you need custom changes.",
                     },
                 ],
@@ -3585,32 +3585,63 @@ def _playground_optional_string(value: Any, *, allow_blank: bool = False) -> str
     return text or None
 
 
-def _preferred_hub_workflow(workflows: list[dict[str, Any]]) -> str:
-    preferred = next(
-        (str(workflow["name"]) for workflow in workflows if workflow.get("name") in {"demo-deterministic", "demo-deterministic"}),
-        None,
-    )
-    if preferred is not None:
-        return preferred
-    if workflows:
-        return str(workflows[0].get("name") or "demo-deterministic")
-    return "demo-deterministic"
-
-
-def _preferred_hub_template(templates: list[dict[str, Any]]) -> str:
+def _preferred_hub_workflow(workflows: list[dict[str, Any]]) -> str | None:
     preferred = next(
         (
-            str(template["template_id"])
-            for template in templates
-            if template.get("template_id") in {"deterministic-demo", "deterministic-demo"}
+            str(workflow["name"]).strip()
+            for workflow in workflows
+            if isinstance(workflow.get("name"), str) and str(workflow["name"]).strip() == "demo-deterministic"
         ),
         None,
     )
     if preferred is not None:
         return preferred
-    if templates:
-        return str(templates[0].get("template_id") or "deterministic-demo")
-    return "deterministic-demo"
+    for workflow in workflows:
+        name = str(workflow.get("name") or "").strip()
+        if name:
+            return name
+    return None
+
+
+def _preferred_hub_template(templates: list[dict[str, Any]]) -> str | None:
+    preferred = next(
+        (
+            str(template["template_id"]).strip()
+            for template in templates
+            if isinstance(template.get("template_id"), str) and str(template["template_id"]).strip() == "deterministic-demo"
+        ),
+        None,
+    )
+    if preferred is not None:
+        return preferred
+    for template in templates:
+        template_id = str(template.get("template_id") or "").strip()
+        if template_id:
+            return template_id
+    return None
+
+
+def _route_with_query(path: str, **params: str | None) -> str:
+    filtered = {key: value for key, value in params.items() if value}
+    if not filtered:
+        return path
+    return f"{path}?{urlencode(filtered)}"
+
+
+def _studio_workflow_href(workflow_name: str | None) -> str:
+    return _route_with_query("/studio", workflow=workflow_name)
+
+
+def _studio_template_href(template_id: str | None) -> str:
+    return _route_with_query("/studio", mode="template" if template_id else None, template=template_id)
+
+
+def _playground_template_href(template_id: str | None) -> str:
+    return _route_with_query("/playground", context="template" if template_id else None, template=template_id)
+
+
+def _playground_workflow_href(workflow_name: str | None) -> str:
+    return _route_with_query("/playground", context="workflow" if workflow_name else None, workflow=workflow_name)
 
 
 def _preferred_playground_workflow(registry: WorkflowRegistry) -> str:
