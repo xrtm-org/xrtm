@@ -466,12 +466,19 @@ class WorkflowRegistry:
     def load(self, name: str) -> WorkflowBlueprint:
         validate_workflow_name(name)
         name = _WORKFLOW_ALIASES.get(name, name)
-        local_match = self._load_local(name)
+        local_match: WorkflowBlueprint | None = None
+        local_error: json.JSONDecodeError | ValueError | None = None
+        try:
+            local_match = self._load_local(name)
+        except (json.JSONDecodeError, ValueError) as exc:
+            local_error = exc
         if local_match is not None:
             return local_match
         builtin_match = self._load_builtin(name)
         if builtin_match is not None:
             return builtin_match
+        if local_error is not None:
+            raise local_error
         raise FileNotFoundError(f"workflow does not exist: {name}")
 
     def validate(self, name: str) -> WorkflowBlueprint:

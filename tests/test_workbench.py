@@ -1726,6 +1726,27 @@ def test_refresh_indexes_normalizes_legacy_local_providers_and_skips_invalid_wor
     assert "broken-workflow" not in indexed
 
 
+def test_refresh_indexes_ignores_invalid_local_shadow_for_builtin_workflow(tmp_path: Path) -> None:
+    workflows_dir = tmp_path / "workflows"
+    workflows_dir.mkdir()
+    registry = WorkflowRegistry(local_roots=(workflows_dir,))
+    (workflows_dir / "demo-deterministic.json").write_text("{invalid json", encoding="utf-8")
+
+    summaries = {workflow.name: workflow for workflow in registry.list_workflows()}
+    assert summaries["demo-deterministic"].source == "builtin"
+
+    loaded = registry.load("demo-deterministic")
+    assert loaded.name == "demo-deterministic"
+    assert registry.validate("demo-deterministic").name == "demo-deterministic"
+
+    store = WebUIStateStore(tmp_path / "app-state.db")
+    store.ensure_schema()
+    store.refresh_indexes(runs_dir=tmp_path / "runs", registry=registry)
+
+    indexed = {item["name"]: item for item in store.list_workflows()}
+    assert indexed["demo-deterministic"]["source"] == "builtin"
+
+
 def test_playground_state_store_runs_shared_sandbox_session(tmp_path: Path) -> None:
     registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
     runs_dir = tmp_path / "runs"
