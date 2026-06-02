@@ -5,8 +5,68 @@ on:
     types: [published]
 
 jobs:
+  resolve-release-refs:
+    name: Resolve release-train refs
+    runs-on: ubuntu-latest
+    outputs:
+      coordination_context: ${{ steps.release-refs.outputs.coordination_context }}
+      data_ref: ${{ steps.release-refs.outputs.data_ref }}
+      eval_ref: ${{ steps.release-refs.outputs.eval_ref }}
+      forecast_ref: ${{ steps.release-refs.outputs.forecast_ref }}
+      train_ref: ${{ steps.release-refs.outputs.train_ref }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
+
+      - name: Resolve dependency release refs
+        id: release-refs
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import tomllib
+          from pathlib import Path
+
+          dependency_outputs = {
+              "xrtm-data": "data_ref",
+              "xrtm-eval": "eval_ref",
+              "xrtm-forecast": "forecast_ref",
+              "xrtm-train": "train_ref",
+          }
+          project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
+          dependencies = project["dependencies"]
+          resolved = {}
+          for dependency in dependencies:
+              for package_name, output_name in dependency_outputs.items():
+                  prefix = f"{package_name}>="
+                  if dependency.startswith(prefix):
+                      version = dependency.split(">=", 1)[1].split(",", 1)[0].strip()
+                      resolved[output_name] = f"refs/tags/v{version}"
+          missing = [output_name for output_name in dependency_outputs.values() if output_name not in resolved]
+          if missing:
+              raise SystemExit(f"Missing dependency versions for publish gating: {', '.join(missing)}")
+          print(f"coordination_context=release:{Path.cwd().name}:{__import__('os').environ['RELEASE_TAG']}")
+          for key, value in resolved.items():
+              print(f"{key}={value}")
+          PY
+
+  gate1:
+    name: Gate 1 release checks
+    needs: resolve-release-refs
+    uses: ./.github/workflows/ci.yml
+    with:
+      coordination_context: ${{ needs.resolve-release-refs.outputs.coordination_context }}
+      data_ref: ${{ needs.resolve-release-refs.outputs.data_ref }}
+      eval_ref: ${{ needs.resolve-release-refs.outputs.eval_ref }}
+      forecast_ref: ${{ needs.resolve-release-refs.outputs.forecast_ref }}
+      train_ref: ${{ needs.resolve-release-refs.outputs.train_ref }}
+
   pypi-publish:
     name: Upload release to PyPI
+    needs: [resolve-release-refs, gate1]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -14,8 +74,22 @@ jobs:
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
     steps:
+      - name: Summarize release gate posture
+        shell: bash
+        run: |
+          {
+            echo "### Release publish gate posture"
+            echo
+            echo "- Gate 1 is enforced here by reusing \`.github/workflows/ci.yml\` on the release commit before PyPI publish."
+            echo "- Gate 2 remains required for xrtm releases via the existing CI \`workflow_dispatch\` clean-room jobs: run \`cleanroom_artifact_source=wheelhouse\` before release readiness and rerun with \`pypi\` after publish for published-artifact evidence."
+            echo
+            echo "This workflow publishes only after Gate 1 succeeds; it does not replace the required clean-room release evidence."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5

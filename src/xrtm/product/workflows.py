@@ -310,6 +310,8 @@ class GraphSpec:
         edges = tuple(EdgeSpec.from_payload(item) for item in raw_edges)
         entry = data.get("entry")
         if entry is None:
+            if not nodes:
+                raise ValueError("graph.nodes must define at least one node")
             entry = next(iter(nodes))
         if not isinstance(entry, str) or not entry:
             raise ValueError("graph.entry must be a non-empty string")
@@ -464,12 +466,19 @@ class WorkflowRegistry:
     def load(self, name: str) -> WorkflowBlueprint:
         validate_workflow_name(name)
         name = _WORKFLOW_ALIASES.get(name, name)
-        local_match = self._load_local(name)
+        local_match: WorkflowBlueprint | None = None
+        local_error: json.JSONDecodeError | ValueError | None = None
+        try:
+            local_match = self._load_local(name)
+        except (json.JSONDecodeError, ValueError) as exc:
+            local_error = exc
         if local_match is not None:
             return local_match
         builtin_match = self._load_builtin(name)
         if builtin_match is not None:
             return builtin_match
+        if local_error is not None:
+            raise local_error
         raise FileNotFoundError(f"workflow does not exist: {name}")
 
     def validate(self, name: str) -> WorkflowBlueprint:
@@ -538,7 +547,10 @@ class WorkflowRegistry:
             if not root.exists():
                 continue
             for path in sorted(root.glob("*.json")):
-                blueprint = WorkflowBlueprint.from_payload(json.loads(path.read_text(encoding="utf-8")))
+                try:
+                    blueprint = WorkflowBlueprint.from_payload(json.loads(path.read_text(encoding="utf-8")))
+                except (json.JSONDecodeError, ValueError):
+                    continue
                 summaries.append(_summary_for_blueprint(blueprint, source="local", path=str(path)))
         return summaries
 

@@ -146,7 +146,10 @@ def test_workbench_snapshot_loads_local_workflow_and_missing_model(tmp_path: Pat
 
     missing = workbench_snapshot(Path("missing-runs"), workflows_dir, workflow_name="does-not-exist")
     assert missing["workflow_error"] == "workflow does not exist: does-not-exist"
-    assert missing["canvas"] == {"nodes": [], "edges": [], "parallel_groups": {}, "conditional_routes": {}}
+    assert missing["selected_workflow_name"] == "demo-deterministic"
+    assert missing["selected_workflow"]["name"] == "demo-deterministic"
+    assert missing["validation"]["ok"] is True
+    assert missing["canvas"]["nodes"]
 
 
 @pytest.mark.parametrize(
@@ -1606,6 +1609,26 @@ def test_app_shell_snapshot_marks_available_local_runtime_when_healthy(
     assert shell["overview"]["compatibility"]["secondary_cta"]["href"] == "/workbench"
 
 
+def test_app_shell_snapshot_avoids_invalid_bootstrap_links_without_workflows_or_templates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
+    store = WebUIStateStore(tmp_path / "app-state.db")
+    store.ensure_schema()
+    monkeypatch.setattr(registry, "list_workflows", lambda: [])
+    monkeypatch.setattr(webui_state_module, "list_workflow_starter_templates", lambda: [])
+
+    shell = store.app_shell_snapshot(runs_dir=tmp_path / "runs", registry=registry)
+
+    assert shell["overview"]["compatibility"]["primary_cta"]["href"] == "/studio"
+    assert shell["hub"]["doors"][0]["primary_cta"]["href"] == "/playground"
+    assert shell["hub"]["doors"][1]["primary_cta"]["href"] == "/studio"
+    assert shell["hub"]["next_actions"][1]["href"] == "/playground"
+    assert shell["hub"]["next_actions"][2]["href"] == "/studio"
+    assert shell["hub"]["templates"] == []
+    assert shell["hub"]["workflows"] == []
+
+
 def test_compare_snapshot_groups_metrics_and_question_titles(tmp_path: Path) -> None:
     registry = WorkflowRegistry(local_roots=(tmp_path / "workflows",))
     runs_dir = tmp_path / "runs"
@@ -1667,6 +1690,61 @@ def test_refresh_indexes_replaces_rows_without_full_table_clears(
     statements = {" ".join(statement.split()) for statement in traces}
     assert "DELETE FROM workflow_index" not in statements
     assert "DELETE FROM run_index" not in statements
+
+
+def test_refresh_indexes_normalizes_legacy_local_providers_and_skips_invalid_workflows(tmp_path: Path) -> None:
+    workflows_dir = tmp_path / "workflows"
+    workflows_dir.mkdir()
+    registry = WorkflowRegistry(local_roots=(workflows_dir,))
+    legacy_payload = registry.load("demo-deterministic").to_json_dict()
+    legacy_payload["name"] = "legacy-mock-workflow"
+    legacy_payload["runtime"]["provider"] = "mock"
+    (workflows_dir / "legacy-mock-workflow.json").write_text(json.dumps(legacy_payload), encoding="utf-8")
+    broken_payload = {
+        "schema_version": "xrtm.workflow.v1",
+        "name": "broken-workflow",
+        "title": "Broken workflow",
+        "description": "Invalid workflow fixture.",
+        "workflow_kind": "workflow",
+        "questions": {"source": "real-binary-corpus", "corpus_id": "xrtm-real-binary-v1", "limit": 1},
+        "runtime": {"provider": "deterministic", "max_tokens": 768},
+        "graph": {"nodes": {}, "edges": []},
+    }
+    (workflows_dir / "broken-workflow.json").write_text(json.dumps(broken_payload), encoding="utf-8")
+
+    loaded = registry.load("legacy-mock-workflow")
+    assert loaded.runtime.provider == "deterministic"
+    with pytest.raises(ValueError, match="graph.nodes must define at least one node"):
+        registry.load("broken-workflow")
+
+    store = WebUIStateStore(tmp_path / "app-state.db")
+    store.ensure_schema()
+    store.refresh_indexes(runs_dir=tmp_path / "runs", registry=registry)
+
+    indexed = {item["name"]: item for item in store.list_workflows()}
+    assert indexed["legacy-mock-workflow"]["runtime_provider"] == "deterministic"
+    assert "broken-workflow" not in indexed
+
+
+def test_refresh_indexes_ignores_invalid_local_shadow_for_builtin_workflow(tmp_path: Path) -> None:
+    workflows_dir = tmp_path / "workflows"
+    workflows_dir.mkdir()
+    registry = WorkflowRegistry(local_roots=(workflows_dir,))
+    (workflows_dir / "demo-deterministic.json").write_text("{invalid json", encoding="utf-8")
+
+    summaries = {workflow.name: workflow for workflow in registry.list_workflows()}
+    assert summaries["demo-deterministic"].source == "builtin"
+
+    loaded = registry.load("demo-deterministic")
+    assert loaded.name == "demo-deterministic"
+    assert registry.validate("demo-deterministic").name == "demo-deterministic"
+
+    store = WebUIStateStore(tmp_path / "app-state.db")
+    store.ensure_schema()
+    store.refresh_indexes(runs_dir=tmp_path / "runs", registry=registry)
+
+    indexed = {item["name"]: item for item in store.list_workflows()}
+    assert indexed["demo-deterministic"]["source"] == "builtin"
 
 
 def test_playground_state_store_runs_shared_sandbox_session(tmp_path: Path) -> None:

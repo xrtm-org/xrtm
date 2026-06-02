@@ -95,6 +95,28 @@ function providerLabel(value: string | null | undefined): string {
   return value || "Deterministic baseline";
 }
 
+function preferredWorkbenchWorkflow(
+  requestedWorkflow: string | null,
+  latestRunWorkflowName: string | null | undefined,
+  workflowsPayload: JsonObject | null,
+): string | null {
+  const items = ((workflowsPayload?.items || workflowsPayload?.workflows || []) as JsonObject[])
+    .filter((item) => typeof item?.name === "string" && String(item.name).trim());
+  if (!items.length) return null;
+  const available = new Set(items.map((item) => String(item.name).trim()));
+  const normalizedRequestedWorkflow = requestedWorkflow?.trim() || null;
+  if (normalizedRequestedWorkflow && available.has(normalizedRequestedWorkflow)) {
+    return normalizedRequestedWorkflow;
+  }
+  const normalizedLatestRunWorkflowName = latestRunWorkflowName?.trim() || null;
+  if (normalizedLatestRunWorkflowName && available.has(normalizedLatestRunWorkflowName)) {
+    return normalizedLatestRunWorkflowName;
+  }
+  if (available.has("demo-deterministic")) return "demo-deterministic";
+  const first = String(items[0].name || "").trim();
+  return first || null;
+}
+
 function runWithoutRowSelection(event: React.MouseEvent<HTMLElement>, action: () => void): void {
   event.stopPropagation();
   action();
@@ -4998,7 +5020,6 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   const requestedWorkflow = params.get("workflow");
   const requestedTemplate = params.get("template") || params.get("template_id");
   const requestedMode = params.get("mode");
-  const selectedWorkflow = requestedWorkflow || shell?.overview?.latest_run?.workflow?.name || "demo-deterministic";
   const isStudio = route.path === "/studio";
   const surfaceLabel = isStudio ? "Studio" : "Workbench";
   const surfaceBase = isStudio ? "/studio" : "/workbench";
@@ -5006,9 +5027,17 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   const draftApiBase = isStudio ? `${bootstrap.api_root}/studio/drafts` : `${bootstrap.api_root}/drafts`;
   const catalogUrl = isStudio ? `${bootstrap.api_root}/studio/catalog` : `${bootstrap.api_root}/authoring/catalog`;
   const workflows = useJsonResource(`${bootstrap.api_root}/workflows`, [route.search]);
+  const selectedWorkflow = preferredWorkbenchWorkflow(
+    requestedWorkflow,
+    shell?.overview?.latest_run?.workflow?.name,
+    workflows.data,
+  );
   const authoringCatalog = useJsonResource(catalogUrl, [catalogUrl]);
   const draft = useJsonResource(draftId ? `${draftApiBase}/${draftId}` : null, [draftId, draftApiBase]);
-  const workflow = useJsonResource(!draftId ? `${bootstrap.api_root}/workflows/${selectedWorkflow}` : null, [selectedWorkflow, draftId]);
+  const workflow = useJsonResource(
+    !draftId && selectedWorkflow ? `${bootstrap.api_root}/workflows/${encodeURIComponent(selectedWorkflow)}` : null,
+    [selectedWorkflow, draftId],
+  );
   const [busy, setBusy] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<{ tone: string; title: string; body: string } | null>(null);
   const [creationMode, setCreationMode] = useState("clone");
@@ -5095,9 +5124,10 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
       };
     }
     if (requestedWorkflow || requestedMode === "clone") {
+      if (!selectedWorkflow) return null;
       return {
         creation_mode: "clone",
-        source_workflow_name: requestedWorkflow || selectedWorkflow,
+        source_workflow_name: selectedWorkflow,
       };
     }
     return null;
@@ -5242,7 +5272,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
   useEffect(() => {
     setCreateForm((current) => ({
       ...current,
-      source_workflow_name: current.source_workflow_name || selectedWorkflow,
+      source_workflow_name: current.source_workflow_name || selectedWorkflow || "",
       template_id: current.template_id || String(templates[0]?.template_id || ""),
     }));
     setAddNodeForm((current) => ({
@@ -6575,7 +6605,7 @@ function WorkbenchPage({ route, shell, navigate, onMutate }: { route: Route; she
               {creationMode === "clone" ? (
                 <label>
                   <span>Source workflow</span>
-                  <select value={createForm.source_workflow_name || selectedWorkflow} onChange={(event) => setCreateForm((current) => ({ ...current, source_workflow_name: event.target.value }))}>
+                  <select value={createForm.source_workflow_name || selectedWorkflow || ""} onChange={(event) => setCreateForm((current) => ({ ...current, source_workflow_name: event.target.value }))}>
                     {(workflows.data?.items || []).map((item: JsonObject) => (
                       <option key={item.name} value={item.name}>{item.title || item.name}</option>
                     ))}
