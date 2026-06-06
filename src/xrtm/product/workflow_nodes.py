@@ -10,7 +10,17 @@ from typing import Any
 from xrtm.data.core.schemas.forecast import CausalNode, ForecastOutput, MetadataBase
 from xrtm.data.corpora import load_real_binary_questions
 from xrtm.forecast.e2e.real_questions import ForecastHarnessRecord, run_real_question_e2e
-from xrtm.product.competition import CompetitionPackRegistry, competition_submission_payload
+
+
+class CompetitionPackRegistry:
+    def load(self, _name: str) -> Any:
+        raise NotImplementedError("competition module removed")
+
+
+def competition_submission_payload(*_: Any, **__: Any) -> dict[str, Any]:
+    raise NotImplementedError("competition module removed")
+
+
 from xrtm.product.pipeline import _run_forecast_stage, _write_eval_payload, _write_train_payload
 from xrtm.product.providers import (
     DETERMINISTIC_PROVIDER_NAME,

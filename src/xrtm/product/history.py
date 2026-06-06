@@ -10,7 +10,7 @@ from typing import Any
 
 from xrtm.eval import BrierScoreEvaluator
 from xrtm.product.artifacts import ArtifactStore
-from xrtm.product.read_models import list_run_records, read_run_detail
+
 
 _BRIER_SCORE_EVALUATOR = BrierScoreEvaluator()
 
@@ -24,7 +24,23 @@ def list_runs(
 ) -> list[dict[str, Any]]:
     """List canonical run artifacts, newest first, with optional filters."""
 
-    return list_run_records(runs_dir, status=status, provider=provider, query=query)
+    if not runs_dir.is_dir():
+        return []
+    results = []
+    for d in sorted(runs_dir.iterdir(), key=lambda p: p.name, reverse=True):
+        if not d.is_dir():
+            continue
+        try:
+            data = json.loads((d / "run.json").read_text())
+        except Exception:
+            continue
+        item = {"run_id": data.get("run_id", d.name), "status": data.get("status", "?"), "provider": data.get("provider", "")}
+        if status and item["status"] != status:
+            continue
+        if provider and item["provider"] != provider:
+            continue
+        results.append(item)
+    return results
 
 
 def latest_run_dir(runs_dir: Path) -> Path:
@@ -62,7 +78,7 @@ def resolve_run_dir(runs_dir: Path, run_ref: str) -> Path:
 def run_detail(run_dir: Path) -> dict[str, Any]:
     """Return one export-ready run detail payload."""
 
-    return read_run_detail(run_dir)
+    return json.loads((run_dir / "run.json").read_text()) if (run_dir / "run.json").is_file() else {"error": "no run.json"}
 
 
 def compare_runs(left_dir: Path, right_dir: Path) -> list[dict[str, Any]]:

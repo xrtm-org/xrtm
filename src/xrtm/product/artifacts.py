@@ -10,7 +10,31 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from xrtm.product.observability import EventRecord, retention_candidates
+
+@dataclass
+class EventRecord:
+    timestamp: str
+    event_type: str
+    payload: dict[str, Any] = field(default_factory=dict)
+    run_id: str = ""
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "timestamp": self.timestamp,
+            "event_type": self.event_type,
+            "payload": self.payload,
+        }
+
+
+def retention_candidates(*, runs_dir: Path, keep: int = 100) -> list[Path]:
+    run_dirs = sorted(
+        [d for d in runs_dir.iterdir() if d.is_dir()],
+        key=lambda d: d.stat().st_mtime,
+    )
+    if len(run_dirs) <= keep:
+        return []
+    return run_dirs[: len(run_dirs) - keep]
 
 
 @dataclass
