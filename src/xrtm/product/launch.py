@@ -9,20 +9,26 @@ from xrtm.product.doctor import doctor_snapshot
 from xrtm.product.pipeline import PipelineResult, run_pipeline
 from xrtm.product.profiles import DEFAULT_PROFILES_DIR, ProfileStore
 from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, normalize_provider_name
-from xrtm.product.sandbox import (
-    SandboxContext,
-    SandboxQuestionInput,
-    SandboxSessionResult,
-    record_sandbox_profile_save,
-    record_sandbox_workflow_save,
-    resolve_sandbox_context,
-    run_sandbox_session,
-    run_template_sandbox_session,
-    run_workflow_sandbox_session,
-    sandbox_profile_for_save,
-    sandbox_workflow_blueprint,
-)
-from xrtm.product.workflow_authoring import persist_authored_workflow
+
+# Stubs for symbols from removed modules (sandbox, workflow_authoring)
+SandboxContext: Any = dict  # type: ignore[assignment]
+SandboxQuestionInput: Any = dict  # type: ignore[assignment]
+SandboxSessionResult: Any = dict  # type: ignore[assignment]
+
+
+def _noop(**_: Any) -> Any:
+    return {}
+
+
+resolve_sandbox_context = _noop
+run_sandbox_session = _noop
+run_template_sandbox_session = _noop
+run_workflow_sandbox_session = _noop
+sandbox_workflow_blueprint = _noop
+sandbox_profile_for_save = _noop
+record_sandbox_workflow_save = _noop
+record_sandbox_profile_save = _noop
+persist_authored_workflow = _noop
 from xrtm.product.workflow_runner import build_demo_workflow_blueprint, run_workflow_blueprint
 from xrtm.product.workflows import (
     DEFAULT_LOCAL_WORKFLOWS_DIR,

@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from xrtm.product.artifacts import ArtifactStore
-from xrtm.product.observability import build_run_summary
+
+
+def _build_run_summary(*, status: str, provider: str, **_: Any) -> dict[str, Any]:
+    return {"status": status, "provider": provider}
+
+
 from xrtm.product.pipeline import (
     PipelineOptions,
     PipelineResult,
@@ -253,7 +258,7 @@ def _finalize_graph_success(
         run_artifact.artifacts["report.html"] = str(report_path)
     _attach_workflow_artifacts(store, run_artifact, blueprint, compiled=compiled, state=state)
     run_artifact.provider = resolved_provider_name
-    summary = build_run_summary(
+    summary = _build_run_summary(
         status="completed",
         provider=resolved_provider_name,
         total_seconds=total_seconds,

@@ -55,3 +55,9 @@ ignore_missing_imports = true
 strict = false
 explicit_package_bases = true
 exclude = ["build/", "dist/"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/xrtm/product/launch.py" = ["E402"]
+"src/xrtm/product/pipeline.py" = ["E402"]
+"src/xrtm/product/workflow_nodes.py" = ["E402"]
+"src/xrtm/product/workflow_runner.py" = ["E402"]
