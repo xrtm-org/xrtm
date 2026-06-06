@@ -9,7 +9,7 @@ from typing import Any
 
 from xrtm.data.core.schemas.forecast import CausalNode, ForecastOutput, MetadataBase
 from xrtm.data.corpora import load_real_binary_questions
-from xrtm.forecast.e2e.real_questions import ForecastHarnessRecord, run_real_question_e2e
+from xrtm.e2e.real_questions import ForecastHarnessRecord, run_real_question_e2e
 
 
 class CompetitionPackRegistry:
