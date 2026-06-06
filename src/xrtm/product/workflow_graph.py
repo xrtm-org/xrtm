@@ -12,7 +12,7 @@ from xrtm.forecast.core.config.graph import GraphConfig
 from xrtm.forecast.core.orchestrator import Orchestrator
 from xrtm.forecast.core.schemas.graph import BaseGraphState
 from xrtm.forecast.kit.agents.base import Agent
-from xrtm.product.workflows import ConditionalRouteSpec, GraphSpec, NodeSpec, WorkflowBlueprint
+from xrtm.forecast.core.schemas.workflow import ConditionalRouteSpec, GraphSpec, NodeSpec, WorkflowBlueprint
 
 
 class WorkflowGraphState(BaseGraphState):

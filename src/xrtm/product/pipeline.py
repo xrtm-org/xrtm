@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from xrtm.data.corpora import load_real_binary_questions
-from xrtm.forecast.e2e.real_questions import run_real_question_e2e
+from xrtm.e2e.real_questions import run_real_question_e2e
 from xrtm.product.artifacts import ArtifactStore, RunArtifact, to_json_safe
 
 

@@ -30,7 +30,7 @@ record_sandbox_workflow_save = _noop
 record_sandbox_profile_save = _noop
 persist_authored_workflow = _noop
 from xrtm.product.workflow_runner import build_demo_workflow_blueprint, run_workflow_blueprint
-from xrtm.product.workflows import (
+from xrtm.forecast.core.schemas.workflow import (
     DEFAULT_LOCAL_WORKFLOWS_DIR,
     WorkflowBlueprint,
     WorkflowRegistry,

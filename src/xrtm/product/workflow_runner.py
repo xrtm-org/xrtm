@@ -25,7 +25,7 @@ from xrtm.product.pipeline import (
 from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, normalize_provider_name, provider_snapshot
 from xrtm.product.reports import render_html_report
 from xrtm.product.workflow_graph import CompiledGraph, WorkflowGraphState, compile_workflow_blueprint, graph_trace_rows
-from xrtm.product.workflows import (
+from xrtm.forecast.core.schemas.workflow import (
     ArtifactPolicy,
     EdgeSpec,
     GraphSpec,

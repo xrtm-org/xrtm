@@ -11,8 +11,7 @@ from xrtm.product.workflow_runner import (
     run_workflow_blueprint,
     workflow_to_pipeline_options,
 )
-from xrtm.product.workflows import (
-    DEFAULT_LOCAL_WORKFLOWS_DIR,
+from xrtm.forecast.core.schemas.workflow import (
     WORKFLOW_SCHEMA_VERSION,
     ArtifactPolicy,
     ConditionalRouteSpec,
@@ -24,10 +23,11 @@ from xrtm.product.workflows import (
     RuntimeProfileSpec,
     ScoringPolicy,
     WorkflowBlueprint,
-    WorkflowRegistry,
     WorkflowSummary,
-    explain_blueprint,
-    validate_product_blueprint,
+)
+from xrtm.product.workflows import (
+    DEFAULT_LOCAL_WORKFLOWS_DIR,
+    WorkflowRegistry,
 )
 
 __all__ = [
@@ -51,11 +51,9 @@ __all__ = [
     "WorkflowSummary",
     "build_demo_workflow_blueprint",
     "compile_workflow_blueprint",
-    "explain_blueprint",
     "graph_trace_rows",
     "list_builtin_workflow_nodes",
     "run_pipeline",
     "run_workflow_blueprint",
-    "validate_product_blueprint",
     "workflow_to_pipeline_options",
 ]
