@@ -33,7 +33,7 @@ def _evaluate_resolved_forecasts(records: tuple[Any, ...]) -> _StubReport:
 
 
 from xrtm.product.providers import (
-    DETERMINISTIC_PROVIDER_NAME,
+    MOCK_PROVIDER_NAME,
     build_provider,
     normalize_provider_name,
 )
@@ -48,7 +48,7 @@ from xrtm.train.real_e2e import (
 class PipelineOptions:
     """Inputs for a product pipeline run."""
 
-    provider: str = DETERMINISTIC_PROVIDER_NAME
+    provider: str = "openai"
     limit: int = 2
     questions: tuple[Any, ...] | None = None
     corpus_id: str = "xrtm-real-binary-v1"

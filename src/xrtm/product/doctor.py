@@ -14,7 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from xrtm.product.pipeline import package_versions
-from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME
+from xrtm.product.providers import MOCK_PROVIDER_NAME
 
 SUPPORTED_PYTHON = ">=3.11,<3.14"
 SUPPORTED_PYTHON_MIN = (3, 11)
@@ -79,7 +79,7 @@ def doctor_snapshot(*, base_url: str | None = None, runs_dir: Path = DEFAULT_RUN
             "next": {
             "start_command": RELEASED_START_COMMAND,
             "deterministic_required": True,
-            "default_provider": DETERMINISTIC_PROVIDER_NAME,
+            "default_provider": "openai",
                 },
     }
 

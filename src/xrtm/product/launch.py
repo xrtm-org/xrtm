@@ -4,60 +4,37 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from xrtm.product.doctor import doctor_snapshot
 from xrtm.product.pipeline import PipelineOptions, PipelineResult, run_pipeline
-from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, normalize_provider_name
+from xrtm.product.providers import MOCK_PROVIDER_NAME
 
-DEFAULT_DEMO_LIMIT = 2
+DEFAULT_LIMIT = 5
 DEFAULT_MAX_TOKENS = 768
 
 
-def run_start_quickstart(
+def run_forecasts(
     *,
-    limit: int = DEFAULT_DEMO_LIMIT,
+    limit: int = DEFAULT_LIMIT,
     runs_dir: Path = Path("runs"),
-    user: str | None = None,
-) -> PipelineResult:
-    """Run the deterministic quickstart after readiness checks."""
-    readiness = doctor_snapshot(runs_dir=runs_dir)
-    if not readiness["ready"]:
-        blocking = [check["detail"] for check in readiness["checks"] if not check["ok"]]
-        detail = "; ".join(blocking) if blocking else "doctor readiness checks failed"
-        raise ValueError(f"xrtm start prerequisites not satisfied: {detail}")
-    return run_demo_workflow(provider=DETERMINISTIC_PROVIDER_NAME, limit=limit, runs_dir=runs_dir, user=user, command="xrtm start")
-
-
-def run_demo_workflow(
-    *,
-    provider: str = DETERMINISTIC_PROVIDER_NAME,
-    limit: int = DEFAULT_DEMO_LIMIT,
-    runs_dir: Path = Path("runs"),
-    base_url: str | None = None,
+    provider: str = "openai",
     model: str | None = None,
+    base_url: str | None = None,
     api_key: str | None = None,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
-    write_report: bool = True,
     user: str | None = None,
-    command: str = "xrtm demo",
 ) -> PipelineResult:
-    """Run a linear forecast→eval→train pipeline."""
-    provider = normalize_provider_name(provider)
+    """Run forecast pipeline. Uses OpenAI-compatible by default."""
     options = PipelineOptions(
         provider=provider,
         limit=limit,
         runs_dir=runs_dir,
-        base_url=base_url,
         model=model,
+        base_url=base_url,
         api_key=api_key,
-        max_tokens=max_tokens,
-        write_report=write_report,
-        command=command,
+        max_tokens=DEFAULT_MAX_TOKENS,
+        write_report=True,
+        command="xrtm start",
         user=user,
     )
     return run_pipeline(options)
 
 
-__all__ = [
-    "run_start_quickstart",
-    "run_demo_workflow",
-]
+__all__ = ["run_forecasts"]
