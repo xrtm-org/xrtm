@@ -551,7 +551,6 @@ __all__ = [
     "canonical_artifact_inventory",
     "pipeline_result_title",
     "pipeline_success_details",
-    "print_local_llm_status",
     "print_pipeline_result",
     "print_available_corpora_table",
     "print_benchmark_compare_report",
