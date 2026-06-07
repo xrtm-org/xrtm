@@ -33,7 +33,6 @@ def _evaluate_resolved_forecasts(records: tuple[Any, ...]) -> _StubReport:
 
 
 from xrtm.product.providers import (
-    MOCK_PROVIDER_NAME,
     build_provider,
     normalize_provider_name,
 )
