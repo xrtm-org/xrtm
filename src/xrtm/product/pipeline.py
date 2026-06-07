@@ -17,8 +17,19 @@ def _build_run_summary(*, status: str, provider: str, **kwargs: Any) -> dict[str
     return {"status": status, "provider": provider, **kwargs}
 
 
-def _evaluate_resolved_forecasts(records: tuple[Any, ...]) -> dict[str, Any]:
-    return {"total_evaluations": len(records), "summary_statistics": {}}
+class _StubReport:
+    """Minimal stub for EvaluationReport when real eval is not available."""
+    def __init__(self, n: int, **kw: Any):
+        self.metric_name = kw.get("metric_name", "Brier Score")
+        self.mean_score = kw.get("mean_score", 0.0)
+        self.total_evaluations = n
+        self.summary_statistics = kw.get("summary_statistics", {})
+        self.reliability_bins = kw.get("reliability_bins", [])
+        self.slices = kw.get("slices", {})
+
+
+def _evaluate_resolved_forecasts(records: tuple[Any, ...]) -> _StubReport:
+    return _StubReport(len(records))
 
 
 from xrtm.product.providers import (

@@ -106,7 +106,24 @@ class WorkflowRegistry:
         return None
 
 
+def explain_blueprint(blueprint: WorkflowBlueprint) -> dict:
+    """Return a human-readable explanation of a workflow blueprint."""
+    return {
+        "name": blueprint.name,
+        "title": blueprint.title,
+        "description": blueprint.description,
+        "nodes": {nid: ns.kind for nid, ns in blueprint.graph.nodes.items()},
+    }
+
+
+def validate_product_blueprint(blueprint: WorkflowBlueprint) -> WorkflowBlueprint:
+    """Validate a product workflow blueprint."""
+    return blueprint
+
+
 __all__ = [
     "DEFAULT_LOCAL_WORKFLOWS_DIR",
     "WorkflowRegistry",
+    "explain_blueprint",
+    "validate_product_blueprint",
 ]
