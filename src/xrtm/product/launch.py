@@ -33,10 +33,8 @@ from xrtm.product.workflow_runner import build_demo_workflow_blueprint, run_work
 from xrtm.forecast.core.schemas.workflow import (
     DEFAULT_LOCAL_WORKFLOWS_DIR,
     WorkflowBlueprint,
-    WorkflowRegistry,
-    explain_blueprint,
-    validate_product_blueprint,
 )
+from xrtm.product.workflows import WorkflowRegistry, explain_blueprint, validate_product_blueprint
 
 DEFAULT_DEMO_LIMIT = 2
 DEFAULT_MAX_TOKENS = 768

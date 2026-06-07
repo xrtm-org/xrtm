@@ -10,7 +10,7 @@ from typing import Any
 
 from xrtm.product.pipeline import PipelineOptions
 from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, normalize_provider_name
-from xrtm.product.workflows import validate_workflow_name
+from xrtm.forecast.core.schemas.workflow import validate_workflow_name
 
 PROFILE_SCHEMA_VERSION = "xrtm.profile.v1"
 DEFAULT_PROFILES_DIR = Path(".xrtm/profiles")
