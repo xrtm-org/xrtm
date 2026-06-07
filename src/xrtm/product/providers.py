@@ -126,6 +126,8 @@ def build_provider(provider: str, *, base_url: str | None, model: str | None, ap
         return DeterministicProvider()
     if provider == "local-llm":
         return _build_local_llm_provider(base_url=base_url, model=model, api_key=api_key)
+    if provider in {"openai", "openai-compatible"}:
+        return _build_openai_provider(base_url=base_url, model=model, api_key=api_key)
     raise ValueError(
         f"Unsupported provider: '{provider}'\n\n"
         f"What happened: Provider '{provider}' is not recognized\n"
@@ -142,6 +144,19 @@ def build_provider(provider: str, *, base_url: str | None, model: str | None, ap
 
 def local_llm_base_url(base_url: str | None = None) -> str:
     return (base_url or os.getenv("XRTM_LOCAL_LLM_BASE_URL") or DEFAULT_LOCAL_LLM_BASE_URL).rstrip("/")
+
+
+def _build_openai_provider(*, base_url: str | None, model: str | None, api_key: str | None) -> InferenceProvider:
+    r"""Build an OpenAI-compatible provider using the forecast framework."""
+    resolved_base_url = base_url or "https://api.openai.com/v1"
+    resolved_model = model or "gpt-4o-mini"
+    resolved_api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+    config = OpenAIConfig(
+        model_id=resolved_model,
+        base_url=resolved_base_url,
+        api_key=SecretStr(resolved_api_key) if resolved_api_key else None,
+    )
+    return ModelFactory.get_provider(config)
 
 
 def _build_local_llm_provider(*, base_url: str | None, model: str | None, api_key: str | None) -> InferenceProvider:
