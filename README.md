@@ -1,69 +1,64 @@
-# XRTM: AI for event forecasting
+# XRTM v0.9.0 — AI for Event Forecasting
 
 [![PyPI](https://img.shields.io/pypi/v/xrtm?style=flat-square)](https://pypi.org/project/xrtm/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 
-**XRTM** is the product-first shell for running event-forecasting workflows,
-inspecting the scored artifacts, and choosing CLI or WebUI for the same
-released local product tasks.
+**XRTM** runs event-forecasting workflows from the command line. It uses a deterministic baseline by default (no API keys needed) and supports any OpenAI-compatible endpoint for real LLM forecasts.
 
-## Start here
+## Install
 
-If you arrived from xrtm.org, PyPI, or this repository, use the authoritative
-first-success guide: [docs/getting-started.md](docs/getting-started.md).
+```bash
+pip install xrtm
+```
 
-That guide walks the released `xrtm==0.8.8` journey in one place:
+Python >=3.11,<3.14.
 
-1. install XRTM
-2. choose a CLI-led or WebUI-led first-success path
-3. inspect the latest run, report, and exports
-4. run a named workflow from the Start or Workflow detail surface
-5. use Operations for profiles, monitors, and cleanup
-6. use Hub at `/` or `/hub` for templates, readiness, recent work, and quick
-   entry into the rest of the local product
-7. use Studio at `/studio` (with `/workbench` compatibility) or the shared CLI
-   authoring layer to create from scratch, template, or clone, then author safe
-   workflow fields plus node/edge/entry changes, validate, run, and compare
-8. use the released Playground lane for one custom question first, graph/canvas
-   trace linkage, read-only step inspection, and explicit save-back to
-   workflow/profile on the deterministic release baseline
-9. inspect run evidence in Observatory at `/observatory`
-10. choose your next path
+## Quick Start
 
-The `0.8.8` release is a deterministic stabilization-and-hardening release. It
-keeps the bounded local Hub → Studio → Playground → Observatory product spine,
-hardens release-critical WebUI/API and clean-room validation paths, and does
-not claim a calibration dashboard, API/webhook control plane, arbitrary
-code/plugin graph editing, full persistent collaborative canvas layout, or a
-commercial runtime path without separate validation.
+```bash
+# Deterministic baseline (no API key)
+xrtm start
 
-Current source tip also includes a fuller **future-release candidate** product
-train: Batch Runner, immutable Version snapshots, local API Control, signed
-webhook delivery, version-aware Observatory analytics, and the more focused
-three-panel Studio/Playground surfaces. Those source-visible capabilities are
-tracked in [docs/next-release-feature-track.md](docs/next-release-feature-track.md)
-and should stay out of release claims until package/docs/gates move together.
+# With a real LLM via any OpenAI-compatible endpoint
+xrtm start --provider openai --model deepseek-v4-pro --base-url https://api.deepseek.com
 
-This README intentionally stays short so the first-run commands live in one
-place.
+# Inspect results
+xrtm runs show --latest
+```
 
-## After your first successful run
+## Commands
 
-- **Researcher:** use the [researcher workflow on xrtm.org](https://xrtm.org/docs/workflows/researcher-model-eval)
-- **Operator:** continue with the [Operator Runbook](docs/operator-runbook.md)
-- **Developer:** move to the [Python API Reference](docs/python-api-reference.md) and [integration examples](examples/integration/)
+| Command | What it does |
+|---------|-------------|
+| `xrtm start` | Run forecasts (deterministic or real LLM) |
+| `xrtm demo` | Quick 2-question deterministic demo |
+| `xrtm doctor` | Check Python, packages, imports |
+| `xrtm runs show --latest` | Inspect the most recent run |
 
-## Documentation
+## Providers
 
-- [Getting Started Guide](docs/getting-started.md)
-- [Operator Runbook](docs/operator-runbook.md)
-- [Python API Reference](docs/python-api-reference.md)
-- [Integration Examples](examples/integration/)
-- [Interface Parity Matrix](docs/interface-parity.md) for the current CLI/WebUI capability map and next parity targets
-- [0.8.x Feature Track](docs/next-release-feature-track.md) for the released 0.8.8 deterministic stabilization spine and future bounded surfaces
-- [Stack Versioning Policy](https://github.com/xrtm-org/governance/blob/main/policies/stack-versioning-policy.md) for `xrtm` as the product-anchor release and cross-repo version ownership
-- Full documentation: [xrtm.org](https://xrtm.org)
+| Provider | API key needed |
+|----------|---------------|
+| `deterministic` (default) | None |
+| `openai` / `openai-compatible` | `OPENAI_API_KEY` |
+
+Set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` in your environment or `.env` file.
+
+## Run Artifacts
+
+Each run produces 11 artifacts in `runs/<run-id>/`:
+`run.json`, `eval.json`, `train.json`, `forecasts.jsonl`, `report.html`, `blueprint.json`, `provider.json`, `questions.jsonl`, `events.jsonl`, `graph_trace.jsonl`, `run_summary.json`
+
+## XRTM Ecosystem
+
+| Package | Role |
+|---------|------|
+| `xrtm-data` | Schemas & question sources (real-binary corpus, Polymarket, Metaculus) |
+| `xrtm-eval` | Scoring (Brier, ECE, LogScore) |
+| `xrtm-forecast` | Runtime engine (agents, providers, topologies) |
+| `xrtm-train` | Backtesting & optimization |
+| `xrtm` | Product CLI (this package) |
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE) for details.
+Apache 2.0
