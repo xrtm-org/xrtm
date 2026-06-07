@@ -1,15 +1,12 @@
-"""Runtime profile resolution and deterministic baseline execution."""
+"""Runtime provider resolution — deterministic baseline + OpenAI-compatible."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-import subprocess
 from types import SimpleNamespace
 from typing import Any
-from urllib.error import URLError
-from urllib.request import Request, urlopen
 
 from pydantic import SecretStr
 
@@ -17,330 +14,75 @@ from xrtm.forecast.core.config.inference import OpenAIConfig
 from xrtm.forecast.providers.inference.base import InferenceProvider, ModelResponse
 from xrtm.forecast.providers.inference.factory import ModelFactory
 
-DEFAULT_LOCAL_LLM_BASE_URL = "http://localhost:8080/v1"
-DEFAULT_LOCAL_LLM_MODEL = "Qwen3.5-9B-UD-Q4_K_XL.gguf"
-DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS = 180
-OPENAI_COMPATIBLE_CATEGORY = "openai-compatible-endpoint"
-CODING_AGENT_CLI_CATEGORY = "coding-agent-cli-contract"
-DETERMINISTIC_VALIDATION_MODE = "deterministic"
 DETERMINISTIC_PROVIDER_NAME = "deterministic"
 _PROVIDER_NAME_ALIASES = {
     "mock": DETERMINISTIC_PROVIDER_NAME,
     "provider-free": DETERMINISTIC_PROVIDER_NAME,
-    DETERMINISTIC_PROVIDER_NAME: DETERMINISTIC_PROVIDER_NAME,
-    "local-llm": "local-llm",
 }
 
 
 class DeterministicProvider(InferenceProvider):
-    """Deterministic smoke/baseline double for local product-shell runs."""
+    """Deterministic baseline provider — no API keys, stable hash-derived probabilities."""
 
-    model_id = "xrtm-deterministic-product"
+    model_id = "xrtm-deterministic"
     base_url = "deterministic://hash-derived"
 
     def __init__(self) -> None:
-        self.cache_hits = 0
-        self.cache_misses = 0
         self._cache: dict[str, ModelResponse] = {}
 
-    def generate_content(self, prompt: Any, output_logprobs: bool = False, **kwargs: Any) -> ModelResponse:
+    def generate_content(self, prompt: Any, **kwargs: Any) -> ModelResponse:
         prompt_text = json.dumps(prompt, sort_keys=True, default=str)
-        cache_key = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+        cache_key = hashlib.sha256(prompt_text.encode()).hexdigest()
         if cache_key in self._cache:
-            self.cache_hits += 1
-            cached = self._cache[cache_key]
-            return ModelResponse(
-                text=cached.text,
-                raw=cached.raw,
-                usage=dict(cached.usage),
-                metadata={**cached.metadata, "cache_hit": True},
-            )
+            return self._cache[cache_key]
 
-        self.cache_misses += 1
-        question_id = extract_question_id(prompt_text)
-        probability = deterministic_probability(question_id)
-        confidence_interval = {
-            "low": round(max(0.0, probability - 0.1), 3),
-            "high": round(min(1.0, probability + 0.1), 3),
-            "level": 0.9,
-        }
-        causal_node = {
-            "node_id": f"{question_id}:llm:0",
-            "event": "deterministic_real_corpus_prior",
+        question_id = hashlib.sha256(prompt_text.encode()).hexdigest()[:12]
+        bucket = int(hashlib.sha256(question_id.encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
+        probability = round(0.05 + bucket * 0.9, 3)
+
+        payload = json.dumps({
             "probability": probability,
-            "description": "Stable hash-derived probability for deterministic baseline validation.",
-        }
-        payload = {
-            "probability": probability,
-            "confidence_interval": confidence_interval,
             "reasoning": f"Deterministic hash-derived forecast for {question_id}.",
-            "causal_nodes": [causal_node],
+            "causal_nodes": [],
             "causal_edges": [],
-            "logical_trace": [
-                causal_node
-            ],
-            "structural_trace": ["load_question", "deterministic_forecast", "validate_output"],
-        }
-        completion_text = json.dumps(payload, separators=(",", ":"))
+        }, separators=(",", ":"))
+
         response = ModelResponse(
-            text=completion_text,
+            text=payload,
             raw=SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(reasoning_content=""))]),
-            usage={
-                "prompt_tokens": max(1, len(prompt_text.split())),
-                "completion_tokens": max(1, len(completion_text.split())),
-                "total_tokens": max(2, len(prompt_text.split()) + len(completion_text.split())),
-            },
-            metadata={"cache_hit": False, "deterministic": True},
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            metadata={"deterministic": True},
         )
         self._cache[cache_key] = response
         return response
 
-    async def generate_content_async(self, prompt: Any, output_logprobs: bool = False, **kwargs: Any) -> ModelResponse:
-        return self.generate_content(prompt, output_logprobs, **kwargs)
+    async def generate_content_async(self, prompt: Any, **kwargs: Any) -> ModelResponse:
+        return self.generate_content(prompt, **kwargs)
 
-    async def stream(self, messages: list[dict[str, str]], **kwargs: Any):
+    async def stream(self, messages, **kwargs: Any):
         yield self.generate_content(messages, **kwargs)
-
-    @property
-    def cache_snapshot(self) -> dict[str, Any]:
-        total = self.cache_hits + self.cache_misses
-        return {
-            "enabled": True,
-            "hits": self.cache_hits,
-            "misses": self.cache_misses,
-            "entries": len(self._cache),
-            "hit_rate": self.cache_hits / total if total else 0.0,
-        }
 
 
 def normalize_provider_name(provider: str) -> str:
-    normalized = provider.strip()
-    if not normalized:
-        raise ValueError("provider may not be empty")
-    return _PROVIDER_NAME_ALIASES.get(normalized.lower(), normalized)
+    return _PROVIDER_NAME_ALIASES.get(provider.strip().lower(), provider.strip())
 
 
 def build_provider(provider: str, *, base_url: str | None, model: str | None, api_key: str | None) -> InferenceProvider:
     provider = normalize_provider_name(provider)
     if provider == DETERMINISTIC_PROVIDER_NAME:
         return DeterministicProvider()
-    if provider == "local-llm":
-        return _build_local_llm_provider(base_url=base_url, model=model, api_key=api_key)
     if provider in {"openai", "openai-compatible"}:
-        return _build_openai_provider(base_url=base_url, model=model, api_key=api_key)
-    raise ValueError(
-        f"Unsupported provider: '{provider}'\n\n"
-        f"What happened: Provider '{provider}' is not recognized\n"
-        f"Why: The released product shell only wires these runtime options today\n\n"
-        f"Available runtime options:\n"
-        f"  • deterministic - Deterministic hash-derived baseline mode (no API calls)\n"
-        f"  • local-llm     - Local OpenAI-compatible endpoint profile (e.g., llama.cpp)\n\n"
-        f"Runtime taxonomy note:\n"
-        f"  • OpenAI-compatible endpoints and coding-agent CLI contracts are the two first-class integration categories\n"
-        f"  • deterministic mode is a testing/baseline mode, not a third runtime category\n\n"
-        f"Example: xrtm demo --provider deterministic --limit 2"
-    )
-
-
-def local_llm_base_url(base_url: str | None = None) -> str:
-    return (base_url or os.getenv("XRTM_LOCAL_LLM_BASE_URL") or DEFAULT_LOCAL_LLM_BASE_URL).rstrip("/")
-
-
-def _build_openai_provider(*, base_url: str | None, model: str | None, api_key: str | None) -> InferenceProvider:
-    r"""Build an OpenAI-compatible provider using the forecast framework."""
-    resolved_base_url = base_url or "https://api.openai.com/v1"
-    resolved_model = model or "gpt-4o-mini"
-    resolved_api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
-    config = OpenAIConfig(
-        model_id=resolved_model,
-        base_url=resolved_base_url,
-        api_key=SecretStr(resolved_api_key) if resolved_api_key else None,
-    )
-    return ModelFactory.get_provider(config)
-
-
-def _build_local_llm_provider(*, base_url: str | None, model: str | None, api_key: str | None) -> InferenceProvider:
-    base_url_value = local_llm_base_url(base_url)
-    status = local_llm_status(base_url=base_url_value)
-    if not status["healthy"]:
-        raise RuntimeError(_local_llm_connection_error(base_url_value=base_url_value, status=status))
-    return ModelFactory.get_provider(
-        OpenAIConfig(
-            model_id=_resolved_local_llm_model(model),
-            api_key=SecretStr(_resolved_local_llm_api_key(api_key)),
-            base_url=base_url_value,
-            timeout=_resolved_local_llm_timeout_seconds(),
+        resolved_base_url = base_url or "https://api.openai.com/v1"
+        resolved_model = model or "gpt-4o-mini"
+        resolved_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        config = OpenAIConfig(
+            model_id=resolved_model,
+            base_url=resolved_base_url,
+            api_key=SecretStr(resolved_key) if resolved_key else None,
         )
-    )
+        return ModelFactory.get_provider(config)
+    supported = ["deterministic", "openai", "openai-compatible"]
+    raise ValueError(f"Unsupported provider: '{provider}'. Supported: {', '.join(supported)}")
 
 
-def local_llm_status(*, base_url: str | None = None) -> dict[str, Any]:
-    base_url_value = local_llm_base_url(base_url)
-    root_url = base_url_value.removesuffix("/v1")
-    status: dict[str, Any] = {
-        "base_url": base_url_value,
-        "health_url": f"{root_url}/health",
-        "models_url": f"{base_url_value}/models",
-        "healthy": False,
-        "models": [],
-        "gpu": gpu_snapshot(),
-        "error": None,
-    }
-    try:
-        _read_json_url(status["health_url"], timeout=3)
-        models_payload = _read_json_url(status["models_url"], timeout=5)
-        models = models_payload.get("data", []) if isinstance(models_payload, dict) else []
-        status["models"] = [item.get("id", str(item)) for item in models if isinstance(item, dict)]
-        status["healthy"] = True
-    except (OSError, URLError, TimeoutError, ValueError) as exc:
-        status["error"] = str(exc)
-    return status
-
-
-def provider_snapshot(provider: InferenceProvider, provider_name: str, *, base_url: str | None = None) -> dict[str, Any]:
-    provider_name = normalize_provider_name(provider_name)
-    snapshot = {
-        "provider": provider_name,
-        "model": getattr(provider, "model_id", None),
-        "base_url": str(getattr(provider, "base_url", base_url)),
-        "cache": cache_snapshot(provider),
-    }
-    snapshot.update(provider_runtime_metadata(provider_name))
-    if provider_name == "local-llm":
-        snapshot["local_llm"] = local_llm_status(base_url=base_url)
-    return snapshot
-
-
-def cache_snapshot(provider: InferenceProvider) -> dict[str, Any]:
-    snapshot = getattr(provider, "cache_snapshot", None)
-    if isinstance(snapshot, dict):
-        return snapshot
-    return {"enabled": False}
-
-
-def provider_runtime_metadata(provider_name: str) -> dict[str, Any]:
-    provider_name = normalize_provider_name(provider_name)
-    if provider_name == DETERMINISTIC_PROVIDER_NAME:
-        return {
-            "category": None,
-            "profile": None,
-            "deployment": None,
-            "validation_mode": DETERMINISTIC_VALIDATION_MODE,
-            "is_deterministic_baseline": True,
-        }
-    if provider_name == "local-llm":
-        return {
-            "category": OPENAI_COMPATIBLE_CATEGORY,
-            "profile": "local-llm",
-            "deployment": "local",
-            "validation_mode": None,
-            "is_deterministic_baseline": False,
-        }
-    return {
-        "category": None,
-        "profile": provider_name,
-        "deployment": None,
-        "validation_mode": None,
-        "is_deterministic_baseline": False,
-    }
-
-
-def _resolved_local_llm_model(model: str | None) -> str:
-    return model or os.getenv("XRTM_LOCAL_LLM_MODEL") or DEFAULT_LOCAL_LLM_MODEL
-
-
-def _resolved_local_llm_api_key(api_key: str | None) -> str:
-    return api_key or os.getenv("XRTM_LOCAL_LLM_API_KEY") or "test"
-
-
-def _resolved_local_llm_timeout_seconds() -> int:
-    raw = os.getenv("XRTM_LOCAL_LLM_TIMEOUT_SECONDS")
-    if raw is None:
-        return DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS
-    try:
-        value = int(raw)
-    except ValueError:
-        return DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS
-    return value if value > 0 else DEFAULT_LOCAL_LLM_TIMEOUT_SECONDS
-
-
-def _local_llm_connection_error(*, base_url_value: str, status: dict[str, Any]) -> str:
-    return (
-        f"Cannot connect to local LLM endpoint at {base_url_value}\n\n"
-        f"What happened: Health check failed\n"
-        f"Why: {status['error'] or 'Endpoint did not respond to health check'}\n\n"
-        f"Next steps:\n"
-        f"1. Start your local LLM server (e.g., llama.cpp with --port 8080)\n"
-        f"2. Verify it's running: curl {status['health_url']}\n"
-        f"3. Check the base URL is correct: {base_url_value}\n"
-        f"4. Set XRTM_LOCAL_LLM_BASE_URL if using a different endpoint\n\n"
-        f"To test without an OpenAI-compatible endpoint, use the deterministic baseline mode: --provider deterministic"
-    )
-
-
-def gpu_snapshot() -> dict[str, Any]:
-    command = [
-        "nvidia-smi",
-        "--query-gpu=name,memory.used,memory.total,utilization.gpu",
-        "--format=csv,noheader,nounits",
-    ]
-    try:
-        result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=5)
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return {"available": False, "error": str(exc)}
-    rows = []
-    for line in result.stdout.splitlines():
-        parts = [part.strip() for part in line.split(",")]
-        if len(parts) == 4:
-            rows.append(
-                {
-                    "name": parts[0],
-                    "memory_used_mib": _coerce_int(parts[1]),
-                    "memory_total_mib": _coerce_int(parts[2]),
-                    "utilization_percent": _coerce_int(parts[3]),
-                }
-            )
-    return {"available": bool(rows), "gpus": rows}
-
-
-def extract_question_id(prompt_text: str) -> str:
-    marker = "Question ID: "
-    if marker in prompt_text:
-        return prompt_text.split(marker, 1)[1].split("\\n", 1)[0].strip().strip('"')
-    return hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()[:12]
-
-
-def deterministic_probability(question_id: str) -> float:
-    digest = hashlib.sha256(question_id.encode("utf-8")).hexdigest()
-    bucket = int(digest[:8], 16) / 0xFFFFFFFF
-    return round(0.05 + bucket * 0.9, 3)
-
-
-def _read_json_url(url: str, *, timeout: int) -> Any:
-    request = Request(url, headers={"Accept": "application/json"})
-    with urlopen(request, timeout=timeout) as response:
-        body = response.read().decode("utf-8")
-    return json.loads(body) if body else {}
-
-
-def _coerce_int(value: str) -> int | None:
-    try:
-        return int(value)
-    except ValueError:
-        return None
-
-
-__all__ = [
-    "CODING_AGENT_CLI_CATEGORY",
-    "DETERMINISTIC_PROVIDER_NAME",
-    "DETERMINISTIC_VALIDATION_MODE",
-    "DEFAULT_LOCAL_LLM_BASE_URL",
-    "DEFAULT_LOCAL_LLM_MODEL",
-    "DeterministicProvider",
-    "OPENAI_COMPATIBLE_CATEGORY",
-    "build_provider",
-    "local_llm_status",
-    "normalize_provider_name",
-    "provider_runtime_metadata",
-    "provider_snapshot",
-]
+__all__ = ["DETERMINISTIC_PROVIDER_NAME", "DeterministicProvider", "build_provider", "normalize_provider_name"]

@@ -14,7 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from xrtm.product.pipeline import package_versions
-from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME, local_llm_status
+from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME
 
 SUPPORTED_PYTHON = ">=3.11,<3.14"
 SUPPORTED_PYTHON_MIN = (3, 11)
@@ -48,14 +48,12 @@ def run_doctor(
     versions = package_versions()
     checks = _readiness_checks(versions=versions, runs_dir=runs_dir)
     ready = all(check.ok for check in checks)
-    local_status = local_llm_status(base_url=base_url)
 
     _print_package_versions(console, versions)
     _print_readiness_checks(console, checks)
     _print_readiness_summary(console, ready)
     if show_next_steps:
         _print_next_steps(console, ready, checks)
-    _print_local_llm_panel(console, local_status)
     return ready
 
 
@@ -78,13 +76,11 @@ def doctor_snapshot(*, base_url: str | None = None, runs_dir: Path = DEFAULT_RUN
             }
             for check in checks
         ],
-        "local_llm": local_llm_status(base_url=base_url),
-        "next": {
+            "next": {
             "start_command": RELEASED_START_COMMAND,
             "deterministic_required": True,
             "default_provider": DETERMINISTIC_PROVIDER_NAME,
-            "local_llm_optional": True,
-        },
+                },
     }
 
 
@@ -246,7 +242,6 @@ def _print_next_steps(console: Console, ready: bool, checks: list[DoctorCheck]) 
     console.print(Panel("\n".join(lines), title="What to do next", border_style="blue"))
 
 
-def _print_local_llm_panel(console: Console, status: dict) -> None:
     healthy = bool(status.get("healthy"))
     color = "green" if healthy else "yellow"
     readiness = "ready" if healthy else "not ready (optional)"
