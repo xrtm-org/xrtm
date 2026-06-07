@@ -23,7 +23,7 @@ xrtm start
 With a specific model:
 
 ```bash
-xrtm start --model deepseek-v4-pro --base-url https://api.deepseek.com --limit 10
+xrtm start --model your-model --base-url $OPENAI_BASE_URL --limit 10
 ```
 
 ## Commands
