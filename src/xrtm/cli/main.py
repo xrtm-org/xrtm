@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import click
 from rich.console import Console
+
+# Load .env file if present
+_env_path = Path(".env")
+if _env_path.is_file():
+    with open(_env_path) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line.startswith("export "):
+                _line = _line[7:]
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
 
 from xrtm.product import launch as launch_module
 from xrtm.product.doctor import run_doctor
@@ -36,10 +49,17 @@ def start(runs_dir: Path, limit: int, model: str | None, base_url: str | None, p
       xrtm start --model deepseek-v4-pro --base-url https://api.deepseek.com
       xrtm start --limit 10
     """
-    result = launch_module.run_forecasts(
-        limit=limit, runs_dir=runs_dir,
-        model=model, base_url=base_url, provider=provider,
-    )
+    try:
+        result = launch_module.run_forecasts(
+            limit=limit, runs_dir=runs_dir,
+            model=model, base_url=base_url, provider=provider,
+        )
+    except (ValueError, OSError) as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+        console.print("\n[yellow]Set your API key:[/yellow]")
+        console.print("  export OPENAI_API_KEY=sk-...")
+        console.print("  or create a .env file with OPENAI_API_KEY=sk-...")
+        return
     console.print(f"[bold green]Forecast complete: {result.run.run_id}[/bold green]")
     console.print(f"  Forecasts: {result.forecast_records}")
     if result.eval_brier_score is not None:
