@@ -36,7 +36,6 @@ from xrtm.product.providers import (
     DETERMINISTIC_PROVIDER_NAME,
     build_provider,
     normalize_provider_name,
-    provider_snapshot,
 )
 from xrtm.product.reports import render_html_report
 from xrtm.train.real_e2e import (
@@ -256,7 +255,7 @@ def _finalize_success(
     execution: _PipelineExecution,
     total_seconds: float,
 ) -> None:
-    store.write_json(run, "provider.json", provider_snapshot(execution.provider, options.provider, base_url=options.base_url))
+    store.write_json(run, "provider.json", {"provider": options.provider, "model": getattr(execution.provider, "model_id", None)})
     if options.write_report:
         report_path = render_html_report(run.run_dir)
         run.artifacts["report.html"] = str(report_path)
