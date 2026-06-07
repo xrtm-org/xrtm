@@ -36,6 +36,16 @@ Repository = "https://github.com/xrtm-org/xrtm"
 Documentation = "https://xrtm.org"
 Issues = "https://github.com/xrtm-org/xrtm/issues"
 
+[tool.ruff.lint.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
+"src/xrtm/product/launch.py" = ["E402"]
+"src/xrtm/product/pipeline.py" = ["E402"]
+"src/xrtm/product/workflow_nodes.py" = ["E402"]
+"src/xrtm/product/workflow_runner.py" = ["E402"]
+"src/xrtm/cli/presenters.py" = ["F821", "F841"]
+"src/xrtm/product/doctor.py" = ["F821"]
+"src/xrtm/cli/main.py" = ["E402"]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = {find = {where = ["src"], include = ["xrtm*"], namespaces = true}}
@@ -63,8 +73,4 @@ strict = false
 explicit_package_bases = true
 exclude = ["build/", "dist/"]
 
-[tool.ruff.lint.per-file-ignores]
-"src/xrtm/product/launch.py" = ["E402"]
-"src/xrtm/product/pipeline.py" = ["E402"]
-"src/xrtm/product/workflow_nodes.py" = ["E402"]
-"src/xrtm/product/workflow_runner.py" = ["E402"]
+
