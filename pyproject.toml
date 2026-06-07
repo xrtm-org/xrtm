@@ -37,7 +37,6 @@ Documentation = "https://xrtm.org"
 Issues = "https://github.com/xrtm-org/xrtm/issues"
 
 [tool.ruff.lint.per-file-ignores]
-[tool.ruff.lint.per-file-ignores]
 "src/xrtm/product/launch.py" = ["E402"]
 "src/xrtm/product/pipeline.py" = ["E402"]
 "src/xrtm/product/workflow_nodes.py" = ["E402"]
@@ -49,10 +48,6 @@ Issues = "https://github.com/xrtm-org/xrtm/issues"
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = {find = {where = ["src"], include = ["xrtm*"], namespaces = true}}
-
-[tool.setuptools.package-data]
-"xrtm.product.workflow_definitions" = ["*.json"]
-"xrtm.product" = ["webui_static/*.js", "webui_static/*.css", "webui_static/vendor/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
