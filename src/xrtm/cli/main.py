@@ -6,7 +6,9 @@ import os
 from pathlib import Path
 
 import click
+import time
 from rich.console import Console
+from rich.panel import Panel
 
 # Load .env file if present
 _env_path = Path(".env")
@@ -49,22 +51,35 @@ def start(runs_dir: Path, limit: int, model: str | None, base_url: str | None, p
       xrtm start --model deepseek-v4-pro --base-url https://api.deepseek.com
       xrtm start --limit 10
     """
-    try:
-        result = launch_module.run_forecasts(
-            limit=limit, runs_dir=runs_dir,
-            model=model, base_url=base_url, provider=provider,
-        )
-    except (ValueError, OSError) as exc:
-        console.print(f"[red]Error: {exc}[/red]")
-        console.print("\n[yellow]Set your API key:[/yellow]")
-        console.print("  export OPENAI_API_KEY=sk-...")
-        console.print("  or create a .env file with OPENAI_API_KEY=sk-...")
-        return
-    console.print(f"[bold green]Forecast complete: {result.run.run_id}[/bold green]")
-    console.print(f"  Forecasts: {result.forecast_records}")
-    if result.eval_brier_score is not None:
-        console.print(f"  Brier:     {result.eval_brier_score:.4f}")
-    console.print(f"  Artifacts: {result.run.run_dir}")
+    with console.status(f"[bold]Generating {limit} forecasts...", spinner="dots"):
+        start_time = time.perf_counter()
+        try:
+            result = launch_module.run_forecasts(
+                limit=limit, runs_dir=runs_dir,
+                model=model, base_url=base_url, provider=provider,
+            )
+        except (ValueError, OSError) as exc:
+            console.print(f"\n[red]Error: {exc}[/red]")
+            console.print("\n[yellow]Set your API key:[/yellow]")
+            console.print("  export OPENAI_API_KEY=sk-...")
+            console.print("  or create a .env file with OPENAI_API_KEY=sk-...")
+            return
+        elapsed = time.perf_counter() - start_time
+
+    # Color-code Brier
+    brier = result.eval_brier_score
+    if brier is not None:
+        brier_color = "green" if brier < 0.10 else "yellow" if brier < 0.20 else "red"
+        brier_text = f"[{brier_color}]Brier {brier:.4f}[/{brier_color}]"
+    else:
+        brier_text = "Brier N/A"
+
+    lines = [
+        f"{result.forecast_records} forecasts  ·  {brier_text}",
+        f"Duration {elapsed:.1f}s  ·  [dim]{result.run.run_id}[/dim]",
+        f"Artifacts → [underline]{result.run.run_dir}[/underline]",
+    ]
+    console.print(Panel("\n".join(lines), title="[bold]Forecast Complete", border_style="green"))
 
 
 @cli.command()

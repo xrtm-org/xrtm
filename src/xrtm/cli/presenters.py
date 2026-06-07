@@ -69,7 +69,6 @@ def print_quickstart_summary(console: Console, result: PipelineResult, *, runs_d
             f"xrtm runs export latest {runs_dir_arg} --output export.json && "
             f"xrtm runs export latest {runs_dir_arg} --output export.csv --format csv"
         ),
-        "   Then: xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local",
         "Developer / integrator path: docs/python-api-reference.md and examples/integration/.",
     ]
     console.print(Panel("\n".join(proof_point_lines), title="Official proof-point workflows", border_style="magenta"))
@@ -122,7 +121,6 @@ def print_post_run_summary(
             f"Inspect the newest run: xrtm runs show latest {runs_dir_arg}",
             f"Inspect newest artifacts: xrtm artifacts inspect --latest {runs_dir_arg}",
             report_command,
-            f"Open the WebUI: xrtm web {runs_dir_arg}",
             f"Open the TUI: xrtm tui {runs_dir_arg}",
         ]
     else:
@@ -136,7 +134,6 @@ def print_post_run_summary(
             f"Inspect this run: xrtm runs show {run_id} {runs_dir_arg}",
             f"Inspect artifacts: xrtm artifacts inspect {run_dir_arg}",
             report_command,
-            f"Open the WebUI: xrtm web {runs_dir_arg}",
             f"Open the TUI: xrtm tui {runs_dir_arg}",
         ]
     console.print(Panel("\n".join(next_lines), title="Exact next commands", border_style="blue"))
@@ -181,7 +178,6 @@ def print_runs_table(console: Console, runs: list[dict[str, Any]], *, title: str
     console.print(table)
 
 
-def print_local_llm_status(console: Console, status: dict[str, Any]) -> None:
     color = "green" if status["healthy"] else "red"
     lines = [
         f"Base URL: {status['base_url']}",

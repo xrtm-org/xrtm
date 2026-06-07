@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from xrtm.product.pipeline import PipelineOptions, PipelineResult, run_pipeline
-from xrtm.product.providers import MOCK_PROVIDER_NAME
 
 DEFAULT_LIMIT = 5
 DEFAULT_MAX_TOKENS = 768

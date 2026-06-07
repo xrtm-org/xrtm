@@ -14,7 +14,6 @@ from rich.panel import Panel
 from rich.table import Table
 
 from xrtm.product.pipeline import package_versions
-from xrtm.product.providers import MOCK_PROVIDER_NAME
 
 SUPPORTED_PYTHON = ">=3.11,<3.14"
 SUPPORTED_PYTHON_MIN = (3, 11)
@@ -58,7 +57,7 @@ def run_doctor(
 
 
 def doctor_snapshot(*, base_url: str | None = None, runs_dir: Path = DEFAULT_RUNS_DIR) -> dict[str, Any]:
-    """Return readiness data shared by CLI doctor and WebUI health checks."""
+    """Return readiness data shared by CLI doctor and local health checks."""
 
     versions = package_versions()
     checks = _readiness_checks(versions=versions, runs_dir=runs_dir)
