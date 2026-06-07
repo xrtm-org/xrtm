@@ -11,7 +11,6 @@ from typing import Any
 from xrtm.eval import BrierScoreEvaluator
 from xrtm.product.artifacts import ArtifactStore
 
-
 _BRIER_SCORE_EVALUATOR = BrierScoreEvaluator()
 
 
