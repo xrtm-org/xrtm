@@ -10,7 +10,6 @@ from rich.console import Console
 from xrtm.product import launch as launch_module
 from xrtm.product.doctor import run_doctor
 from xrtm.product.history import latest_run_dir, run_detail
-from xrtm.product.providers import DETERMINISTIC_PROVIDER_NAME
 from xrtm.version import __version__
 
 console = Console()
@@ -88,8 +87,8 @@ def runs_show(latest: bool, runs_dir: Path, run_id: str | None):
 @cli.command()
 def providers():
     """Show available providers."""
-    console.print(f"  deterministic  — Deterministic baseline (no API key)")
-    console.print(f"  openai         — OpenAI-compatible endpoint (any model)")
+    console.print("  deterministic  — Deterministic baseline (no API key)")
+    console.print("  openai         — OpenAI-compatible endpoint (any model)")
 
 
 if __name__ == "__main__":

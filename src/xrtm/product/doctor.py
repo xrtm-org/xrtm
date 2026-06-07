@@ -229,7 +229,6 @@ def _print_next_steps(console: Console, ready: bool, checks: list[DoctorCheck]) 
             "6. Inspect the demo workflow with xrtm workflow show demo-deterministic",
             "7. Browse the same run with xrtm web --runs-dir runs or xrtm tui --runs-dir runs",
             "8. Make the same workflow repeatable with xrtm profile starter my-local --runs-dir runs",
-            "9. Only after that, treat local-llm as the optional local OpenAI-compatible endpoint path.",
         ]
     else:
         failed_checks = [check for check in checks if not check.ok]
@@ -240,29 +239,6 @@ def _print_next_steps(console: Console, ready: bool, checks: list[DoctorCheck]) 
         lines.append(f"{len(failed_checks) + 2}. Rerun xrtm doctor")
         lines.append(f"{len(failed_checks) + 3}. When doctor shows READY, run {RELEASED_START_COMMAND}")
     console.print(Panel("\n".join(lines), title="What to do next", border_style="blue"))
-
-
-    healthy = bool(status.get("healthy"))
-    color = "green" if healthy else "yellow"
-    readiness = "ready" if healthy else "not ready (optional)"
-    lines = [
-        "local-llm is the released local OpenAI-compatible endpoint profile and does not affect deterministic readiness.",
-        f"Status: {readiness}",
-        f"Base URL: {status['base_url']}",
-        f"Health URL: {status['health_url']}",
-    ]
-    models = status.get("models") or []
-    if models:
-        lines.append(f"Models: {', '.join(models)}")
-    error = status.get("error")
-    if error:
-        lines.append(f"Health check error: {error}")
-    lines.append("Coding-agent CLI contracts are a separate integration category and are not checked by xrtm doctor.")
-    lines.append(
-        "If released docs ever claim cloud/API support, Gate 2 release validation must add at least one commercial OpenAI-compatible profile."
-    )
-    lines.append("Use xrtm providers doctor or xrtm local-llm status when you are ready for the advanced path.")
-    console.print(Panel("\n".join(lines), title="Optional advanced path: local OpenAI-compatible endpoint", border_style=color))
 
 
 __all__ = ["DEFAULT_RUNS_DIR", "DoctorCheck", "doctor_snapshot", "run_doctor"]

@@ -69,7 +69,6 @@ def print_quickstart_summary(console: Console, result: PipelineResult, *, runs_d
             f"xrtm runs export latest {runs_dir_arg} --output export.json && "
             f"xrtm runs export latest {runs_dir_arg} --output export.csv --format csv"
         ),
-        "5. OpenAI-compatible endpoint advanced workflow: xrtm local-llm status",
         "   Then: xrtm demo --provider local-llm --limit 1 --max-tokens 768 --runs-dir runs-local",
         "Developer / integrator path: docs/python-api-reference.md and examples/integration/.",
     ]

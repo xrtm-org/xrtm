@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, SecretStr
-from xrtm.data.corpora import REAL_BINARY_CORPUS_ID, load_real_binary_questions
 
+from xrtm.data.corpora import REAL_BINARY_CORPUS_ID, load_real_binary_questions
 from xrtm.forecast.core.config.inference import OpenAIConfig
 from xrtm.forecast.core.schemas.forecast import CausalNode, ForecastOutput, ForecastQuestion, MetadataBase
 from xrtm.forecast.providers.inference.base import InferenceProvider, ModelResponse
@@ -85,7 +85,7 @@ Return exactly one JSON object with this schema:
   "logical_trace": [
     {{"event": <key assumption>, "probability": <number from 0 to 1>, "description": <why it matters>}}
   ],
-  "execution_trace": ["load_question", "local_llm_forecast", "validate_output"]
+  "execution_trace": ["load_question", "real_runtime_forecast", "validate_output"]
 }}
 
 `execution_trace` is the preferred user-facing name. The runtime still stores it on `ForecastOutput.structural_trace`.
@@ -264,7 +264,7 @@ def _build_output_from_response(
     logical_trace = _coerce_logical_trace(_trace_nodes_payload(payload), probability, reasoning, question.id)
     structural_trace = _coerce_string_list(
         payload.get("structural_trace", payload.get("execution_trace")),
-        default=["load_question", "local_llm_forecast", "validate_output"],
+        default=["load_question", "real_runtime_forecast", "validate_output"],
     )
     return ForecastOutput(
         question_id=question.id,
@@ -274,7 +274,7 @@ def _build_output_from_response(
         structural_trace=structural_trace,
         metadata=MetadataBase(
             snapshot_time=question.metadata.snapshot_time,
-            tags=sorted({*question.metadata.tags, "real-question-e2e", "local-llm"}),
+            tags=sorted({*question.metadata.tags, "real-question-e2e", "openai-compatible"}),
             subject_type="binary",
             source_version=question.metadata.source_version or corpus_id,
             raw_data={
@@ -328,7 +328,7 @@ def _repair_missing_json_response(
             "content": (
                 "Convert these forecast notes into JSON with keys probability, reasoning, logical_trace, "
                 "and execution_trace. Use exactly one logical_trace item if needed. execution_trace must "
-                'equal ["load_question", "local_llm_forecast", "validate_output"]. Notes:\n'
+                'equal ["load_question", "real_runtime_forecast", "validate_output"]. Notes:\n'
                 f"{notes}"
             ),
         },
@@ -448,7 +448,7 @@ def _coerce_logical_trace(value: Any, probability: float, reasoning: str, questi
     return [
         CausalNode(
             node_id=f"{question_id}:llm:summary",
-            event="local_llm_forecast",
+            event="real_runtime_forecast",
             probability=probability,
             description=reasoning,
         )
