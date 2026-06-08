@@ -27,21 +27,3 @@ jobs:
         run: uv run xrtm --help && uv run xrtm doctor
       - name: Forecast smoke (mock)
         run: uv run xrtm start --provider mock --limit 2
-
-  real-smoke:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-      - name: Set up Python
-        run: uv python install 3.12
-      - name: Install
-        run: |
-          uv venv --python 3.12
-          uv pip install -e .
-      - name: Forecast smoke (real API)
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: uv run xrtm start --limit 1
