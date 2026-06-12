@@ -100,7 +100,11 @@ def runs():
 def runs_show(latest: bool, runs_dir: Path, run_id: str | None):
     """Show run detail. Use --latest for the most recent run."""
     if latest:
-        run_dir = latest_run_dir(runs_dir)
+        try:
+            run_dir = latest_run_dir(runs_dir)
+        except FileNotFoundError:
+            console.print("[yellow]No runs found. Run 'xrtm start' first.[/yellow]")
+            return
     elif run_id:
         run_dir = runs_dir / run_id
     else:
