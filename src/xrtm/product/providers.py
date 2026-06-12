@@ -53,8 +53,8 @@ def build_provider(provider: str, *, base_url: str | None, model: str | None, ap
     provider = normalize_provider_name(provider)
     if provider == MOCK_PROVIDER_NAME:
         return MockProvider()
-    resolved_base = base_url or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    resolved_model = model or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    resolved_base = base_url or os.environ.get("OPENAI_BASE_URL", "")
+    resolved_model = model or os.environ.get("OPENAI_MODEL", "")
     resolved_key = api_key or os.environ.get("OPENAI_API_KEY", "")
     if not resolved_key:
         raise ValueError(

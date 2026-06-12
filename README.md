@@ -1,4 +1,4 @@
-# XRTM v0.9.1 — AI for Event Forecasting
+# XRTM v0.9.2 — AI for Event Forecasting
 
 [![PyPI](https://img.shields.io/pypi/v/xrtm?style=flat-square)](https://pypi.org/project/xrtm/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
