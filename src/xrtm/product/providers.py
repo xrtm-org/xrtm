@@ -9,11 +9,13 @@ from pydantic import SecretStr
 from xrtm.forecast.core.config.inference import OpenAIConfig
 from xrtm.forecast.providers.inference.base import InferenceProvider
 from xrtm.forecast.providers.inference.factory import ModelFactory
+
 try:
     from xrtm.forecast.providers.inference.mock_provider import MockProvider
 except ImportError:
     # Fallback until forecast releases with mock_provider
-    import hashlib, json
+    import hashlib
+    import json
     from types import SimpleNamespace
 
     from xrtm.forecast.providers.inference.base import ModelResponse
