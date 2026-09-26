@@ -46,7 +46,11 @@ except ImportError:
             yield self.generate_content(messages, **kwargs)
 
 MOCK_PROVIDER_NAME = "mock"
-_PROVIDER_NAME_ALIASES = {"deterministic": MOCK_PROVIDER_NAME, MOCK_PROVIDER_NAME: MOCK_PROVIDER_NAME}
+_PROVIDER_NAME_ALIASES = {
+    "deterministic": MOCK_PROVIDER_NAME,
+    "provider-free": MOCK_PROVIDER_NAME,
+    MOCK_PROVIDER_NAME: MOCK_PROVIDER_NAME,
+}
 
 
 def normalize_provider_name(provider: str) -> str:

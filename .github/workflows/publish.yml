@@ -5,8 +5,14 @@ on:
     types: [published]
 
 jobs:
+  gate1:
+    name: Gate 1 release checks
+    # Reuse the repository CI on the release ref before publishing.
+    uses: ./.github/workflows/ci.yml
+
   pypi-publish:
     name: Upload release to PyPI
+    needs: [gate1]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -14,8 +20,41 @@ jobs:
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
     steps:
-      - name: Checkout code
+      - name: Checkout release tag
         uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
+
+      - name: Verify tag matches package version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          version = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+          tag = os.environ["RELEASE_TAG"].lstrip("v")
+          if tag != version:
+              raise SystemExit(
+                  f"Release tag {os.environ['RELEASE_TAG']!r} does not match package version {version!r}"
+              )
+          print(f"Release tag matches package version: {version}")
+          PY
+
+      - name: Summarize release gate posture
+        shell: bash
+        run: |
+          {
+            echo "### Release publish gate posture"
+            echo
+            echo "- Gate 1 ran here by reusing \`.github/workflows/ci.yml\` on the release ref before PyPI publish."
+            echo "- Publish checks out the release tag and verifies the tag matches \`project.version\` in \`pyproject.toml\`."
+            echo
+            echo "This workflow publishes only after Gate 1 succeeds."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
         uses: actions/setup-python@v5
