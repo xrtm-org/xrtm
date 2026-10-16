@@ -50,7 +50,7 @@ def _make_run(root: Path, run_id: str, *, status="completed", provider="mock", b
                 "status": status,
                 "provider": provider,
                 "total_seconds": 1.5,
-                "forecast_records": [{"a": 1}, {"a": 2}],
+                "forecast_count": 2,
                 "eval_payload": {"summary_statistics": {"brier_score": brier, "ece": 0.01}},
                 "train_payload": {"summary_statistics": {"brier_score": 0.05}, "training_samples": 7},
                 "warnings": [],

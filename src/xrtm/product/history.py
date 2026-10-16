@@ -132,7 +132,7 @@ def compare_runs(left_dir: Path, right_dir: Path) -> list[dict[str, Any]]:
         ("status", ("run", "status"), None),
         ("provider", ("run", "provider"), None),
         ("user", ("run", "user"), None),
-        ("forecast_count", ("summary", "forecast_records", "len"), "higher"),
+        ("forecast_count", ("summary", "forecast_count"), "higher"),
         ("duration_seconds", ("summary", "total_seconds"), "lower"),
         ("eval_brier", ("summary", "eval_payload", "summary_statistics", "brier_score"), "lower"),
         ("eval_ece", ("summary", "eval_payload", "summary_statistics", "ece"), "lower"),

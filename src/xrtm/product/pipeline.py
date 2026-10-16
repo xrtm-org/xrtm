@@ -275,7 +275,7 @@ def _finalize_success(
         status="completed",
         provider=options.provider,
         total_seconds=total_seconds,
-        forecast_records=list(execution.records),
+        forecast_count=len(execution.records),
         eval_payload=execution.eval_payload,
         train_payload=execution.train_payload,
         warnings=run.warnings,
@@ -302,7 +302,7 @@ def _finalize_failure(
             status="failed",
             provider=provider,
             total_seconds=total_seconds,
-            forecast_records=[],
+            forecast_count=0,
             errors=[message],
         ),
     )

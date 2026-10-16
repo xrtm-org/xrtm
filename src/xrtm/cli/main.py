@@ -58,11 +58,15 @@ def start(runs_dir: Path, limit: int, model: str | None, base_url: str | None, p
                 limit=limit, runs_dir=runs_dir,
                 model=model, base_url=base_url, provider=provider,
             )
-        except (ValueError, OSError) as exc:
+        except Exception as exc:  # noqa: BLE001 - the CLI boundary must not traceback
             console.print(f"\n[red]Error: {exc}[/red]")
-            console.print("\n[yellow]Set your API key:[/yellow]")
-            console.print("  export OPENAI_API_KEY=sk-...")
-            console.print("  or create a .env file with OPENAI_API_KEY=sk-...")
+            message = str(exc).lower()
+            if any(token in message for token in ("api key", "api_key", "unauthorized", "401", "authentication")):
+                console.print("\n[yellow]Set your API key:[/yellow]")
+                console.print("  export OPENAI_API_KEY=sk-...")
+                console.print("  or create a .env file with OPENAI_API_KEY=sk-...")
+            else:
+                console.print("[yellow]Check the input and your network connection, then retry.[/yellow]")
             return
         elapsed = time.perf_counter() - start_time
 
