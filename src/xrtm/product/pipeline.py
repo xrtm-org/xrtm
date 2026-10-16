@@ -17,19 +17,31 @@ def _build_run_summary(*, status: str, provider: str, **kwargs: Any) -> dict[str
     return {"status": status, "provider": provider, **kwargs}
 
 
-class _StubReport:
-    """Minimal stub for EvaluationReport when real eval is not available."""
-    def __init__(self, n: int, **kw: Any):
-        self.metric_name = kw.get("metric_name", "Brier Score")
-        self.mean_score = kw.get("mean_score", 0.0)
-        self.total_evaluations = n
-        self.summary_statistics = kw.get("summary_statistics", {})
-        self.reliability_bins = kw.get("reliability_bins", [])
-        self.slices = kw.get("slices", {})
+class _PendingReport:
+    """Honest placeholder: no resolved forecasts, so no score is claimed."""
+
+    def __init__(self, forecast_records: int, reason: str = "pending_resolution"):
+        self.metric_name = "pending"
+        self.mean_score = None
+        self.total_evaluations = 0
+        self.summary_statistics = {"status": reason, "forecast_records": forecast_records}
+        self.reliability_bins = []
+        self.slices = {}
 
 
-def _evaluate_resolved_forecasts(records: tuple[Any, ...]) -> _StubReport:
-    return _StubReport(len(records))
+def _evaluate_resolved_forecasts(records: tuple[Any, ...]) -> Any:
+    r"""Evaluate the resolved subset with train's real backtest runner.
+
+    When nothing has resolved yet (the usual case for fresh questions) the
+    report is explicitly marked pending instead of claiming a 0.0 mean score.
+    """
+    try:
+        report = evaluate_forecast_records_with_backtest_runner(records)
+    except Exception:  # noqa: BLE001 - never fabricate a score
+        return _PendingReport(len(records), reason="evaluation_failed")
+    if getattr(report, "total_evaluations", 0) == 0:
+        return _PendingReport(len(records))
+    return report
 
 
 from xrtm.product.providers import (

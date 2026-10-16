@@ -41,7 +41,6 @@ Issues = "https://github.com/xrtm-org/xrtm/issues"
 "src/xrtm/product/pipeline.py" = ["E402"]
 "src/xrtm/product/workflow_nodes.py" = ["E402"]
 "src/xrtm/product/workflow_runner.py" = ["E402"]
-"src/xrtm/cli/presenters.py" = ["F821", "F841"]
 "src/xrtm/product/doctor.py" = ["F821"]
 "src/xrtm/cli/main.py" = ["E402"]
 

@@ -208,11 +208,12 @@ def _print_readiness_checks(console: Console, checks: list[DoctorCheck]) -> None
 def _print_readiness_summary(console: Console, ready: bool) -> None:
     status = "READY" if ready else "NOT READY"
     color = "green" if ready else "red"
+    live_key = "OPENAI_API_KEY is set" if os.environ.get("OPENAI_API_KEY") else "OPENAI_API_KEY is not set"
     lines = [
         f"Default deterministic first run: {status}",
         f"Released next command: {RELEASED_START_COMMAND}",
         "xrtm doctor verifies package health; the released guided quickstart writes the first scored run and report.",
-        "No API keys, commercial endpoint, or local model server are required for this path.",
+        f"Deterministic/mock paths need no API keys; live providers need a key ({live_key}).",
     ]
     console.print(Panel("\n".join(lines), title="Readiness Summary", border_style=color))
 
