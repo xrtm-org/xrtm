@@ -24,7 +24,7 @@ if _env_path.is_file():
 
 from xrtm.product import launch as launch_module
 from xrtm.product.doctor import run_doctor
-from xrtm.product.history import latest_run_dir, run_detail
+from xrtm.product.history import latest_run_dir, resolve_run_dir, run_detail
 from xrtm.version import __version__
 
 console = Console()
@@ -106,7 +106,11 @@ def runs_show(latest: bool, runs_dir: Path, run_id: str | None):
             console.print("[yellow]No runs found. Run 'xrtm start' first.[/yellow]")
             return
     elif run_id:
-        run_dir = runs_dir / run_id
+        try:
+            run_dir = resolve_run_dir(runs_dir, run_id)
+        except (ValueError, FileNotFoundError) as exc:
+            console.print(f"[red]Invalid run reference: {exc}[/red]")
+            return
     else:
         console.print("[red]Provide a run ID or use --latest[/red]")
         return
