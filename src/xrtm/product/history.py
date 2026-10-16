@@ -33,11 +33,22 @@ def list_runs(
             data = json.loads((d / "run.json").read_text())
         except Exception:
             continue
-        item = {"run_id": data.get("run_id", d.name), "status": data.get("status", "?"), "provider": data.get("provider", "")}
+        item = {
+            "run_id": data.get("run_id", d.name),
+            "status": data.get("status", "?"),
+            "provider": data.get("provider", ""),
+            "user": data.get("user") or "",
+            "command": data.get("command") or "",
+        }
         if status and item["status"] != status:
             continue
         if provider and item["provider"] != provider:
             continue
+        if query:
+            needle = query.strip().lower()
+            haystack = " ".join(str(item.get(field, "")) for field in ("run_id", "status", "provider", "user", "command")).lower()
+            if needle not in haystack:
+                continue
         results.append(item)
     return results
 
@@ -75,9 +86,40 @@ def resolve_run_dir(runs_dir: Path, run_ref: str) -> Path:
 
 
 def run_detail(run_dir: Path) -> dict[str, Any]:
-    """Return one export-ready run detail payload."""
+    """Return one export-ready run detail payload (the documented read model).
 
-    return json.loads((run_dir / "run.json").read_text()) if (run_dir / "run.json").is_file() else {"error": "no run.json"}
+    Composes ``run.json`` + ``run_summary.json`` + the JSONL streams so
+    ``export_run``/``compare_runs`` have the shapes they expect.
+    """
+
+    run_path = run_dir / "run.json"
+    if not run_path.is_file():
+        return {"error": "no run.json"}
+
+    detail: dict[str, Any] = {"run": json.loads(run_path.read_text(encoding="utf-8"))}
+    summary_path = run_dir / "run_summary.json"
+    if summary_path.is_file():
+        detail["summary"] = json.loads(summary_path.read_text(encoding="utf-8"))
+    for key, filename in (
+        ("forecasts", "forecasts.jsonl"),
+        ("questions", "questions.jsonl"),
+        ("events", "events.jsonl"),
+    ):
+        path = run_dir / filename
+        if not path.is_file():
+            continue
+        rows: list[Any] = []
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        detail[key] = rows
+    return detail
 
 
 def compare_runs(left_dir: Path, right_dir: Path) -> list[dict[str, Any]]:
@@ -90,15 +132,14 @@ def compare_runs(left_dir: Path, right_dir: Path) -> list[dict[str, Any]]:
         ("status", ("run", "status"), None),
         ("provider", ("run", "provider"), None),
         ("user", ("run", "user"), None),
-        ("forecast_count", ("summary", "forecast_count"), "higher"),
-        ("duration_seconds", ("summary", "duration_seconds"), "lower"),
-        ("total_tokens", ("summary", "token_counts", "total_tokens"), "lower"),
-        ("eval_brier", ("summary", "eval", "brier_score"), "lower"),
-        ("eval_ece", ("summary", "eval", "ece"), "lower"),
-        ("train_brier", ("summary", "train", "brier_score"), "lower"),
-        ("training_samples", ("summary", "train", "training_samples"), "higher"),
-        ("warnings", ("summary", "warning_count"), "lower"),
-        ("errors", ("summary", "error_count"), "lower"),
+        ("forecast_count", ("summary", "forecast_records", "len"), "higher"),
+        ("duration_seconds", ("summary", "total_seconds"), "lower"),
+        ("eval_brier", ("summary", "eval_payload", "summary_statistics", "brier_score"), "lower"),
+        ("eval_ece", ("summary", "eval_payload", "summary_statistics", "ece"), "lower"),
+        ("train_brier", ("summary", "train_payload", "summary_statistics", "brier_score"), "lower"),
+        ("training_samples", ("summary", "train_payload", "training_samples"), "higher"),
+        ("warnings", ("summary", "warnings", "len"), "lower"),
+        ("errors", ("summary", "errors", "len"), "lower"),
     ]:
         comparisons.append(
             _comparison_row(
@@ -522,6 +563,8 @@ def _stringify_tags(tags: Any) -> str | None:
 def _nested_get(payload: dict[str, Any], path: tuple[str, ...]) -> Any:
     value: Any = payload
     for key in path:
+        if key == "len":
+            return len(value) if isinstance(value, (list, tuple, dict)) else None
         if not isinstance(value, dict):
             return None
         value = value.get(key)
