@@ -7,7 +7,8 @@ name = "xrtm"
 version = "0.10.6"
 description = "The xRtm Framework (Generative Forecasting)."
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+# Bounded by xrtm-train (<3.13); the CLI imports it unconditionally.
+requires-python = ">=3.11,<3.13"
 license = "Apache-2.0"
 authors = [
     {name = "XRTM Team", email = "moy@xrtm.org"}

@@ -2,6 +2,13 @@
 
 This guide documents realistic multi-user and desk-style workflows for XRTM, based on institutional user studies. It shows what teams can accomplish today using XRTM's existing features—profiles, runs, exports, and conventions—while being transparent about current limitations.
 
+> **Historical (pre-0.10) product notes.** This page describes the 0.8.x
+> WebUI/playground/profile/export lanes. It is **not** part of the
+> `xrtm==0.10.6` release contract; see
+> [interface-parity.md](interface-parity.md) for the current released surface.
+> The prompting/evaluation patterns below remain useful, but the CLI commands
+> shown are not release claims.
+
 ## Status: Current Capabilities and Honest Limitations
 
 **What XRTM provides today:**
@@ -65,7 +72,7 @@ Each analyst works in the same Python environment or uses identical virtual envi
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install xrtm==0.8.6
+pip install xrtm==0.10.6
 xrtm doctor
 ```
 
@@ -167,7 +174,10 @@ This shows differences in:
 
 ### Individual Run Export
 
-Released `xrtm runs export` supports both JSON and CSV in `0.8.6`:
+> **Withdrawn command:** `xrtm runs export` is not part of `xrtm==0.10.6`.
+> Use `xrtm.product.history.export_run` from Python instead.
+
+Historical usage (0.8.6 CLI):
 
 ```bash
 xrtm runs export runs/20260501T101710Z-d8967e54 --output exports/jane-2026-05-01.json
@@ -833,7 +843,7 @@ xrtm runs export runs/20260501T101710Z-d8967e54 --output full-data.json
 - Cross-run audit queries
 - Cost tracking per user
 
-**Current status:** User attribution and built-in multi-user control-plane features are still not in XRTM v0.8.6. Teams must use the patterns documented above.
+**Current status:** User attribution and built-in multi-user control-plane features are still not in XRTM 0.10.x. Teams must use the patterns documented above.
 
 ---
 

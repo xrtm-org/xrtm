@@ -496,8 +496,14 @@ def _response_text_and_reasoning(response: ModelResponse) -> tuple[str, str]:
 def _write_records(records: list[ForecastHarnessRecord], artifact_dir: Path) -> Path:
     _ensure_ignored_artifact_path(artifact_dir)
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    # Microsecond resolution + an existence loop: two runs in the same second
+    # must never overwrite each other.
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     artifact_path = artifact_dir / f"real-question-e2e-{timestamp}.jsonl"
+    suffix = 0
+    while artifact_path.exists():
+        suffix += 1
+        artifact_path = artifact_dir / f"real-question-e2e-{timestamp}-{suffix}.jsonl"
     with artifact_path.open("w", encoding="utf-8") as handle:
         for record in records:
             handle.write(record.model_dump_json() + "\n")
@@ -505,12 +511,10 @@ def _write_records(records: list[ForecastHarnessRecord], artifact_dir: Path) -> 
 
 
 def _ensure_ignored_artifact_path(path: Path) -> None:
-    if path.is_absolute():
-        try:
-            path = path.relative_to(Path.cwd())
-        except ValueError as exc:
-            raise ValueError("artifact_dir must be under the current workspace") from exc
-    parts = path.parts
-    if not parts or parts[0] not in _ALLOWED_ARTIFACT_ROOTS:
+    workspace = Path.cwd().resolve()
+    resolved = (path if path.is_absolute() else workspace / path).resolve()
+    allowed_roots = {(workspace / root).resolve() for root in _ALLOWED_ARTIFACT_ROOTS}
+    # Resolve before checking so "logs/../../x" cannot escape the workspace.
+    if not any(resolved.is_relative_to(root) for root in allowed_roots):
         allowed = ", ".join(sorted(_ALLOWED_ARTIFACT_ROOTS))
         raise ValueError(f"artifact_dir must be under an ignored runtime directory ({allowed})")

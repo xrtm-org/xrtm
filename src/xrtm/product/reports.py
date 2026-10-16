@@ -11,7 +11,13 @@ from xrtm.product.artifacts import ArtifactStore
 
 
 def render_html_report(run_dir: Path) -> Path:
-    """Render a static HTML report from a canonical run directory."""
+    """Render a static HTML report from a canonical run directory.
+
+    ``run_dir`` is expected to be a completed run directory (the kind returned
+    by ``resolve_run_dir``): it must contain ``run.json`` and may contain
+    ``run_summary.json``, ``eval.json``, ``train.json``, ``provider.json`` and
+    ``events.jsonl``. Raises ``FileNotFoundError`` when ``run.json`` is absent.
+    """
 
     run = ArtifactStore.read_run(run_dir)
     summary_payload = _read_optional_json(run_dir / "run_summary.json")

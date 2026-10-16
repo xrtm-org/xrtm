@@ -1,164 +1,112 @@
 # Getting Started with XRTM
 
-This is the authoritative first-success path for the published
-`xrtm==0.8.8` package.
+This is the authoritative first-success path for the published `xrtm==0.10.6`
+package. It is claim-pinned to the commands that actually exist in this release:
+`xrtm start`, `xrtm doctor`, `xrtm runs show`, and `xrtm --version`. Anything
+else is explicitly out of scope for release-pinned docs.
 
-The `0.8.8` release is a deterministic stabilization-and-hardening release. It
-keeps the bounded local Hub → Studio → Playground → Observatory product spine,
-hardens release-critical WebUI/API and clean-room paths, and stays claim-pinned
-to that released contract: no calibration dashboard, no API/webhook control
-plane, no arbitrary code/plugin graph editing, no full persistent
-collaborative canvas layout, and no commercial runtime claim without separate
-validation.
-
-You will install XRTM, choose either a CLI-led or WebUI-led first-success path,
-inspect the latest run, use report/export actions, open the local WebUI Hub,
-author one safe workflow draft in Studio or CLI, validate it, run it, trace it
-through Playground, inspect evidence in Observatory, and then choose the next
-guide that matches your job.
+`xrtm` is the command-line front end for the XRTM forecasting stack
+(`xrtm-forecast`, `xrtm-data`, `xrtm-eval`, `xrtm-train`). It forecasts
+questions with an OpenAI-compatible LLM, scores them where ground truth is
+available, and writes a self-contained run directory you can inspect.
 
 ## 1. Install
 
 ```bash
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.8.8
+pip install xrtm==0.10.6
 ```
 
-**Supported Python versions:** `>=3.11,<3.14`
+**Supported Python versions:** `>=3.11,<3.13` (bounded by `xrtm-train`).
 
-## 2. Choose your first-success interface
+## 2. Configure
+
+Set your API key and (optionally) an OpenAI-compatible endpoint and model:
+
+```bash
+export OPENAI_API_KEY=sk-...
+# Optional:
+export OPENAI_BASE_URL="https://api.deepseek.com"
+export OPENAI_MODEL="deepseek-v4-flash"
+```
+
+Instead of exporting, you can create a `.env` file in the working directory.
+The loader is deliberately small and well-defined:
+
+```dotenv
+# full-line comments are ignored
+OPENAI_API_KEY="sk-..."        # matching quotes are stripped
+OPENAI_BASE_URL=https://api.deepseek.com  # trailing " #" comments are stripped
+export OPENAI_MODEL=deepseek-v4-flash
+```
+
+Supported: `KEY=value`, an optional `export` prefix, matching single/double
+quotes, and trailing comments. Not supported: multi-line values, interpolation,
+escape sequences. Existing environment variables always win over `.env`.
+
+## 3. Verify readiness
+
+```bash
+xrtm doctor
+```
+
+`doctor` reports whether the environment, dependency stack, and provider
+configuration look usable before you spend a single token.
+
+## 4. First run
 
 ```bash
 xrtm start
 ```
 
-**CLI-led first success**
+This runs the default pipeline (up to 5 questions from the bundled real-binary
+corpus), forecasts each with your configured model, scores what can be scored,
+and writes a run directory under `runs/`. `xrtm start` prints the run id and the
+next commands when it finishes.
 
-`xrtm start` runs the released deterministic first-success path. It checks the
-installed stack, writes a scored local run under `runs/`, and prints the next
-commands for reviewing that run.
-
-**WebUI-led first success**
-
-```bash
-xrtm web --runs-dir runs
-```
-
-Open `http://127.0.0.1:8765/start` and use **Run quickstart**. That Start page
-uses the same shared product launch service as `xrtm start`, plus the same
-doctor and provider-status data that the CLI surfaces.
-
-## 3. Inspect the latest run
-
-Use the latest-run commands that `xrtm start` prints:
+Useful variations:
 
 ```bash
-xrtm runs show latest --runs-dir runs
-xrtm artifacts inspect --latest --runs-dir runs
-xrtm report html --latest --runs-dir runs
+xrtm start --limit 2
+xrtm start --runs-dir runs
+xrtm start --model deepseek-v4-pro --base-url https://api.deepseek.com
 ```
 
-After that review, the main files to recognize are `run.json`,
-`run_summary.json`, `eval.json`, and `report.html` inside the newest
-`runs/<run-id>/` directory.
-
-## 4. Open or keep using the local WebUI shell
-
-Launch the local WebUI:
+For a zero-cost smoke test that exercises the full pipeline without an API key,
+the hidden `--provider` flag still accepts the built-in mock:
 
 ```bash
-xrtm web --runs-dir runs
+xrtm start --provider mock --limit 2
 ```
 
-Open `http://127.0.0.1:8765/` in your browser first.
-
-The released WebUI is a polished local-only React/TypeScript app shell backed
-by a Python JSON API. It gives you the same local forecasting cockpit lanes —
-Hub at `/` and `/hub`, Start, Runs, Workflow detail, Operations, Studio,
-Playground, Observatory, run detail, compare, Advanced visibility, and
-`/workbench` compatibility — without widening the deterministic `0.8.8`
-capability contract.
-
-With the default local workspace layout, reusable workflows stay in
-`.xrtm/workflows` while draft values, validation snapshots, compare cache, and
-resume state stay in `.xrtm/webui/app-state.db`.
-
-Use `http://127.0.0.1:8765/` or `http://127.0.0.1:8765/hub` for the Hub,
-`http://127.0.0.1:8765/start` when you want to launch first-success or named
-workflow runs, `http://127.0.0.1:8765/operations` when you want profile,
-monitor, or cleanup controls, and `http://127.0.0.1:8765/studio` when you are
-ready to edit. Studio keeps the baseline in view, starts a local draft from
-scratch, a released starter template, or a clone, and then lets you author
-shared workflow fields plus safe graph changes inside the released schema and
-built-in node library. That includes metadata, questions, runtime,
-artifact/scoring settings, local node dragging, palette click/drag-to-canvas
-add-node, node/edge/workflow selection, edge create/remove, entry setting,
-contextual inspection, and validate/save/run through the Studio APIs.
-`/workbench` remains a compatibility route for existing links. Parallel-group
-and conditional-route editing remain thin/read-only, and this is not an
-arbitrary JSON, implementation, plugin, or code editor.
-
-If you prefer the terminal, the same shared backend authoring layer also powers
-`xrtm workflow create scratch|template|clone ...`, `xrtm workflow edit ...`,
-`xrtm workflow validate ...`, `xrtm workflow explain ...`, and
-`xrtm workflow run ...`.
+## 5. Inspect the run
 
 ```bash
-xrtm workflow create scratch my-workflow --workflows-dir .xrtm/workflows
-xrtm workflow validate my-workflow --workflows-dir .xrtm/workflows
-xrtm workflow explain my-workflow --workflows-dir .xrtm/workflows
-xrtm workflow run my-workflow --workflows-dir .xrtm/workflows --runs-dir runs
+xrtm runs show --latest
+xrtm runs show <run-id> --runs-dir runs
 ```
 
-The released `xrtm==0.8.8` package keeps the bounded graph-linked
-Playground lane on the deterministic release baseline. Open
-`http://127.0.0.1:8765/playground` from the same local shell when you want one
-custom question first, optional tiny follow-up batches capped at 5, graph/canvas
-preview, ordered node trace, executed-node highlighting, an honest fallback when
-no graph trace artifact exists, and explicit save-back to workflow/profile only.
-Keep those runs exploratory and separate from benchmark or release evidence by
-default, and keep the released runtime wording deterministic unless wider
-validation is published separately.
+Each `runs/<run-id>/` directory is self-describing:
 
-```bash
-xrtm playground --workflow demo-deterministic --question "Will the released 0.8.8 playground stay exploratory?" --workflows-dir .xrtm/workflows --runs-dir runs
-```
-
-That released Playground command uses the deterministic baseline path and the
-same shared sandbox contract as the WebUI route.
-
-## 5. Run from Hub or Start, then author safely, validate, run, trace, and compare
-
-From the Hub, `/start`, or `/workflows/<name>`:
-
-1. run the deterministic quickstart or a bounded named workflow
-2. inspect the generated run detail
-3. open or regenerate the HTML report
-4. export JSON or CSV evidence
-5. select a baseline run when you want a compare-ready candidate
-
-From Studio, with `/workbench` available as a compatibility route:
-
-1. use Overview or Runs to inspect the baseline you want to keep in view
-2. start from scratch, a starter template, or a clone of `demo-deterministic`
-3. edit shared core workflow fields or safe node/edge/entry changes inside the released product schema/node library
-4. save and validate the draft inline
-5. run a candidate
-6. review Playground graph trace linkage when the run has graph trace artifacts
-7. inspect `/observatory`, `/runs/<candidate-run-id>`, or `/runs/<candidate-run-id>/compare/<baseline-run-id>` before choosing the next step
-
-If you prefer the terminal, the TUI remains available for read-only review:
-
-```bash
-xrtm tui --runs-dir runs
-```
+| File | Contents |
+|---|---|
+| `run.json` | run identity, status, timing, artifact index |
+| `run_summary.json` | aggregate summary (eval/train payloads, `forecast_count`) |
+| `questions.jsonl` | the questions that were forecast |
+| `forecasts.jsonl` | one record per forecast (probability, CI, parse status, usage) |
+| `eval.json` | evaluation payload when ground truth was available |
+| `train.json` | training/backtest payload when it was produced |
+| `provider.json` | provider + model actually used |
+| `events.jsonl` | ordered pipeline events |
 
 ## 6. Choose your next path
 
-- **Researcher:** use the dedicated workflow on [xrtm.org](https://xrtm.org/docs/workflows/researcher-model-eval) for evaluation, compare review, and the deeper quality loop.
-- **Operator:** continue with the [Operator Runbook](operator-runbook.md) for repeatable profiles, monitoring, compare/export, cleanup, and the Operations page.
-- **Developer:** move to the [Python API Reference](python-api-reference.md) and [integration examples](../examples/integration/) when you want to embed XRTM in code.
+- **Researcher:** read the [Python API Reference](python-api-reference.md) to
+  embed `xrtm-forecast` agents directly and score with `xrtm-eval`.
+- **Operator:** continue with the [Operator Runbook](operator-runbook.md) for
+  scheduling, artifacts, and troubleshooting.
+- **Integrator:** see [`examples/`](../examples/) for end-to-end scripts.
 
 ## Quick troubleshooting
 
@@ -170,11 +118,15 @@ Activate the virtual environment first:
 . .venv/bin/activate
 ```
 
+### `Error: OPENAI_API_KEY not set`
+
+`xrtm start` prints the exact export lines to add when the key is missing. A
+connection or validation failure prints an input/network hint instead — the two
+causes are never conflated.
+
 ### Installation fails on Python 3.13
 
-XRTM supports Python `>=3.11,<3.14`. If installation still fails on Python
-3.13, upgrade `pip`, `setuptools`, and `wheel`, then reinstall in a fresh
-virtual environment.
+This release supports `>=3.11,<3.13`. Use Python 3.11 or 3.12.
 
 ### Your current directory is read-only
 
