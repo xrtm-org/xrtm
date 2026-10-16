@@ -5,6 +5,6 @@ from importlib.metadata import PackageNotFoundError, version
 try:
     __version__ = version("xrtm")
 except PackageNotFoundError:  # pragma: no cover - editable source tree fallback
-    __version__ = "0.10.0"
+    __version__ = "0.10.6"
 
 __all__ = ["__version__"]

@@ -10,17 +10,40 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 
+
 # Load .env file if present
+def _load_dotenv(path: Path) -> None:
+    """Minimal well-defined .env loader.
+
+    Supported: ``KEY=value``, an optional ``export`` prefix, full-line ``#``
+    comments, matching single/double quotes, and a trailing ``#`` comment after
+    an unquoted value. Not supported: multi-line values, interpolation,
+    escape sequences. Existing environment variables always win.
+    """
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] in ("'", '"') and value[-1] == value[0]:
+            value = value[1:-1]
+        else:
+            hash_index = value.find(" #")
+            if hash_index >= 0:
+                value = value[:hash_index].rstrip()
+        if key:
+            os.environ.setdefault(key, value)
+
+
 _env_path = Path(".env")
 if _env_path.is_file():
-    with open(_env_path) as _f:
-        for _line in _f:
-            _line = _line.strip()
-            if _line.startswith("export "):
-                _line = _line[7:]
-            if _line and not _line.startswith("#") and "=" in _line:
-                _k, _v = _line.split("=", 1)
-                os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
+    _load_dotenv(_env_path)
 
 from xrtm.product import launch as launch_module
 from xrtm.product.doctor import run_doctor

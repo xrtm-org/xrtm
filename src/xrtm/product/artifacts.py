@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -61,6 +62,13 @@ class RunArtifact:
         return data
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write via temp file + rename: a crash must not leave a torn artifact."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 class ArtifactStore:
     """Writes and reads the canonical ``runs/<run-id>`` layout."""
 
@@ -89,16 +97,15 @@ class ArtifactStore:
 
     def write_json(self, run: RunArtifact, name: str, payload: Any) -> Path:
         path = run.run_dir / name
-        path.write_text(json.dumps(to_json_safe(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        _atomic_write_text(path, json.dumps(to_json_safe(payload), indent=2, sort_keys=True) + "\n")
         run.artifacts[name] = str(path)
         run.updated_at = utc_now()
         return path
 
     def write_jsonl(self, run: RunArtifact, name: str, rows: list[Any]) -> Path:
         path = run.run_dir / name
-        with path.open("w", encoding="utf-8") as handle:
-            for row in rows:
-                handle.write(json.dumps(to_json_safe(row), sort_keys=True) + "\n")
+        body = "".join(json.dumps(to_json_safe(row), sort_keys=True) + "\n" for row in rows)
+        _atomic_write_text(path, body)
         run.artifacts[name] = str(path)
         run.updated_at = utc_now()
         return path
@@ -150,7 +157,8 @@ def utc_now() -> str:
 def to_json_safe(value: Any) -> Any:
     """Convert Pydantic/dataclass/datetime-rich objects into JSON-safe values.
 
-    Optimized for common types with fast-path handling.
+    Unknown objects are stringified as a last resort so ``json.dumps`` never
+    fails later with an opaque ``TypeError``.
     """
     # Fast path for primitives (most common case)
     if isinstance(value, (str, int, float, bool, type(None))):
@@ -174,9 +182,9 @@ def to_json_safe(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [to_json_safe(item) for item in value]
     if isinstance(value, set):
-        return [to_json_safe(item) for item in value]
+        return [to_json_safe(item) for item in sorted(value, key=repr)]
 
-    return value
+    return str(value)
 
 
 __all__ = ["ArtifactStore", "RunArtifact", "to_json_safe", "utc_now"]
