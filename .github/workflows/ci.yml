@@ -21,12 +21,12 @@ jobs:
       - name: Install
         run: |
           uv venv --python ${{ matrix.python-version }}
-          uv pip install -e ".[dev]"
+          uv sync --locked --extra dev
       - name: Lint
-        run: uv run ruff check src/ tests/
+        run: uv run --locked ruff check src/ tests/
       - name: Tests (Pytest)
-        run: uv run pytest tests -q
+        run: uv run --locked pytest tests -q
       - name: CLI smoke
-        run: uv run xrtm --help && uv run xrtm doctor
+        run: uv run --locked xrtm --help && uv run --locked xrtm doctor
       - name: Forecast smoke (mock)
-        run: uv run xrtm start --provider mock --limit 2
+        run: uv run --locked xrtm start --provider mock --limit 2

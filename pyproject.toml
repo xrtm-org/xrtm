@@ -17,7 +17,7 @@ dependencies = [
     "rich>=13.0.0",
     "xrtm-data>=0.4.0",
     "xrtm-eval>=0.3.1",
-    "xrtm-forecast>=0.10.0",
+    "xrtm-forecast>=0.12.0",
     "xrtm-train>=0.3.1"
 ]
 
@@ -39,9 +39,6 @@ Issues = "https://github.com/xrtm-org/xrtm/issues"
 [tool.ruff.lint.per-file-ignores]
 "src/xrtm/product/launch.py" = ["E402"]
 "src/xrtm/product/pipeline.py" = ["E402"]
-"src/xrtm/product/workflow_nodes.py" = ["E402"]
-"src/xrtm/product/workflow_runner.py" = ["E402"]
-"src/xrtm/product/doctor.py" = ["F821"]
 "src/xrtm/cli/main.py" = ["E402"]
 
 [tool.setuptools]

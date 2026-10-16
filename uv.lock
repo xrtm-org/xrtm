@@ -1051,7 +1051,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "xrtm-data", specifier = ">=0.4.0" },
     { name = "xrtm-eval", specifier = ">=0.3.1" },
-    { name = "xrtm-forecast", specifier = ">=0.10.0" },
+    { name = "xrtm-forecast", specifier = ">=0.12.0" },
     { name = "xrtm-train", specifier = ">=0.3.1" },
 ]
 provides-extras = ["dev"]
@@ -1083,7 +1083,7 @@ wheels = [
 
 [[package]]
 name = "xrtm-forecast"
-version = "0.10.0"
+version = "0.13.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1097,9 +1097,9 @@ dependencies = [
     { name = "xrtm-data" },
     { name = "xrtm-eval" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/07/59/e611796d5ad1d7d584252844c229eac1252fa99a84284b8b96d624b2d8a7/xrtm_forecast-0.10.0.tar.gz", hash = "sha256:e330ac92422af6ac25b273d074efd275f20101a75f9fe20dd8e49f3b518c7d51", size = 81941, upload-time = "2026-09-26T16:31:18.794Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/03/072ee724098e8a464bac61ceda85150fa32e63fee50a6cc3267398d948ad/xrtm_forecast-0.13.3.tar.gz", hash = "sha256:a4d3f46460bf4b45c3b5c9bbc4e6a623b0ccc853a1a98cfcc82b7598ccf1effc", size = 91345, upload-time = "2026-10-16T18:09:03.596Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/2c/762ffcbef6e564eb326342dc24628386be93f892a28135d7468a177ce009/xrtm_forecast-0.10.0-py3-none-any.whl", hash = "sha256:a8db69731b467ac34daa40edbd32102cf108febe1d8030795ab72513e8e99e5b", size = 127157, upload-time = "2026-09-26T16:31:17.123Z" },
+    { url = "https://files.pythonhosted.org/packages/76/a2/9d0d1fd47ff480e30aea2d35d8abda1698cc31b607d7ba00bc48985c1ae9/xrtm_forecast-0.13.3-py3-none-any.whl", hash = "sha256:9fbd0795a4186da16ddcea02ac74e5d070d0de15e48dcf92cc71df35011bc089", size = 143325, upload-time = "2026-10-16T18:09:01.986Z" },
 ]
 
 [[package]]

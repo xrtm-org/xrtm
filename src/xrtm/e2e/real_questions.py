@@ -23,6 +23,7 @@ It never fetches question data from the network.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from collections.abc import Iterable, Sequence
@@ -42,9 +43,18 @@ _THINK_BLOCK_RE = re.compile(r"<think>\s*(.*?)\s*</think>", re.IGNORECASE | re.D
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.IGNORECASE | re.DOTALL)
 _ALLOWED_ARTIFACT_ROOTS = {"output", ".pytest_cache", ".cache", "logs"}
 
+logger = logging.getLogger(__name__)
+
 
 class ForecastOutputValidationError(ValueError):
     r"""Raised when a generated ``ForecastOutput`` is structurally invalid."""
+
+
+class MissingJSONError(ValueError):
+    r"""Raised when a model response contains no JSON object at all.
+
+    Typed so retry logic does not substring-match error text.
+    """
 
 
 class ForecastHarnessRecord(BaseModel):
@@ -134,17 +144,23 @@ def run_real_question_e2e(
     active_provider = provider or _build_local_openai_provider(base_url=base_url, model=model, api_key=api_key)
     selected_questions = list(questions[:limit]) if questions is not None else load_real_binary_questions(limit=limit)
     records: list[ForecastHarnessRecord] = []
+    failures: list[str] = []
     for question in selected_questions:
         prompt = build_real_question_prompt(question)
-        response, output = _generate_valid_forecast_output(
-            question=question,
-            provider=active_provider,
-            prompt=prompt,
-            corpus_id=corpus_id,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-        validate_forecast_output_integrity(question, output)
+        try:
+            response, output = _generate_valid_forecast_output(
+                question=question,
+                provider=active_provider,
+                prompt=prompt,
+                corpus_id=corpus_id,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            validate_forecast_output_integrity(question, output)
+        except Exception as exc:  # noqa: BLE001 - one bad question must not discard the batch
+            logger.warning("Skipping question %s after failure: %s", question.id, exc)
+            failures.append(f"{question.id}: {exc}")
+            continue
         records.append(
             ForecastHarnessRecord(
                 question_id=question.id,
@@ -157,6 +173,9 @@ def run_real_question_e2e(
                 },
             )
         )
+
+    if failures and not records:
+        raise ValueError("all questions failed: " + "; ".join(failures[:3]))
 
     if write_artifacts:
         _write_records(records, artifact_dir or default_artifact_dir())
@@ -296,11 +315,11 @@ def _parse_response_forecast_payload(raw_text: str, raw_reasoning: str) -> dict[
             errors.append(exc)
     if errors:
         raise errors[-1]
-    raise ValueError("model response did not contain a JSON object")
+    raise MissingJSONError("model response did not contain a JSON object")
 
 
 def _is_missing_json_error(exc: ValueError) -> bool:
-    return "JSON object" in str(exc)
+    return isinstance(exc, MissingJSONError)
 
 
 def _structured_output_token_budgets(max_tokens: int) -> list[int]:
