@@ -27,7 +27,7 @@ def test_limit_error_does_not_suggest_api_key(tmp_path):
 
     assert "limit must be at least 1" in result.output
     assert "Set your API key" not in result.output
-    assert result.exit_code == 0  # handled gracefully
+    assert result.exit_code == 1  # failures must not exit 0 for cron/scripts
 
 
 def test_connection_error_does_not_suggest_api_key(tmp_path):
@@ -37,6 +37,7 @@ def test_connection_error_does_not_suggest_api_key(tmp_path):
     assert "connection refused" in result.output
     assert "Set your API key" not in result.output
     assert "network connection" in result.output
+    assert result.exit_code == 1
 
 
 def test_missing_key_error_suggests_setting_key(tmp_path):
@@ -44,3 +45,12 @@ def test_missing_key_error_suggests_setting_key(tmp_path):
         result = CliRunner().invoke(cli, ["start", "--limit", "1", "--runs-dir", str(tmp_path / "runs")])
 
     assert "Set your API key" in result.output
+    assert result.exit_code == 1
+
+
+def test_port_number_4010_is_not_mistaken_for_auth(tmp_path):
+    with patch("xrtm.cli.main.launch_module.run_forecasts", side_effect=ConnectionError("connection refused to http://localhost:4010/v1")):
+        result = CliRunner().invoke(cli, ["start", "--limit", "1", "--runs-dir", str(tmp_path / "runs")])
+
+    assert "Set your API key" not in result.output
+    assert "network connection" in result.output

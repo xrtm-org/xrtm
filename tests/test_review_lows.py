@@ -24,14 +24,21 @@ import pytest
 
 from xrtm.e2e.real_questions import _ensure_ignored_artifact_path
 from xrtm.product.artifacts import to_json_safe
-from xrtm.version import __version__
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_fallback_matches_pyproject():
+    import re as _re
+
+    from xrtm import version as version_module
+
     data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert __version__ == data["project"]["version"]
+    source = (REPO_ROOT / "src" / "xrtm" / "version.py").read_text(encoding="utf-8")
+    literal = _re.search(r'_FALLBACK_VERSION = "([^"]+)"', source)
+    assert literal is not None
+    assert literal.group(1) == data["project"]["version"]
+    assert version_module.__version__ == data["project"]["version"] or version_module.__version__ == literal.group(1)
 
 
 def test_artifact_paths_must_stay_under_ignored_roots(tmp_path, monkeypatch):
@@ -106,3 +113,98 @@ def test_release_contract_claims_are_real_commands():
         assert result.returncode == 0, f"phantom claim: {claim}\n{result.stderr}"
         checked += 1
     assert checked >= 5
+
+
+def test_dotenv_strips_comments_after_quoted_values_and_bom(tmp_path, monkeypatch):
+    from xrtm.cli.main import _load_dotenv
+
+    keys = ("REVIEW_TRAILING", "REVIEW_BOM")
+    for key in keys:
+        monkeypatch.delenv(key, raising=False)
+
+    env = tmp_path / ".env"
+    env.write_text('\ufeffREVIEW_TRAILING="sk-abc" # a comment\nREVIEW_BOM=1\n', encoding="utf-8")
+    try:
+        _load_dotenv(env)
+        # The documented example shape: quotes stripped, comment ignored, and
+        # the BOM must not corrupt the first key.
+        assert __import__("os").environ["REVIEW_TRAILING"] == "sk-abc"
+        assert __import__("os").environ["REVIEW_BOM"] == "1"
+    finally:
+        import os as _os
+
+        for key in keys:
+            _os.environ.pop(key, None)
+
+
+def test_e2e_retries_when_the_model_returns_prose():
+    from xrtm.forecast.core.schemas.forecast import ForecastQuestion
+    from xrtm.forecast.providers.inference.base import ModelResponse
+
+    from xrtm.e2e import real_questions as rq
+
+    class _ProseProvider:
+        model_id = "stub"
+        base_url = "stub://"
+
+        def __init__(self):
+            self.calls = 0
+
+        def generate_content(self, prompt, **kwargs):
+            self.calls += 1
+            return ModelResponse(
+                text="The event looks quite likely, but this response contains no JSON object at all.",
+                usage={},
+                metadata={},
+            )
+
+    provider = _ProseProvider()
+    question = ForecastQuestion(id="q1", title="Q1")
+
+    with pytest.raises(rq.MissingJSONError):
+        rq._generate_valid_forecast_output(
+            question=question,
+            provider=provider,
+            prompt=rq.build_real_question_prompt(question),
+            corpus_id="x",
+            max_tokens=64,
+            temperature=0.0,
+        )
+
+    # Regression: the budget-escalation ladder + repair used to be skipped
+    # because the parser raised an untyped ValueError (1 call total).
+    assert provider.calls >= 3
+
+
+def test_pipeline_surfaces_partial_forecast_runs(tmp_path, monkeypatch):
+    from xrtm.forecast.core.schemas.forecast import ForecastOutput
+
+    import xrtm.product.pipeline as pipeline_module
+    from xrtm.e2e.real_questions import ForecastHarnessRecord
+    from xrtm.product.pipeline import PipelineOptions, run_pipeline
+
+    record = ForecastHarnessRecord(
+        question_id="q1",
+        output=ForecastOutput.model_validate(
+            {
+                "forecast_request_id": "q1",
+                "probability": 0.6,
+                "reasoning_trace": {"narrative": "n"},
+                "metadata": {"source_version": "test"},
+            }
+        ),
+        provider_metadata={"usage": {}},
+    )
+    # 3 questions requested, only 1 survived: the run must say so.
+    monkeypatch.setattr(pipeline_module, "run_real_question_e2e", lambda **kwargs: [record])
+
+    result = run_pipeline(
+        PipelineOptions(provider="mock", limit=3, runs_dir=tmp_path / "runs", write_report=False)
+    )
+
+    summary = json.loads((result.run.run_dir / "run_summary.json").read_text(encoding="utf-8"))
+    assert summary["forecast_count"] == 1
+    assert any("2 of 3 questions" in warning for warning in summary["warnings"])
+
+    events = (result.run.run_dir / "events.jsonl").read_text(encoding="utf-8")
+    assert "questions_skipped" in events

@@ -122,11 +122,26 @@ def run_detail(run_dir: Path) -> dict[str, Any]:
     return detail
 
 
+def _with_legacy_summary_keys(detail: dict[str, Any]) -> dict[str, Any]:
+    """Mirror the pre-0.10.6 summary shape onto the current one.
+
+    Runs written by <=0.10.5 stored ``forecast_records`` (a list) instead of
+    ``forecast_count``; comparisons against old run dirs must not report
+    ``None``/``changed`` for the headline metric.
+    """
+    summary = detail.get("summary")
+    if isinstance(summary, dict) and summary.get("forecast_count") is None:
+        records = summary.get("forecast_records")
+        if isinstance(records, list):
+            summary["forecast_count"] = len(records)
+    return detail
+
+
 def compare_runs(left_dir: Path, right_dir: Path) -> list[dict[str, Any]]:
     """Compare high-value summary fields between two runs."""
 
-    left = run_detail(left_dir)
-    right = run_detail(right_dir)
+    left = _with_legacy_summary_keys(run_detail(left_dir))
+    right = _with_legacy_summary_keys(run_detail(right_dir))
     comparisons = []
     for label, path, preference in [
         ("status", ("run", "status"), None),
@@ -183,6 +198,21 @@ def _export_run_csv(run_dir: Path, output_path: Path) -> None:
     run_metadata = detail["run"]
     summary = detail.get("summary", {})
     forecasts = detail.get("forecasts", [])
+    eval_payload = summary.get("eval_payload") if isinstance(summary.get("eval_payload"), dict) else {}
+    train_payload = summary.get("train_payload") if isinstance(summary.get("train_payload"), dict) else {}
+    eval_stats = eval_payload.get("summary_statistics") if isinstance(eval_payload.get("summary_statistics"), dict) else {}
+    train_stats = train_payload.get("summary_statistics") if isinstance(train_payload.get("summary_statistics"), dict) else {}
+    total_tokens = 0
+    for forecast in forecasts:
+        usage = (
+            forecast.get("provider_metadata", {}).get("usage")
+            or (forecast.get("output") or {}).get("metadata", {}).get("raw_data", {}).get("usage")
+            or {}
+        )
+        try:
+            total_tokens += int(usage.get("total_tokens") or 0)
+        except (TypeError, ValueError):
+            continue
     questions = {
         str(question.get("id")): question for question in detail.get("questions", []) if question.get("id") is not None
     }
@@ -212,11 +242,11 @@ def _export_run_csv(run_dir: Path, output_path: Path) -> None:
             "user": run_metadata.get("user"),
             "started_at": started_at,
             "completed_at": completed_at,
-            "duration_seconds": summary.get("duration_seconds"),
-            "total_tokens": summary.get("token_counts", {}).get("total_tokens"),
-            "eval_brier_score": summary.get("eval", {}).get("brier_score"),
-            "eval_ece": summary.get("eval", {}).get("ece"),
-            "train_brier_score": summary.get("train", {}).get("brier_score"),
+            "duration_seconds": summary.get("total_seconds"),
+            "total_tokens": total_tokens or None,
+            "eval_brier_score": eval_stats.get("brier_score", eval_payload.get("mean_score")),
+            "eval_ece": eval_stats.get("ece"),
+            "train_brier_score": train_stats.get("brier_score", train_payload.get("mean_score")),
             "question_id": question_id,
             "question_title": _first_non_empty(
                 question.get("title"),

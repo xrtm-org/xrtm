@@ -110,3 +110,58 @@ def test_resolve_run_dir_rejects_traversal(tmp_path):
         resolve_run_dir(tmp_path, "../outside")
     with pytest.raises(FileNotFoundError):
         resolve_run_dir(tmp_path, "missing-run")
+
+
+def _make_legacy_run(root: Path, run_id: str) -> Path:
+    """A run dir in the pre-0.10.6 summary shape (``forecast_records`` list)."""
+    run_dir = root / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "run.json").write_text(
+        json.dumps({"run_id": run_id, "status": "completed", "provider": "mock", "user": "tester"}),
+        encoding="utf-8",
+    )
+    (run_dir / "run_summary.json").write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "provider": "mock",
+                "total_seconds": 1.0,
+                "forecast_records": [{"q": 1}, {"q": 2}, {"q": 3}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return run_dir
+
+
+def test_compare_runs_understands_legacy_forecast_records(tmp_path):
+    legacy = _make_legacy_run(tmp_path, "old")
+    modern = _make_run(tmp_path, "new")
+
+    rows = {row["metric"]: row for row in compare_runs(legacy, modern)}
+
+    assert rows["forecast_count"]["left"] == 3
+    assert rows["forecast_count"]["right"] == 2
+
+
+def test_csv_export_populates_metrics_from_real_summary_keys(tmp_path):
+    run_dir = _make_run(tmp_path, "run-1")
+    (run_dir / "forecasts.jsonl").write_text(
+        json.dumps(
+            {
+                "question_id": "q1",
+                "output": {"question_id": "q1", "probability": 0.7},
+                "provider_metadata": {"usage": {"total_tokens": 123}},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out = export_run(run_dir, tmp_path / "export.csv", format="csv")
+    text = out.read_text(encoding="utf-8")
+
+    assert "1.5" in text  # total_seconds -> duration_seconds
+    assert "0.04" in text  # eval_payload.summary_statistics.brier_score
+    assert "0.05" in text  # train_payload.summary_statistics.brier_score
+    assert "123" in text  # summed usage tokens

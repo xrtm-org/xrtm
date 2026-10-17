@@ -271,6 +271,16 @@ def _finalize_success(
         report_path = render_html_report(run.run_dir)
         run.artifacts["report.html"] = str(report_path)
 
+    # Partial runs must be visible: a 1-of-5 run whose other four questions
+    # failed previously looked identical to a corpus that only had one.
+    requested = max(0, int(options.limit))
+    produced = len(execution.records)
+    if produced < requested:
+        store.append_event(run, "questions_skipped", requested=requested, produced=produced)
+        run.warnings.append(
+            f"{requested - produced} of {requested} questions were not forecast (skipped or failed)"
+        )
+
     summary = _build_run_summary(
         status="completed",
         provider=options.provider,
