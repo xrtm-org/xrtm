@@ -1,4 +1,4 @@
-# Operator Runbook (xrtm 0.10.6)
+# Operator Runbook (xrtm 0.10.8)
 
 Operational guide for the released `xrtm` CLI. Claim-pinned to the commands
 that exist in this release: `xrtm start`, `xrtm doctor`, `xrtm runs show`,
@@ -50,7 +50,7 @@ choice; nothing outside `runs/` is written.
 |---|---|
 | `Error: OPENAI_API_KEY not set` | Export the key or add it to `.env` (see the [Getting Started](getting-started.md) `.env` rules). |
 | Connection/validation error | Check `OPENAI_BASE_URL`, network reachability, and model id with `xrtm doctor`. |
-| `doctor` reports missing deps | Reinstall: `pip install -U xrtm==0.10.6`. |
+| `doctor` reports missing deps | Reinstall: `pip install -U xrtm==0.10.8`. |
 | Run dir contains no `eval.json` | Ground truth was unavailable for that corpus slice; forecasts are still recorded. |
 
 ## Version and upgrade

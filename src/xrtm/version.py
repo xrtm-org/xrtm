@@ -3,7 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 # Keep in sync with pyproject.toml (a test enforces this source literal).
-_FALLBACK_VERSION = "0.10.7"
+_FALLBACK_VERSION = "0.10.8"
 
 try:
     __version__ = version("xrtm")
