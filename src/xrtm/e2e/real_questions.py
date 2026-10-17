@@ -263,7 +263,7 @@ def _generate_valid_forecast_output(
             repair_max_tokens=max(2048, max_tokens),
         )
         return repaired_response, _build_output_from_response(question, repaired_response, provider, corpus_id=corpus_id)
-    raise ValueError("model response did not contain a JSON object")
+    raise MissingJSONError("model response did not contain a JSON object")
 
 
 def _build_output_from_response(
@@ -336,7 +336,7 @@ def _repair_missing_json_response(
     raw_text, raw_reasoning = _response_text_and_reasoning(response)
     notes = raw_reasoning if raw_reasoning.strip() else raw_text
     if not notes.strip():
-        raise ValueError("model response did not contain a JSON object")
+        raise MissingJSONError("model response did not contain a JSON object")
     repair_prompt = [
         {"role": "system", "content": "Return one valid JSON object only. No analysis. No markdown."},
         {
@@ -372,7 +372,7 @@ def _parse_first_json_object(text: str) -> dict[str, Any]:
             if isinstance(parsed, dict):
                 objects.append(parsed)
     if not objects:
-        raise ValueError("model response did not contain a JSON object")
+        raise MissingJSONError("model response did not contain a JSON object")
     return max(objects, key=_forecast_payload_score)
 
 

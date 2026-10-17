@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from pathlib import Path
 
@@ -16,11 +17,12 @@ def _load_dotenv(path: Path) -> None:
     """Minimal well-defined .env loader.
 
     Supported: ``KEY=value``, an optional ``export`` prefix, full-line ``#``
-    comments, matching single/double quotes, and a trailing ``#`` comment after
-    an unquoted value. Not supported: multi-line values, interpolation,
-    escape sequences. Existing environment variables always win.
+    comments, matching single/double quotes, a trailing ``#`` comment after
+    either a quoted or unquoted value, and UTF-8 BOMs. Not supported:
+    multi-line values, interpolation, escape sequences. Existing environment
+    variables always win.
     """
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -31,8 +33,11 @@ def _load_dotenv(path: Path) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip()
-        if len(value) >= 2 and value[0] in ("'", '"') and value[-1] == value[0]:
-            value = value[1:-1]
+        if value[:1] in ("'", '"'):
+            quote = value[0]
+            end = value.find(quote, 1)
+            # Everything after the closing quote is a comment/ignored.
+            value = value[1:end] if end != -1 else value[1:]
         else:
             hash_index = value.find(" #")
             if hash_index >= 0:
@@ -84,13 +89,15 @@ def start(runs_dir: Path, limit: int, model: str | None, base_url: str | None, p
         except Exception as exc:  # noqa: BLE001 - the CLI boundary must not traceback
             console.print(f"\n[red]Error: {exc}[/red]")
             message = str(exc).lower()
-            if any(token in message for token in ("api key", "api_key", "unauthorized", "401", "authentication")):
+            key_related = any(token in message for token in ("api key", "api_key", "unauthorized", "authentication"))
+            key_related = key_related or bool(re.search(r"\b401\b", message))
+            if key_related:
                 console.print("\n[yellow]Set your API key:[/yellow]")
                 console.print("  export OPENAI_API_KEY=sk-...")
                 console.print("  or create a .env file with OPENAI_API_KEY=sk-...")
             else:
                 console.print("[yellow]Check the input and your network connection, then retry.[/yellow]")
-            return
+            raise SystemExit(1)
         elapsed = time.perf_counter() - start_time
 
     # Color-code Brier
