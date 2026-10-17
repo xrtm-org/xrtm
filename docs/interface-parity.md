@@ -4,7 +4,7 @@ This page is the implementation-level source of truth for CLI/WebUI parity in
 `xrtm`. It follows the governance
 [Interface Parity and Claim Ownership Policy](https://github.com/xrtm-org/governance/blob/main/policies/interface-parity-and-claim-ownership-policy.md).
 
-**Current baseline: published `xrtm==0.10.6`. The release ships a CLI only.**
+**Current baseline: published `xrtm==0.10.8`. The release ships a CLI only.**
 Every WebUI, authoring, playground, profile, monitor, batch, version, webhook,
 report, artifact, workflow and benchmark lane from the 0.8.x train is
 **withdrawn from release claims** until it ships again with matching Gate 1 +
@@ -20,7 +20,7 @@ list in `docs/release-command-contract.json`.
 | `withdrawn` | Was claimed in a previous train; no longer ships and may not be referenced by release docs. |
 | `future-release` | Implemented or approved for a later train, but must stay out of released claims until package/docs/gates land together. |
 
-## Released CLI surface (`xrtm==0.10.6`)
+## Released CLI surface (`xrtm==0.10.8`)
 
 | Command | User job | Status | Product service owner | Claim owner | Release gate |
 | --- | --- | --- | --- | --- | --- |
@@ -60,9 +60,9 @@ They may be claimed by Python-API docs only, with no CLI-parity language.
 
 ## Released parity proof
 
-The `0.10.6` release proof covers:
+The `0.10.8` release proof covers:
 
-1. fresh install on Python 3.11 and 3.12 (`pip install xrtm==0.10.6`)
+1. fresh install on Python 3.11 and 3.12 (`pip install xrtm==0.10.8`)
 2. `xrtm doctor` reports a usable environment
 3. `xrtm start --provider mock --limit 2` completes with a scored run
    directory

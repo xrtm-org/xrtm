@@ -1,10 +1,10 @@
 {
-  "release_version": "0.10.6",
-  "summary": "Release-gated command claims for the 0.10.6 CLI (start / doctor / runs show).",
+  "release_version": "0.10.8",
+  "summary": "Release-gated command claims for the 0.10.8 CLI (start / doctor / runs show).",
   "allowed_claims": [
     "python3.12 -m venv .venv",
     ". .venv/bin/activate",
-    "pip install xrtm==0.10.6",
+    "pip install xrtm==0.10.8",
     "export OPENAI_API_KEY=sk-...",
     "export OPENAI_BASE_URL=https://api.deepseek.com",
     "export OPENAI_MODEL=deepseek-v4-flash",

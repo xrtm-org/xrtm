@@ -1,6 +1,6 @@
 # Getting Started with XRTM
 
-This is the authoritative first-success path for the published `xrtm==0.10.6`
+This is the authoritative first-success path for the published `xrtm==0.10.8`
 package. It is claim-pinned to the commands that actually exist in this release:
 `xrtm start`, `xrtm doctor`, `xrtm runs show`, and `xrtm --version`. Anything
 else is explicitly out of scope for release-pinned docs.
@@ -15,7 +15,7 @@ available, and writes a self-contained run directory you can inspect.
 ```bash
 python3.12 -m venv .venv
 . .venv/bin/activate
-pip install xrtm==0.10.6
+pip install xrtm==0.10.8
 ```
 
 **Supported Python versions:** `>=3.11,<3.13` (bounded by `xrtm-train`).

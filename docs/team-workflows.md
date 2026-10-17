@@ -4,7 +4,7 @@ This guide documents realistic multi-user and desk-style workflows for XRTM, bas
 
 > **Historical (pre-0.10) product notes.** This page describes the 0.8.x
 > WebUI/playground/profile/export lanes. It is **not** part of the
-> `xrtm==0.10.6` release contract; see
+> `xrtm==0.10.8` release contract; see
 > [interface-parity.md](interface-parity.md) for the current released surface.
 > The prompting/evaluation patterns below remain useful, but the CLI commands
 > shown are not release claims.
@@ -72,7 +72,7 @@ Each analyst works in the same Python environment or uses identical virtual envi
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install xrtm==0.10.6
+pip install xrtm==0.10.8
 xrtm doctor
 ```
 
@@ -174,7 +174,7 @@ This shows differences in:
 
 ### Individual Run Export
 
-> **Withdrawn command:** `xrtm runs export` is not part of `xrtm==0.10.6`.
+> **Withdrawn command:** `xrtm runs export` is not part of `xrtm==0.10.8`.
 > Use `xrtm.product.history.export_run` from Python instead.
 
 Historical usage (0.8.6 CLI):
